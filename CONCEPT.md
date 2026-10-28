@@ -390,6 +390,14 @@ acknowledged them.
   on first start), never in RouterOS envs or the image. Secrets in DB via Laravel `encrypted`
   casts (local key or federation data key).
 - **Admin:** separate port, TOTP, login throttling, roles, audit log.
+- **Guest login lockout (M2):** limits per MAC, per IP and global (env `PORTAL_LOGIN_*`). The MAC
+  comes from the redirect URL and can be spoofed: a guest on the same network could lock out another
+  MAC, and an attacker can rotate MACs (then the per-IP and global limits apply). Accepted trade-off
+  for a small user base; limits stay configurable.
+- **Login handoff (M2):** one-time credentials are posted only to `link-login-only` URLs with
+  `https` and a host listed in the site's hotspot host names; `link-orig` is only passed to the router
+  as post-login target (http(s), no embedded credentials), the portal never redirects to it.
+- **NAS addresses:** IPv4 only for now; IPv6 NAS addresses later.
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
 - **Web/privacy:** CSRF, strict CSP, HSTS, signed URLs, HMAC webhooks, bundled assets; minimal data, retention + purge.

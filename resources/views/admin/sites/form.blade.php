@@ -23,6 +23,9 @@
         <label class="label">{{ __('portal.sites.portal_address') }}
             <input name="portal_address" value="{{ old('portal_address', $site->setting('portal_address')) }}" placeholder="10.0.0.10" class="field">
             <span class="text-xs text-slate-500">{{ __('portal.sites.portal_address_help') }}</span></label>
+        <label class="label md:col-span-2">{{ __('portal.sites.hotspot_hosts') }}
+            <input name="hotspot_hosts" value="{{ old('hotspot_hosts', implode(', ', (array) $site->setting('hotspot_hosts', []))) }}" placeholder="hotspot-a.guest.example.com" class="field">
+            <span class="text-xs text-slate-500">{{ __('portal.sites.hotspot_hosts_help') }}</span></label>
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 

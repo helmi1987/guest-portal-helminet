@@ -119,6 +119,25 @@ class Grant extends Model
         return $this->max_extensions === null || $this->extensions_used < $this->max_extensions;
     }
 
+    /** SQL equivalent of status(). */
+    public function scopeWithStatus(Builder $query, GrantStatus $status): void
+    {
+        $now = now();
+        $running = fn (Builder $q) => $q->whereNull('revoked_at')
+            ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', $now));
+        $started = fn (Builder $q) => $running($q)->where(fn ($q) => $q->whereNull('valid_from')->orWhere('valid_from', '<=', $now));
+
+        match ($status) {
+            GrantStatus::Revoked => $query->whereNotNull('revoked_at'),
+            GrantStatus::Expired => $query->whereNull('revoked_at')->where('expires_at', '<=', $now),
+            GrantStatus::Pending => $running($query)->where('valid_from', '>', $now),
+            GrantStatus::Active => $started($query)->whereNotNull('first_login_at'),
+            GrantStatus::Lapsed => $started($query)->whereNull('first_login_at')->where('redeem_until', '<=', $now),
+            GrantStatus::Unused => $started($query)->whereNull('first_login_at')
+                ->where(fn ($q) => $q->whereNull('redeem_until')->orWhere('redeem_until', '>', $now)),
+        };
+    }
+
     /** Grants whose time is over or which were revoked. */
     public function scopeEnded(Builder $query): void
     {

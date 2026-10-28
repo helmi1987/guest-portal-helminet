@@ -14,6 +14,7 @@ use App\Support\Mac;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -32,7 +33,7 @@ class RadiusController extends Controller
         $mac = Mac::normalize($this->attr($request, 'Calling-Station-Id'));
 
         $reason = null;
-        $reply = DB::transaction(function () use ($nas, $username, $password, $mac, $request, $grants, &$reason) {
+        $authorize = fn () => DB::transaction(function () use ($nas, $username, $password, $mac, $request, $grants, &$reason) {
             $token = RadiusToken::query()->where('username', $username)->lockForUpdate()->first();
 
             $reason = match (true) {
@@ -65,6 +66,10 @@ class RadiusController extends Controller
                 'reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval'),
             ], $nas->site->driver()->replyAttributes($grant));
         });
+
+        // Serialise per grant: concurrent requests with different MACs must not both bind a device.
+        $grantId = RadiusToken::query()->where('username', $username)->value('grant_id');
+        $reply = $grantId ? Cache::lock('grant-bind:'.$grantId, 15)->block(5, $authorize) : $authorize();
 
         if ($reply === null) {
             Log::info('RADIUS reject', ['reason' => $reason, 'nas' => $nas?->nas_ip, 'user' => $username]);

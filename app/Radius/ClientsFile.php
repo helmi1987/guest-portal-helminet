@@ -15,6 +15,7 @@ class ClientsFile
     {
         $out = "# Managed by the portal. Do not edit.\n";
 
+        // NAS IPs are IPv4 only for now (IPv6 later).
         foreach (NasClient::query()->orderBy('id')->get() as $nas) {
             $out .= sprintf(
                 "\nclient %s {\n    ipaddr = %s\n    secret = \"%s\"\n    shortname = %s\n}\n",
@@ -39,9 +40,16 @@ class ClientsFile
         }
 
         File::ensureDirectoryExists(dirname($path));
+        // Contains secrets: create with restrictive permissions, then rename atomically.
         $tmp = $path.'.tmp';
-        File::put($tmp, $content);
-        @chmod($tmp, 0640);
+        $umask = umask(0027);
+        try {
+            @unlink($tmp);
+            File::put($tmp, $content);
+            chmod($tmp, 0640);
+        } finally {
+            umask($umask);
+        }
         File::move($tmp, $path);
 
         return true;

@@ -32,7 +32,8 @@ class RadiusFlowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
-        $this->site = Site::create(['slug' => 'site-a', 'name' => 'Site A', 'driver' => 'mikrotik_ros7']);
+        $this->site = Site::create(['slug' => 'site-a', 'name' => 'Site A', 'driver' => 'mikrotik_ros7',
+            'settings' => ['hotspot_hosts' => ['hotspot.example.com']]]);
         $this->nas = $this->site->nasClients()->create(['name' => 'Router A', 'nas_ip' => '10.0.0.1', 'coa_port' => 3799]);
         Process::fake(['*' => Process::result('Received Disconnect-ACK Id 1')]);
     }
@@ -60,6 +61,15 @@ class RadiusFlowTest extends TestCase
         $session = SessionSummary::sole();
         $this->assertNotNull($session->stopped_at);
         $this->assertSame(1000, $session->accounting()->sole()->bytes_in);
+    }
+
+    public function test_credentials_are_only_handed_to_configured_hotspot_hosts(): void
+    {
+        $code = $this->code()->code;
+
+        $this->redeem($code, self::MAC_A, 'https://attacker.example.net/login')->assertRedirect('/portal');
+        $this->redeem($code, self::MAC_A, 'http://hotspot.example.com/login')->assertRedirect('/portal');
+        $this->redeem($code, self::MAC_A)->assertOk()->assertViewHas('fields');
     }
 
     public function test_wrong_mac_or_password_is_rejected(): void
@@ -143,11 +153,11 @@ class RadiusFlowTest extends TestCase
         return app(GrantManager::class)->createCode(['duration_s' => $duration, 'expiry_mode' => ExpiryMode::FirstLogin]);
     }
 
-    private function redeem(string $code, string $mac): TestResponse
+    private function redeem(string $code, string $mac, string $loginUrl = 'https://hotspot.example.com/login'): TestResponse
     {
         $this->onZone('guest')->get('/portal?'.http_build_query([
             'site' => 'site-a', 'mac' => $mac, 'ip' => '10.5.50.10',
-            'link-login-only' => 'https://hotspot.example.com/login', 'link-orig' => 'http://example.com/',
+            'link-login-only' => $loginUrl, 'link-orig' => 'http://example.com/',
         ]))->assertOk();
 
         return $this->onZone('guest')->post('/portal/code', [

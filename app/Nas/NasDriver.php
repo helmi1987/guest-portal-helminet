@@ -14,8 +14,11 @@ interface NasDriver
 {
     public function label(): string;
 
-    /** Read the captive-portal redirect parameters. */
-    public function parseRedirect(Request $request): HotspotContext;
+    /**
+     * Read the captive-portal redirect parameters. The login URL receives the one-time credentials:
+     * it must point to a hotspot host configured for the site, otherwise it is dropped.
+     */
+    public function parseRedirect(Request $request, Site $site): HotspotContext;
 
     /**
      * Post-portal login handoff: where and what the guest's browser submits.

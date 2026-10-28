@@ -58,7 +58,7 @@ class SiteController extends Controller
     {
         $site->nasClients()->create($request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'nas_ip' => ['required', 'ip', Rule::unique('nas_clients', 'nas_ip')],
+            'nas_ip' => ['required', 'ipv4', Rule::unique('nas_clients', 'nas_ip')],
             'nas_identifier' => ['nullable', 'string', 'max:100'],
             'coa_port' => ['required', 'integer', 'between:1,65535'],
         ]));
@@ -107,6 +107,7 @@ class SiteController extends Controller
             'radius_address' => ['nullable', 'ip'],
             'portal_address' => ['nullable', 'ip'],
             'portal_url' => ['nullable', 'url:https,http'],
+            'hotspot_hosts' => ['nullable', 'string', 'max:500', 'regex:/^[A-Za-z0-9.\-, ]*$/'],
         ]);
 
         return [
@@ -117,6 +118,8 @@ class SiteController extends Controller
                 'radius_address' => $data['radius_address'] ?? null,
                 'portal_address' => $data['portal_address'] ?? null,
                 'portal_url' => $data['portal_url'] ?? null,
+                'hotspot_hosts' => array_values(array_filter(array_map('trim',
+                    explode(',', strtolower($data['hotspot_hosts'] ?? ''))))),
             ]),
         ];
     }

@@ -62,6 +62,8 @@ return [
         'radius_address_help' => 'Adresse dieser Instanz aus Sicht der Router.',
         'portal_address' => 'Portal-IP (Walled Garden)',
         'portal_address_help' => 'Standard: RADIUS-Adresse.',
+        'hotspot_hosts' => 'Hotspot-Hostnamen (Router)',
+        'hotspot_hosts_help' => 'Kommagetrennte DNS-Namen des HTTPS-Logins der Router (login-by=https). Zugangsdaten gehen nur an diese Hosts.',
         'routers' => 'Router',
         'nas_ip' => 'NAS-IP',
         'nas_identifier' => 'NAS-Identifier (optional)',

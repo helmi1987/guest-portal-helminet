@@ -25,8 +25,8 @@ class GrantController extends Controller
     {
         $status = GrantStatus::tryFrom((string) $request->query('status'));
         $grants = Grant::query()->with(['siteLinks', 'devices' => fn ($q) => $q->whereNull('unbound_at')])
-            ->latest()->limit(500)->get()
-            ->when($status, fn ($c) => $c->filter(fn (Grant $g) => $g->status() === $status));
+            ->when($status, fn ($q) => $q->withStatus($status))
+            ->latest()->limit(500)->get();
 
         return view('admin.grants.index', [
             'grants' => $grants,

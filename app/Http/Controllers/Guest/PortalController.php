@@ -26,7 +26,7 @@ class PortalController extends Controller
             $site = Site::query()->where('slug', $request->query('site'))->first();
             $request->session()->put('portal', $site ? [
                 'site' => $site->id,
-                'context' => $site->driver()->parseRedirect($request)->toArray(),
+                'context' => $site->driver()->parseRedirect($request, $site)->toArray(),
             ] : null);
         }
 
@@ -54,14 +54,15 @@ class PortalController extends Controller
 
         $mac = $context->mac;
         $ip = $request->ip();
-        if ($throttle->isLocked($mac, $ip)) {
+        $code = preg_replace('/\D/', '', $data['code']);
+
+        // Check, lookup and record atomically so parallel guesses cannot exceed the limits.
+        $grant = $throttle->attempt($mac, $ip, $site->id, 'code',
+            fn () => strlen($code) === 6 ? $grants->findByCode($code, $site) : null);
+
+        if ($grant === false) {
             throw ValidationException::withMessages(['code' => __('portal.guest.errors.locked')]);
         }
-
-        $code = preg_replace('/\D/', '', $data['code']);
-        $grant = strlen($code) === 6 ? $grants->findByCode($code, $site) : null;
-        $throttle->record($mac, $ip, $site->id, 'code', $grant !== null);
-
         if ($grant === null) {
             throw ValidationException::withMessages(['code' => __('portal.guest.errors.invalid_code')]);
         }

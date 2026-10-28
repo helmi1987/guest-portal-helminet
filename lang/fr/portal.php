@@ -62,6 +62,8 @@ return [
         'radius_address_help' => 'Adresse de cette instance vue par les routeurs.',
         'portal_address' => 'IP du portail (walled garden)',
         'portal_address_help' => 'Par défaut : adresse RADIUS.',
+        'hotspot_hosts' => 'Noms d\'hôte hotspot (routeur)',
+        'hotspot_hosts_help' => 'Noms DNS séparés par des virgules du login HTTPS des routeurs (login-by=https). Les identifiants ne sont envoyés qu\'à ces hôtes.',
         'routers' => 'Routeurs',
         'nas_ip' => 'IP NAS',
         'nas_identifier' => 'NAS-Identifier (facultatif)',

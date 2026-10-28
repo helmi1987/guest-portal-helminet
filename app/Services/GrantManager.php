@@ -140,7 +140,7 @@ class GrantManager
             ->get();
 
         foreach ($sessions as $session) {
-            DisconnectSession::dispatch($session->id);
+            DisconnectSession::dispatch($session->id)->afterCommit();
         }
 
         return $sessions->count();

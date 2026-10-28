@@ -7,6 +7,7 @@ use App\Models\NasClient;
 use App\Models\Site;
 use App\Support\Mac;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 /**
  * MikroTik RouterOS 7 hotspot (CONCEPT.md §2.1, §5.1).
@@ -18,12 +19,22 @@ class MikrotikRos7Driver implements NasDriver
         return 'MikroTik RouterOS 7';
     }
 
-    public function parseRedirect(Request $request): HotspotContext
+    public function parseRedirect(Request $request, Site $site): HotspotContext
     {
+        // Credentials go only via HTTPS (login-by=https) to a configured hotspot host.
+        $login = self::httpUrl($request->query('link-login-only'));
+        $hosts = array_map('strtolower', (array) $site->setting('hotspot_hosts', []));
+        if ($login !== null && (parse_url($login, PHP_URL_SCHEME) !== 'https'
+            || ! in_array(strtolower((string) parse_url($login, PHP_URL_HOST)), $hosts, true))) {
+            Log::warning('Hotspot login URL rejected (not a configured hotspot host)', ['site' => $site->slug, 'url' => $login]);
+            $login = null;
+        }
+
         return new HotspotContext(
             mac: Mac::normalize($request->query('mac')),
             ip: filter_var($request->query('ip'), FILTER_VALIDATE_IP) ?: null,
-            loginUrl: self::httpUrl($request->query('link-login-only')),
+            loginUrl: $login,
+            // Only passed to the router as post-login target (dst); the portal never redirects to it.
             origUrl: self::httpUrl($request->query('link-orig')),
         );
     }
@@ -73,26 +84,30 @@ class MikrotikRos7Driver implements NasDriver
 
     public function configScript(Site $site, NasClient $nas): string
     {
-        $radius = $site->setting('radius_address') ?: '<INSTANCE_IP>';
-        $portalHost = parse_url($this->portalUrl($site), PHP_URL_HOST) ?: '<PORTAL_HOST>';
-        $portalIp = $site->setting('portal_address') ?: $radius;
-        $name = str_replace('"', '', $site->name);
+        $radius = self::safe($site->setting('radius_address')) ?: '<INSTANCE_IP>';
+        $portalHost = self::safe(parse_url($this->portalUrl($site), PHP_URL_HOST)) ?: '<PORTAL_HOST>';
+        $portalIp = self::safe($site->setting('portal_address')) ?: $radius;
+        $dnsName = self::safe(((array) $site->setting('hotspot_hosts', []))[0] ?? null) ?: '<HOTSPOT_DNS_NAME>';
+        $name = self::safe($site->name);
+        $routerName = self::safe($nas->name);
+        $nasIp = self::safe($nas->nas_ip);
+        $secret = self::safe($nas->radius_secret);
 
         return <<<RSC
-        # Guest portal - site "{$name}", router "{$nas->name}" ({$nas->nas_ip})
+        # Guest portal - site "{$name}", router "{$routerName}" ({$nasIp})
         # Generated script. Replace the <PLACEHOLDERS> with your values before running it.
         # Contains the RADIUS secret: handle it like a password.
 
         # RADIUS client (authentication + accounting) pointing to the portal instance
         /radius
-        add address={$radius} secret="{$nas->radius_secret}" service=hotspot src-address={$nas->nas_ip} timeout=3s comment="guest-portal"
+        add address={$radius} secret="{$secret}" service=hotspot src-address={$nasIp} timeout=3s comment="guest-portal"
         # Accept Disconnect-Request (RFC 5176) from the instance
         /radius incoming
         set accept=yes port={$nas->coa_port}
 
         # Hotspot: authentication via RADIUS only, login over HTTPS with the router certificate
         /ip hotspot profile
-        add name=guest-portal dns-name=<HOTSPOT_DNS_NAME> hotspot-address=<HOTSPOT_GATEWAY_IP> \\
+        add name=guest-portal dns-name={$dnsName} hotspot-address=<HOTSPOT_GATEWAY_IP> \\
             login-by=https ssl-certificate=<ROUTER_CERTIFICATE> use-radius=yes \\
             radius-accounting=yes radius-interim-update=received nas-port-type=wireless-802.11
         /ip hotspot
@@ -115,12 +130,21 @@ class MikrotikRos7Driver implements NasDriver
         return (string) ($site->setting('portal_url') ?: config('app.url'));
     }
 
+    /** Strip characters with special meaning in RouterOS scripts (quotes, $, \\, newlines, ...). */
+    private static function safe(mixed $value): string
+    {
+        return (string) preg_replace('/[^\p{L}\p{N} ._:\/-]/u', '', (string) $value);
+    }
+
     private static function httpUrl(mixed $value): ?string
     {
-        if (! is_string($value) || ! filter_var($value, FILTER_VALIDATE_URL)) {
+        if (! is_string($value) || strlen($value) > 2048 || ! filter_var($value, FILTER_VALIDATE_URL)) {
             return null;
         }
+        $parts = parse_url($value);
 
-        return in_array(strtolower((string) parse_url($value, PHP_URL_SCHEME)), ['http', 'https'], true) ? $value : null;
+        // http(s) only, no embedded credentials.
+        return in_array(strtolower($parts['scheme'] ?? ''), ['http', 'https'], true)
+            && ! isset($parts['user']) && ! isset($parts['pass']) ? $value : null;
     }
 }
