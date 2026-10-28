@@ -18,4 +18,9 @@ class Setting extends Model
     {
         return ['value' => 'json'];
     }
+
+    public static function get(string $key, mixed $default = null): mixed
+    {
+        return static::query()->where('key', $key)->first()?->value ?? $default;
+    }
 }
