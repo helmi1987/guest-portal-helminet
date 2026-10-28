@@ -48,6 +48,24 @@ class GrantManager
         });
     }
 
+    /** Grant for an approved request: time runs from approval, restricted to the request's site. */
+    public function createApprovalGrant(Site $site, int $durationS, string $label, ?User $by = null): Grant
+    {
+        return DB::transaction(function () use ($site, $durationS, $label, $by) {
+            $grant = Grant::create([
+                'type' => GrantType::Approval,
+                'label' => $label,
+                'duration_s' => $durationS,
+                'expiry_mode' => ExpiryMode::Creation,
+                'expires_at' => now()->addSeconds($durationS),
+                'created_by' => $by?->id,
+            ]);
+            $grant->syncSites([$site->id]);
+
+            return $grant;
+        });
+    }
+
     /** Usable code grant for this site; duplicates (federation) prefer the unredeemed one. */
     public function findByCode(string $code, Site $site): ?Grant
     {

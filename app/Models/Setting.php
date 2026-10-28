@@ -23,4 +23,12 @@ class Setting extends Model
     {
         return static::query()->where('key', $key)->first()?->value ?? $default;
     }
+
+    public static function put(string $key, mixed $value): void
+    {
+        $setting = static::query()->withTrashed()->firstOrNew(['key' => $key]);
+        $setting->value = $value;
+        $setting->deleted_at = null;
+        $setting->save();
+    }
 }

@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Models\ApprovalRequest;
 use App\Models\Device;
 use App\Models\Grant;
 use App\Models\Guest;
@@ -31,6 +32,7 @@ class PurgeData extends Command
         // One-time credentials are needed only for minutes.
         RadiusToken::query()->where('created_at', '<', now()->subDay())->delete();
         LoginAttempt::query()->where('created_at', '<', $cutoff)->delete();
+        ApprovalRequest::withTrashed()->where('created_at', '<', $cutoff)->forceDelete();
         TermsAcceptance::withTrashed()->where('accepted_at', '<', $cutoff)->forceDelete();
 
         // Session summaries cascade to raw accounting.

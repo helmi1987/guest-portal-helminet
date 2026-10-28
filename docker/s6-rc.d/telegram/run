@@ -1,0 +1,4 @@
+#!/bin/sh
+# Telegram long polling; idles unless this instance is the Telegram owner with a Telegram channel.
+cd /var/www/html
+exec s6-setuidgid portal php artisan portal:telegram-poll
