@@ -8,7 +8,8 @@ use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Global middleware: separate session cookies per zone, since cookies are not port-specific.
+ * Global middleware: separate session cookies per zone, since cookies are not port-specific;
+ * SameSite=strict for the admin cookie.
  */
 class DetectZone
 {
@@ -18,6 +19,9 @@ class DetectZone
 
         if (in_array($zone, [Zone::GUEST, Zone::ADMIN], true)) {
             config(['session.cookie' => 'portal_'.$zone.'_session']);
+        }
+        if ($zone === Zone::ADMIN) {
+            config(['session.same_site' => 'strict']);
         }
 
         return $next($request);

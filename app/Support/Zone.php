@@ -22,6 +22,11 @@ final class Zone
     {
         $zone = $request->server('PORTAL_ZONE') ?: config('portal.default_zone');
 
+        // "all" disables the zone check; never honour it in production.
+        if ($zone === self::ALL && app()->isProduction()) {
+            return null;
+        }
+
         return in_array($zone, [self::GUEST, self::ADMIN, self::INTERNAL, self::ALL], true) ? $zone : null;
     }
 }

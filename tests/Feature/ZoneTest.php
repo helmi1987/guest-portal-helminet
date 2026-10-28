@@ -47,4 +47,27 @@ class ZoneTest extends TestCase
             ->postJson('/internal/radius/authorize', ['User-Name' => ['value' => ['x']]])
             ->assertUnauthorized();
     }
+
+    public function test_default_zone_all_is_ignored_in_production(): void
+    {
+        config(['portal.default_zone' => 'all']);
+        $this->get('/admin/login')->assertOk();
+
+        $this->app['env'] = 'production';
+        $this->get('/admin/login')->assertNotFound();
+    }
+
+    public function test_livewire_endpoints_exist_on_admin_port_only(): void
+    {
+        $this->onZone('guest')->get('/livewire/livewire.js')->assertNotFound();
+        $this->onZone('guest')->postJson('/livewire/update')->assertNotFound();
+        $this->onZone('admin')->get('/livewire/livewire.js')->assertOk();
+    }
+
+    public function test_admin_session_cookie_is_same_site_strict(): void
+    {
+        $this->onZone('admin')->get('/admin/login')->assertOk();
+        $this->assertSame('strict', config('session.same_site'));
+        $this->assertSame('portal_admin_session', config('session.cookie'));
+    }
 }

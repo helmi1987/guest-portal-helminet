@@ -15,6 +15,7 @@ server {
     location ^~ /admin { return 404; }
     location ^~ /internal { return 404; }
     location ^~ /up { return 404; }
+    location ^~ /livewire { return 404; }
     include /etc/nginx/portal-app.conf;
 }
 
@@ -26,6 +27,7 @@ server {
     set $portal_zone admin;
     location = / { return 302 /admin; }
     location ^~ /internal { return 404; }
+    location ^~ /up { return 404; }
     include /etc/nginx/portal-app.conf;
 }
 

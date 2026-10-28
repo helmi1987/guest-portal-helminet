@@ -6,6 +6,7 @@ use App\Http\Middleware\EnsureZone;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
 
@@ -19,6 +20,11 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        // Livewire is used by the admin UI only: its endpoints exist on the admin listener only.
+        Livewire::setUpdateRoute(fn ($handle) => Route::post('/livewire/update', $handle)
+            ->middleware(['web', 'zone:admin']));
+        Livewire::setScriptRoute(fn ($handle) => Route::get('/livewire/livewire.js', $handle)
+            ->middleware('zone:admin'));
         // Livewire update requests re-apply the zone of the page they came from.
         Livewire::addPersistentMiddleware([EnsureZone::class]);
 

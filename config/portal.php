@@ -5,7 +5,7 @@ return [
     /*
     | Zone used when the web server does not pass PORTAL_ZONE (e.g. `php artisan serve`).
     | Leave empty in production: nginx sets the zone per listener (guest/admin/internal).
-    | "all" disables the zone check and is meant for local development only.
+    | "all" disables the zone check, local development only (ignored when APP_ENV=production).
     */
     'default_zone' => env('PORTAL_DEFAULT_ZONE'),
 

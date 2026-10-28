@@ -75,6 +75,7 @@ ENV S6_KEEP_ENV=1 \
     DB_CONNECTION=sqlite \
     DB_DATABASE=/data/db/database.sqlite \
     SESSION_DRIVER=database \
+    SESSION_SECURE_COOKIE=true \
     CACHE_STORE=database \
     QUEUE_CONNECTION=database \
     PORTAL_DATA_DIR=/data \
