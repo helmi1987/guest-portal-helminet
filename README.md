@@ -7,6 +7,9 @@ multi-arch container image that runs either as a RouterOS container or on any re
 One instance can serve several sites, or each site runs its own instance and instances form a
 federation so access grants are valid at every site.
 
+Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
+can be supported via drivers (contributions welcome).
+
 **Status:** early development / concept phase. No usable code yet.
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.

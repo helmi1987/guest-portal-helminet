@@ -124,6 +124,23 @@ Estimated memory (assumption, to measure in M1): ~150–250 MB. RouterOS devices
   Session-Timeout and the guest is re-authenticated automatically via mac-cookie or roaming
   login (§10.4) **(to verify)**.
 
+### 5.1 NAS drivers (vendor neutrality)
+
+The RADIUS core (grants, Session-Timeout, accounting, Disconnect-Request per RFC 5176) is
+vendor-neutral. Vendor-specific parts sit behind a `NasDriver` interface; each site has a
+`driver` field.
+
+| Responsibility | MikroTik RouterOS 7 driver |
+|---|---|
+| Parse captive-portal redirect parameters | `login.html` query: `link-login-only`, `mac`, `ip`, `link-orig`, site id |
+| Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` |
+| Vendor RADIUS attributes | e.g. `Mikrotik-Rate-Limit` |
+| Disconnect capability | RFC 5176 via `/radius incoming` |
+| Config generator | RouterOS script + `login.html` (§9) |
+
+Only the MikroTik RouterOS 7 driver ships. Other drivers (e.g. UniFi, Omada, OPNsense,
+CoovaChilli) are future/community work.
+
 ## 6. TLS
 
 - Guest and admin ports use a publicly trusted certificate for a public DNS name resolving to an
@@ -133,10 +150,10 @@ Estimated memory (assumption, to measure in M1): ~150–250 MB. RouterOS devices
   A watcher reloads nginx on change; self-signed fallback so setup works.
 - No built-in ACME client in v1 (recommendation): keeps the image small; any external ACME client
   can write the files or serve the API. Revisit on demand.
-- Router certificates for `login-by=https` (recommendation): one wildcard certificate (e.g.
+- Router certificates for `login-by=https` (decided): one wildcard certificate (e.g.
   `*.guest.example.com`) obtained the same way; routers use names like `hotspot-a.guest.example.com`.
   The instance offers the cert to its routers via a token-protected download; the generated
-  RouterOS script includes a scheduler entry that fetches and imports it periodically **(proposal)**.
+  RouterOS script includes a scheduler entry that fetches and imports it periodically (decided).
 
 ## 7. Guest login
 
@@ -228,7 +245,7 @@ Features:
 
 | Area | Content |
 |---|---|
-| Sites | Name, identifier, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods. |
+| Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods. |
 | Codes | Create single/bulk, print vouchers (QR with portal URL + code), edit, revoke. |
 | Sessions | Active sessions federation-wide (site, MAC, IP, start, remaining), revoke. |
 | Guests | Guest list, accepted terms version, grant history. |
@@ -277,7 +294,8 @@ Features:
 - Conflicts: last-writer-wins per record by `version`; exception: **revocation is sticky**
   (a revoked grant stays revoked unless an explicit later un-revoke). Duplicate 6-digit codes
   created concurrently on partitioned instances: both stay valid as separate grants; redemption
-  picks the unredeemed one allowed at the site; admin UI flags the duplicate **(proposal)**.
+  picks the unredeemed one allowed at the site; admin UI shows a conflict marker (decided; no
+  code-range partitioning).
 - Clocks: NTP required on all instances (wall-clock expiry). Heartbeats compare clocks; above a
   configurable skew (e.g. 30 s) the admin UI warns, above a hard limit replication pauses.
 
@@ -293,7 +311,7 @@ Features:
   token (no guest input, "welcome back" page with auto-submit). RADIUS at B verifies
   `Calling-Station-Id` against the replicated binding. Works offline from other peers as long as
   the grant was replicated before.
-- Optional per site: `login-by=mac` + RADIUS for transparent roaming **(to verify; MAC spoofing trade-off)**.
+- No MAC-only login (`login-by=mac`): roaming guests always pass briefly through the portal (decided).
 - Disconnects are sent only by the instance serving the session (known from session summaries).
   A revoke/rebind on another instance emits an event; the serving instance disconnects on
   receipt. Partitioned site: revocation applies on reconnect; until then Session-Timeout bounds
@@ -303,7 +321,7 @@ Features:
 
 - SMS, Gotify and webhook messages are sent only by the instance where the guest is waiting.
 - Telegram `getUpdates` must run on exactly one instance: the **Telegram owner**, a replicated
-  setting chosen by an admin (manual failover in the admin UI) **(proposal)**. Any instance can
+  setting chosen by an admin (manual switch in the admin UI, decided). Any instance can
   send the group message (`sendMessage`); callback data carries request id + origin instance; the
   owner verifies chat/user and forwards the decision as an event to the origin instance.
 - Signed approve/deny links (Gotify/webhook) are verifiable by any instance; decision forwarded to origin.
@@ -317,7 +335,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 |---|---|
 | `instances` R | id, name, federation_url, cert_fingerprint, last_seen_at, clock_skew_ms |
 | `users` R | id, name, email, password, role (admin/manager), totp_secret (enc) |
-| `sites` R | id, slug, name, home_instance_id, settings (json) |
+| `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
 | `nas_clients` | id, site_id, nas_ip, nas_identifier, radius_secret (enc), coa_port |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
 | `grants` R | id, type (code/sms/approval), code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
@@ -394,8 +412,4 @@ federation-ready from M1.
 
 ## 15. Open questions
 
-- Telegram owner failover: manual (proposed) or automatic lease-based election.
-- Optional `login-by=mac` roaming per site: acceptable given the MAC spoofing trade-off?
-- Router certificate: wildcard certificate distributed by the instance acceptable (§6)?
-- Concurrent duplicate codes across partitioned instances: accept and flag (proposed), or
-  partition the code space per instance.
+None at this time.
