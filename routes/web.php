@@ -3,8 +3,10 @@
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\LogoutController;
 use App\Http\Controllers\Admin\SiteController;
+use App\Http\Controllers\Admin\TermsController;
 use App\Http\Controllers\Guest\LocaleController;
 use App\Http\Controllers\Guest\PortalController;
+use App\Http\Controllers\RouterCertController;
 use App\Livewire\Admin\Login;
 use Illuminate\Support\Facades\Route;
 
@@ -22,7 +24,14 @@ Route::middleware(['zone:guest', 'locale'])->group(function () {
     Route::get('/portal', [PortalController::class, 'show'])->name('guest.portal');
     Route::post('/portal/code', [PortalController::class, 'redeem'])->name('guest.redeem')
         ->middleware('throttle:20,1');
+    Route::get('/status/{grant}/{token}', [PortalController::class, 'status'])->name('guest.status')
+        ->whereNumber('token')->middleware('signed:relative');
 });
+
+// Router certificate download for the routers' scheduler (guest port, token per router).
+Route::middleware('zone:guest')->get('/router-cert/{nas}/{file}', RouterCertController::class)
+    ->whereIn('file', ['fingerprint', 'router.crt', 'router.key'])->middleware('throttle:30,1')
+    ->name('router-cert');
 
 Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () {
     Route::middleware('guest')->group(function () {
@@ -43,6 +52,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
 
         Route::middleware('role:admin')->group(function () {
             Route::view('/settings', 'admin.settings')->name('admin.settings');
+            Route::get('/terms', [TermsController::class, 'index'])->name('admin.terms');
+            Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('admin.terms.update');
 
             Route::name('admin.')->group(function () {
                 Route::resource('sites', SiteController::class)->except(['show']);

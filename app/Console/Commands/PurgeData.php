@@ -9,6 +9,7 @@ use App\Models\LoginAttempt;
 use App\Models\RadiusToken;
 use App\Models\SessionSummary;
 use App\Models\Setting;
+use App\Models\TermsAcceptance;
 use Illuminate\Console\Command;
 
 /**
@@ -30,6 +31,7 @@ class PurgeData extends Command
         // One-time credentials are needed only for minutes.
         RadiusToken::query()->where('created_at', '<', now()->subDay())->delete();
         LoginAttempt::query()->where('created_at', '<', $cutoff)->delete();
+        TermsAcceptance::withTrashed()->where('accepted_at', '<', $cutoff)->forceDelete();
 
         // Session summaries cascade to raw accounting.
         SessionSummary::withTrashed()->whereNotNull('stopped_at')->where('stopped_at', '<', $cutoff)->forceDelete();

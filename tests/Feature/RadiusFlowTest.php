@@ -7,6 +7,7 @@ use App\Models\Grant;
 use App\Models\NasClient;
 use App\Models\SessionSummary;
 use App\Models\Site;
+use App\Models\TermsVersion;
 use App\Services\GrantManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
@@ -109,12 +110,32 @@ class RadiusFlowTest extends TestCase
 
         Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, 'sess-1'), 1);
         $this->authorize($pending['username'], $pending['password'], self::MAC_A)->assertStatus(401);
-        $this->redeem($grant->code, self::MAC_A)->assertSessionHasErrors('code');
+        $this->redeem($grant->code, self::MAC_A)->assertForbidden()
+            ->assertSee(__('portal.guest.error_pages.revoked.title'));
 
         $expired = $this->code();
         $this->redeem($expired->code, self::MAC_B)->assertOk();
         $this->travel(2)->days();
-        $this->redeem($expired->code, self::MAC_B)->assertSessionHasErrors('code');
+        $this->redeem($expired->code, self::MAC_B)->assertForbidden()
+            ->assertSee(__('portal.guest.error_pages.expired.title'));
+    }
+
+    public function test_router_redirects_to_signed_status_page_with_remaining_time(): void
+    {
+        $grant = $this->code(7200);
+        $fields = $this->redeem($grant->code, self::MAC_A)->viewData('fields');
+        $status = parse_url($fields['dst'], PHP_URL_PATH).'?'.parse_url($fields['dst'], PHP_URL_QUERY);
+
+        // Router has not confirmed the login yet: waiting page refreshes itself.
+        $this->onZone('guest')->get($status)->assertOk()->assertSee('http-equiv="refresh"', false);
+        $this->onZone('guest')->get(parse_url($fields['dst'], PHP_URL_PATH))->assertForbidden();
+
+        $this->authorize($fields['username'], $fields['password'], self::MAC_A)->assertOk();
+        $this->onZone('guest')->withHeader('Accept-Language', 'de')->get($status)->assertOk()
+            ->assertSee(__('portal.guest.online', [], 'de'))->assertSee('Stunde');
+
+        app(GrantManager::class)->revoke($grant);
+        $this->onZone('guest')->get($status)->assertForbidden()->assertSee(__('portal.guest.error_pages.revoked.title'));
     }
 
     public function test_scheduler_disconnects_sessions_of_expired_grants(): void
@@ -144,7 +165,8 @@ class RadiusFlowTest extends TestCase
             $this->redeem('000001', self::MAC_A)->assertSessionHasErrors('code');
         }
 
-        $this->redeem($grant->code, self::MAC_A)->assertSessionHasErrors(['code' => __('portal.guest.errors.locked')]);
+        $this->redeem($grant->code, self::MAC_A)->assertStatus(429)
+            ->assertSee(__('portal.guest.error_pages.locked.title'));
         $this->redeem($grant->code, self::MAC_B)->assertOk();
     }
 
@@ -158,10 +180,11 @@ class RadiusFlowTest extends TestCase
         $this->onZone('guest')->get('/portal?'.http_build_query([
             'site' => 'site-a', 'mac' => $mac, 'ip' => '10.5.50.10',
             'link-login-only' => $loginUrl, 'link-orig' => 'http://example.com/',
-        ]))->assertOk();
+        ]));
 
         return $this->onZone('guest')->post('/portal/code', [
             'first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'code' => $code,
+            'terms_version' => TermsVersion::current(app()->getLocale())?->id,
         ]);
     }
 

@@ -21,11 +21,12 @@ interface NasDriver
     public function parseRedirect(Request $request, Site $site): HotspotContext;
 
     /**
-     * Post-portal login handoff: where and what the guest's browser submits.
+     * Post-portal login handoff: where and what the guest's browser submits. After the login the router
+     * should send the browser to $successUrl (portal status page).
      *
      * @return array{url: string, fields: array<string, string>}
      */
-    public function loginHandoff(HotspotContext $context, string $username, string $password): array;
+    public function loginHandoff(HotspotContext $context, string $username, string $password, string $successUrl): array;
 
     /** Vendor RADIUS reply attributes for an Access-Accept (rlm_rest JSON keys). */
     public function replyAttributes(Grant $grant): array;

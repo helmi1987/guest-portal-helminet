@@ -17,6 +17,7 @@
                     <a href="{{ route('admin.grants.index') }}">{{ __('portal.grants.title') }}</a>
                     @if (auth()->user()->isAdmin())
                         <a href="{{ route('admin.sites.index') }}">{{ __('portal.sites.title') }}</a>
+                        <a href="{{ route('admin.terms') }}">{{ __('portal.terms.title') }}</a>
                         <a href="{{ route('admin.settings') }}">{{ __('portal.admin.settings') }}</a>
                     @endif
                 </nav>

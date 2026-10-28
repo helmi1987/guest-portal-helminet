@@ -41,6 +41,15 @@ return [
         'global' => (int) env('PORTAL_LOGIN_MAX_GLOBAL', 200),
     ],
 
+    // Router certificate for login-by=https (CONCEPT.md §6), offered to the routers for download.
+    // Mounted by the operator (container: /data/certs/router.crt + router.key).
+    'router_cert' => [
+        'cert' => env('PORTAL_ROUTER_CERT', rtrim((string) env('PORTAL_DATA_DIR', storage_path('app')), '/').'/certs/router.crt'),
+        'key' => env('PORTAL_ROUTER_KEY', rtrim((string) env('PORTAL_DATA_DIR', storage_path('app')), '/').'/certs/router.key'),
+        // RouterOS scheduler interval for fetching the certificate.
+        'fetch_interval' => env('PORTAL_ROUTER_CERT_INTERVAL', '1d'),
+    ],
+
     // Code duration presets in seconds.
     'duration_presets' => ['8h' => 28800, '1d' => 86400, '1w' => 604800],
 

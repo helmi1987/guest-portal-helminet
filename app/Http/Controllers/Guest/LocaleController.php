@@ -14,6 +14,12 @@ class LocaleController extends Controller
 
         $request->session()->put('locale', $locale);
 
-        return redirect()->back(fallback: '/');
+        // Return to the page the switcher was on (captive browsers often send no Referer).
+        $to = (string) $request->query('r');
+        if (str_starts_with($to, '/') && ! str_starts_with($to, '//') && ! str_contains($to, '\\')) {
+            return redirect()->to($to);
+        }
+
+        return redirect()->back(fallback: route('guest.portal'));
     }
 }
