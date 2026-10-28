@@ -10,7 +10,8 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (milestone M1: skeleton, image, CI). Guest login does not work yet.
+**Status:** early development (milestone M2: RADIUS and codes). Code login via RADIUS works; the polished
+portal UI, other login methods and federation follow (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -26,6 +27,8 @@ docker exec -it guest-portal artisan portal:admin   # create the first admin
 ```
 
 - Guest portal: `https://<host>/`, admin UI: `https://<host>:8443/admin`.
+- Router setup: admin UI → Sites → add site and router → "Router configuration" (RouterOS script)
+  and `login.html` download.
 - `/data` holds the database, generated secrets (`.env`), certificates and backups.
   Mount `fullchain.pem` + `privkey.pem` at `/certs` for a trusted certificate; otherwise a
   self-signed one is generated.

@@ -70,7 +70,10 @@ One Alpine Linux based image (decided):
   `INTERNAL_PORT`.
 - FreeRADIUS clients (routers + secrets): Laravel renders a clients file into `/data` and
   restarts FreeRADIUS via s6 on change. Recommended over dynamic clients: few, static routers;
-  restart takes about a second; router sessions are unaffected **(proposal)**.
+  restart takes about a second; router sessions are unaffected. Implemented M2: an s6 service
+  (`radius-watch`, root) polls the file checksum and runs `s6-svc -r` (the app runs unprivileged).
+  FreeRADIUS passes the matched client (`FreeRADIUS-Client-Shortname` = `nas-<id>`) to Laravel, so
+  the NAS is identified by source IP + secret.
 
 ### 2.3 Runtime targets
 
@@ -126,6 +129,12 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
 - Access-Accept: `Session-Timeout` = remaining wall-clock seconds of the grant;
   `Acct-Interim-Interval`; optional `Mikrotik-Rate-Limit` per grant/site (default: none).
 - Accounting (Start/Interim/Stop) → `POST /internal/radius/accounting`, stored locally.
+- The MAC binding (device) is created when RADIUS accepts the one-time token (MAC from
+  `Calling-Station-Id`), not at code entry; a new MAC unbinds the old device and disconnects its
+  session (M2).
+- Shortening a running grant does not disconnect immediately: the scheduler
+  (`portal:enforce-grants`, every minute) disconnects sessions of expired, revoked or rebound
+  grants (M2).
 - Revoke / shorten / rebind: a job sends Disconnect-Request (`radclient`) to the router's
   `/radius incoming` port 3799. After an extension the current session ends at the old
   Session-Timeout and the guest is re-authenticated automatically via mac-cookie or roaming
@@ -175,7 +184,7 @@ CoovaChilli) are future/community work.
 ### 7.2 Sequences
 
 **A. Code (6 digits, admin/manager-issued)**
-1. Guest enters name, accepts terms, enters code.
+1. Guest enters name, accepts terms, enters code. (M2: terms checkbox only; versioned terms in M3.)
 2. Instance checks rate limits, code status, validity window, site restriction.
 3. If the code is bound to another MAC with an active session: Disconnect-Request for the old
    session (via its serving instance, §10.4), rebind code to the new MAC.
@@ -345,14 +354,14 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `instances` R | id, name, federation_url, cert_fingerprint, last_seen_at, clock_skew_ms |
 | `users` R | id, name, email, password, role (admin/manager), totp_secret (enc) |
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
-| `nas_clients` | id, site_id, nas_ip, nas_identifier, radius_secret (enc), coa_port |
+| `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
 | `grants` R | id, type (code/sms/approval), code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
 | `session_summaries` R | id, grant_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at |
-| `radius_tokens` | id, grant_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
-| `radius_accounting` | id, session_summary_id, nas_client_id, acct_session_id, last_update_at, terminate_cause, bytes_in, bytes_out |
+| `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
+| `radius_accounting` | id, session_summary_id, nas_client_id, acct_session_id, username, last_update_at, terminate_cause, bytes_in, bytes_out, disconnect_sent_at |
 | `otp_challenges` | id, guest_id, phone_e164, code_hash, attempts, expires_at, verified_at |
 | `approval_requests` | id, guest_id, site_id, mac, status, decided_by, decided_via, duration_s, expires_at |
 | `terms_versions` R | id, locale, version, body, published_at |
@@ -407,6 +416,10 @@ acknowledged them.
 
 Build order: single instance first (M1–M6); federation later (M7). Data model is
 federation-ready from M1.
+
+Status: M1 done; M2 implemented (v0.2.0), open: Disconnect-Request and login handoff tested on a
+real RouterOS router. Deferred from M2: voucher QR, audit log table (M6; M2 logs grant actions to
+the application log).
 
 | # | Content | Acceptance criteria |
 |---|---|---|
