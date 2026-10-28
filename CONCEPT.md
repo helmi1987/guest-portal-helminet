@@ -174,8 +174,12 @@ CoovaChilli) are future/community work.
   The instance offers the cert to its routers via a token-protected download; the generated
   RouterOS script includes a scheduler entry that fetches and imports it periodically (decided).
   Implemented M3: files `/data/certs/router.crt` + `router.key`; `GET /router-cert/<router id>/
-  {fingerprint|router.crt|router.key}` on the guest port with a per-router token in header
-  `X-Portal-Token` (local, encrypted). The script (scheduler at startup + every `PORTAL_ROUTER_CERT_INTERVAL`,
+  {fingerprint|router.crt|router.key}` on the guest port, stateless (no session/cookies), with a
+  per-router token in header `X-Portal-Token` (local, encrypted) and only from the router's NAS IP
+  (fetch with `src-address`; check off by default behind `TRUSTED_PROXIES`, env
+  `PORTAL_ROUTER_CERT_CHECK_IP`); denied requests are logged. Key files: `portal.key` 600 root,
+  `router.key` 640 root:portal. The generated script is idempotent (removes its own entries named or
+  commented `guest-portal` first, incl. hotspot profile `guest-portal`). The script (scheduler at startup + every `PORTAL_ROUTER_CERT_INTERVAL`,
   default 1d) compares the SHA-256 fingerprint and, when changed, imports the files and sets the
   hotspot profile `ssl-certificate` **(RouterOS script syntax to verify)**.
 
@@ -188,7 +192,7 @@ CoovaChilli) are future/community work.
 - Required for all methods: first name, last name, acceptance of current terms version.
 - Languages DE, IT, FR, EN (Laravel lang files); auto-detect via `Accept-Language`, switcher.
 - After success: one-time RADIUS credentials → auto-submit to router → status page (implemented M3:
-  router `dst` = signed portal URL, no cookie needed; remaining time, waiting page until RADIUS
+  router `dst` = signed portal URL valid until grant expiry + 1 h, no cookie needed; remaining time, waiting page until RADIUS
   accepted the token). `link-orig` is not used. Friendly error pages: no hotspot redirect,
   misconfigured hotspot host / unknown site, expired, revoked, lockout, router login not completed.
 - Guest pages are plain server-rendered HTML (no Livewire); only the handoff auto-submit uses inline

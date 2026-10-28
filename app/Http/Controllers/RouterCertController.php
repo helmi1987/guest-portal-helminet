@@ -9,14 +9,23 @@ use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Router certificate download for login-by=https (CONCEPT.md §6). Fetched by the RouterOS scheduler
- * of each router with its own token (header X-Portal-Token).
+ * of each router with its own token (header X-Portal-Token) from its NAS IP.
  */
 class RouterCertController extends Controller
 {
     public function __invoke(Request $request, NasClient $nas, string $file): Response
     {
+        // Router token and, by default, the router's own NAS IP as source (generated fetch uses src-address).
         $token = (string) $request->header('X-Portal-Token');
-        abort_unless($token !== '' && hash_equals($nas->certToken(), $token), 403);
+        $reason = match (true) {
+            $token === '' || ! hash_equals($nas->certToken(), $token) => 'invalid token',
+            config('portal.router_cert.check_source_ip') && $request->ip() !== $nas->nas_ip => 'source IP is not the NAS IP',
+            default => null,
+        };
+        if ($reason !== null) {
+            Log::warning('Router certificate download denied', ['nas' => $nas->id, 'ip' => $request->ip(), 'reason' => $reason]);
+            abort(403);
+        }
 
         $paths = config('portal.router_cert');
         $cert = is_readable($paths['cert']) ? (string) file_get_contents($paths['cert']) : '';

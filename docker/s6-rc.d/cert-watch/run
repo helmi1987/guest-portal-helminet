@@ -10,8 +10,9 @@ while sleep 10; do
     now="$(state)"
     if [ "$now" != "$last" ]; then
         echo "[cert-watch] certificate files changed"
-        last="$now"
+        # Remember the state only after success, so a failed run is retried on the next loop.
         portal-certs || continue
+        last="$now"
         if nginx -t -q; then
             s6-svc -h /run/service/nginx
             echo "[cert-watch] nginx reloaded"

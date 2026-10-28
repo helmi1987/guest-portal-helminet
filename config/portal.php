@@ -46,6 +46,9 @@ return [
     'router_cert' => [
         'cert' => env('PORTAL_ROUTER_CERT', rtrim((string) env('PORTAL_DATA_DIR', storage_path('app')), '/').'/certs/router.crt'),
         'key' => env('PORTAL_ROUTER_KEY', rtrim((string) env('PORTAL_DATA_DIR', storage_path('app')), '/').'/certs/router.key'),
+        // Download only from the router's NAS IP. Default: on unless the instance is behind trusted
+        // proxies (TRUSTED_PROXIES), where the source address is the proxy's.
+        'check_source_ip' => (bool) env('PORTAL_ROUTER_CERT_CHECK_IP', ! env('TRUSTED_PROXIES')),
         // RouterOS scheduler interval for fetching the certificate.
         'fetch_interval' => env('PORTAL_ROUTER_CERT_INTERVAL', '1d'),
     ],

@@ -40,6 +40,8 @@ else
     fi
     crt="$CERTS/selfsigned.crt"; key="$CERTS/selfsigned.key"
 fi
+# Private keys: root only (nginx master reads them as root). A read-only mount keeps its own mode.
+chmod 600 "$key" 2>/dev/null || log "WARNING: cannot chmod 600 $key (read-only mount?)"
 ln -sfn "$crt" "$RUN_DIR/fullchain.pem"
 ln -sfn "$key" "$RUN_DIR/privkey.pem"
 log "portal certificate: $crt"
@@ -47,7 +49,9 @@ log "portal certificate: $crt"
 # The app (user portal) serves the router certificate to the routers; nothing else is readable.
 if [ -e "$CERTS/router.crt" ] || [ -e "$CERTS/router.key" ]; then
     if valid_pair "$CERTS/router.crt" "$CERTS/router.key"; then
-        { chgrp portal "$CERTS/router.crt" "$CERTS/router.key" && chmod 640 "$CERTS/router.crt" "$CERTS/router.key"; } \
+        # Key readable by the app (php-fpm user portal) only: root:portal 640.
+        { chown root:portal "$CERTS/router.key" && chmod 640 "$CERTS/router.key" \
+            && chgrp portal "$CERTS/router.crt" && chmod 644 "$CERTS/router.crt"; } \
             || log "WARNING: cannot set permissions of the router certificate (read-only mount?)"
         log "router certificate: $CERTS/router.crt"
     else

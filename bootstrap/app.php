@@ -10,6 +10,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
+use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -21,6 +22,8 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware(['zone:internal', InternalApiAuth::class])
                 ->prefix('internal')
                 ->group(base_path('routes/internal.php'));
+            Route::middleware(['zone:guest', SubstituteBindings::class, 'throttle:30,1'])
+                ->group(base_path('routes/router.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

@@ -118,7 +118,9 @@ class PortalController extends Controller
             'terms_version' => $terms?->number]);
 
         $request->session()->put('handoff_token', $token->id);
-        $statusUrl = url(URL::signedRoute('guest.status', ['grant' => $grant->id, 'token' => $token->id], absolute: false));
+        // Valid until the grant ends (plus a margin for the "expired" page).
+        $statusUrl = url(URL::temporarySignedRoute('guest.status', $grant->refresh()->expires_at->copy()->addHour(),
+            ['grant' => $grant->id, 'token' => $token->id], absolute: false));
 
         return view('guest.handoff', $site->driver()->loginHandoff($context, $token->username, $password, $statusUrl));
     }

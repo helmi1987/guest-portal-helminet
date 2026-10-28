@@ -14,6 +14,12 @@ use Illuminate\Support\Facades\Log;
  */
 class MikrotikRos7Driver implements NasDriver
 {
+    /**
+     * Name of the hotspot, hotspot profile, RADIUS/walled-garden comments, script, scheduler and
+     * certificate created by the generated script. Defined once here; the certificate script uses it too.
+     */
+    public const NAME = 'guest-portal';
+
     public function label(): string
     {
         return 'MikroTik RouterOS 7';
@@ -94,36 +100,45 @@ class MikrotikRos7Driver implements NasDriver
         $routerName = self::safe($nas->name);
         $nasIp = self::safe($nas->nas_ip);
         $secret = self::safe($nas->radius_secret);
-        $certScript = $this->certScript($portalUrl.'/router-cert/'.$nas->id, self::safe($nas->certToken()));
+        $certScript = $this->certScript($portalUrl.'/router-cert/'.$nas->id, self::safe($nas->certToken()), $nasIp);
+        $n = self::NAME;
 
         return <<<RSC
         # Guest portal - site "{$name}", router "{$routerName}" ({$nasIp})
         # Generated script. Replace the <PLACEHOLDERS> with your values before running it.
         # Contains the RADIUS secret and the certificate download token: handle it like a password.
+        # Idempotent: re-running replaces the entries named/commented "{$n}" (hotspot profile "{$n}").
+        # Re-running recreates the hotspot, which logs out connected guests.
 
         # RADIUS client (authentication + accounting) pointing to the portal instance. RouterOS >= 7.15
         # requires Message-Authenticator in replies (require-message-auth); the instance always adds it.
         /radius
-        add address={$radius} secret="{$secret}" service=hotspot src-address={$nasIp} timeout=3s comment="guest-portal"
+        remove [find comment="{$n}"]
+        add address={$radius} secret="{$secret}" service=hotspot src-address={$nasIp} timeout=3s comment="{$n}"
         # Accept Disconnect-Request (RFC 5176) from the instance; the RouterOS default port is 1700
         /radius incoming
         set accept=yes port={$nas->coa_port}
 
         # Hotspot: authentication via RADIUS only, login over HTTPS. dns-name must be covered by the
         # router certificate (e.g. a wildcard); the certificate is set by the script below.
+        /ip hotspot
+        remove [find name="{$n}"]
         /ip hotspot profile
-        add name=guest-portal dns-name={$dnsName} hotspot-address=<HOTSPOT_GATEWAY_IP> \\
+        remove [find name="{$n}"]
+        add name={$n} dns-name={$dnsName} hotspot-address=<HOTSPOT_GATEWAY_IP> \\
             login-by=https use-radius=yes \\
             radius-accounting=yes radius-interim-update=received nas-port-type=wireless-802.11
         /ip hotspot
-        add name=guest-portal interface=<GUEST_INTERFACE> address-pool=<GUEST_POOL> profile=guest-portal disabled=no
+        add name={$n} interface=<GUEST_INTERFACE> address-pool=<GUEST_POOL> profile={$n} disabled=no
 
         # Walled garden: guests may reach the portal (HTTPS) before login
         /ip hotspot walled-garden
-        add dst-host={$portalHost} action=allow comment="guest-portal"
+        remove [find comment="{$n}"]
+        add dst-host={$portalHost} action=allow comment="{$n}"
         # IP walled garden: action=accept (manual ambiguous between accept/allow, to verify)
         /ip hotspot walled-garden ip
-        add dst-address={$portalIp} protocol=tcp dst-port=443 action=accept comment="guest-portal"
+        remove [find comment="{$n}"]
+        add dst-address={$portalIp} protocol=tcp dst-port=443 action=accept comment="{$n}"
 
         {$certScript}
         # Finally upload login.html (download from the admin UI) into the hotspot HTML directory
@@ -136,45 +151,51 @@ class MikrotikRos7Driver implements NasDriver
      * Script + scheduler that fetch the router certificate from the instance and set it on the hotspot
      * profile when its fingerprint changed (CONCEPT.md §6). RouterOS syntax details: to verify per version.
      */
-    private function certScript(string $base, string $token): string
+    private function certScript(string $base, string $token, string $sourceIp): string
     {
         $interval = preg_replace('/[^0-9dhms]/', '', (string) config('portal.router_cert.fetch_interval')) ?: '1d';
         $script = <<<'RSC'
         # Router certificate for login-by=https, fetched from the instance at startup and every __INTERVAL__.
-        # Imported only when its fingerprint changed. check-certificate=yes needs a trusted portal certificate.
+        # Imported only when its fingerprint changed; sets ssl-certificate of hotspot profile "__NAME__". check-certificate=yes needs a trusted portal certificate.
+        # The download is accepted only from this router's NAS IP (src-address) with its token.
+        /system scheduler
+        remove [find name="__NAME__-cert"]
         /system script
-        add name=guest-portal-cert dont-require-permissions=no policy=read,write,policy,test source={
+        remove [find name="__NAME__-cert"]
+        add name=__NAME__-cert dont-require-permissions=no policy=read,write,policy,test source={
         :local base "__BASE__"
         :local hdr "X-Portal-Token: __TOKEN__"
-        :local name "guest-portal"
-        :local newname "guest-portal-new"
+        :local src "__SRC__"
+        :local name "__NAME__"
+        :local newname "__NAME__-new"
         :do {
-            :local fp ([/tool fetch url=($base . "/fingerprint") http-header-field=$hdr check-certificate=yes output=user as-value]->"data")
+            :local fp ([/tool fetch url=($base . "/fingerprint") http-header-field=$hdr src-address=$src check-certificate=yes output=user as-value]->"data")
             :local cur ""
             :foreach c in=[/certificate find where name=$name] do={ :set cur [/certificate get $c fingerprint] }
             :if ([:len $fp] = 64 && $fp != $cur) do={
-                /tool fetch url=($base . "/router.crt") http-header-field=$hdr check-certificate=yes dst-path="guest-portal.crt"
-                /tool fetch url=($base . "/router.key") http-header-field=$hdr check-certificate=yes dst-path="guest-portal.key"
+                /tool fetch url=($base . "/router.crt") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".crt")
+                /tool fetch url=($base . "/router.key") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".key")
                 :delay 2s
                 /certificate remove [find where name=$newname]
-                /certificate import file-name="guest-portal.crt" passphrase="" name=$newname
-                /certificate import file-name="guest-portal.key" passphrase="" name=$newname
-                /file remove [find where name="guest-portal.crt"]
-                /file remove [find where name="guest-portal.key"]
+                /certificate import file-name=($name . ".crt") passphrase="" name=$newname
+                /certificate import file-name=($name . ".key") passphrase="" name=$newname
+                /file remove [find where name=($name . ".crt")]
+                /file remove [find where name=($name . ".key")]
                 /ip hotspot profile set [find where name=$name] ssl-certificate=$newname
                 /certificate remove [find where name=$name]
                 /certificate set [find where name=$newname] name=$name
-                :log info "guest-portal: router certificate updated"
+                :log info "__NAME__: router certificate updated"
             }
-        } on-error={ :log warning "guest-portal: router certificate update failed" }
+        } on-error={ :log warning "__NAME__: router certificate update failed" }
         }
         /system scheduler
-        add name=guest-portal-cert interval=__INTERVAL__ start-time=startup on-event=guest-portal-cert policy=read,write,policy,test
-        /system script run guest-portal-cert
+        add name=__NAME__-cert interval=__INTERVAL__ start-time=startup on-event=__NAME__-cert policy=read,write,policy,test
+        /system script run __NAME__-cert
 
         RSC;
 
-        return str_replace(['__BASE__', '__TOKEN__', '__INTERVAL__'], [$base, $token, $interval], $script);
+        return str_replace(['__BASE__', '__TOKEN__', '__SRC__', '__NAME__', '__INTERVAL__'],
+            [$base, $token, $sourceIp, self::NAME, $interval], $script);
     }
 
     private function portalUrl(Site $site): string

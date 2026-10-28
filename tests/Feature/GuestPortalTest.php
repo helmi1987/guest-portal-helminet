@@ -77,13 +77,19 @@ class GuestPortalTest extends TestCase
         $this->assertStringContainsString("https://portal.example.com/router-cert/{$nas->id}", $script);
         $this->assertStringContainsString('X-Portal-Token: '.$nas->cert_token, $script);
         $this->assertStringContainsString('port=3799', $script);
+        $this->assertStringContainsString(':local src "10.0.0.1"', $script);
+        $this->assertStringContainsString('remove [find name="guest-portal-cert"]', $script);
 
         $url = "/router-cert/{$nas->id}";
         $this->onZone('guest')->get("$url/router.key")->assertForbidden();
         $this->onZone('guest')->withHeader('X-Portal-Token', 'wrong')->get("$url/router.key")->assertForbidden();
         $this->onZone('admin')->withHeader('X-Portal-Token', $nas->cert_token)->get("$url/router.key")->assertNotFound();
 
-        $ok = fn (string $file) => $this->onZone('guest')->withHeader('X-Portal-Token', $nas->cert_token)->get("$url/$file");
+        // Correct token, but not from the router's NAS IP.
+        $this->onZone('guest')->withHeader('X-Portal-Token', $nas->cert_token)->get("$url/router.key")->assertForbidden();
+
+        $ok = fn (string $file) => $this->withServerVariables(['PORTAL_ZONE' => 'guest', 'REMOTE_ADDR' => '10.0.0.1'])
+            ->withHeader('X-Portal-Token', $nas->cert_token)->get("$url/$file")->assertCookieMissing('portal_guest_session')->assertCookieMissing('XSRF-TOKEN');
         $this->assertSame(openssl_x509_fingerprint($cert, 'sha256'), $ok('fingerprint')->assertOk()->getContent());
         $this->assertStringContainsString('BEGIN CERTIFICATE', $ok('router.crt')->assertOk()->getContent());
         $this->assertStringContainsString('PRIVATE KEY', $ok('router.key')->assertOk()->getContent());
