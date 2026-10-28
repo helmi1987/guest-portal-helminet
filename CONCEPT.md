@@ -89,11 +89,12 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
 ## 3. RouterOS container specifics
 
 - Container package installed and device mode allows containers
-  (`/system/device-mode/update container=yes`, needs physical confirmation) **(to verify per version)**.
+  (`/system/device-mode/update container=yes`, confirmed physically within 5 min by button or cold boot).
 - Networking: `/interface/veth` with static address + gateway, port of a dedicated bridge
   (e.g. `containers`) with an IP on the router; firewall/NAT as needed. No NAT between routers and
   the instance for RADIUS (source IP identifies the NAS).
-- Mounts: persistent `/data` (SQLite, generated configs, env file), optional `/certs`, `/backup`.
+- Mounts (`/container/mounts add list=..`, container property `mountlists`; envs via `envlist`):
+  persistent `/data` (SQLite, generated configs, env file, certificates), optional `/backup`.
 - Env: only non-secret bootstrap values via `/container/envs` (visible in config exports);
   secrets in an env file on `/data` (§12).
 - `start-on-boot=yes`, `logging=yes`; memory limit (property name `memory-high`/`memory-max`
@@ -161,15 +162,22 @@ CoovaChilli) are future/community work.
 
 - Guest and admin ports use a publicly trusted certificate for a public DNS name resolving to an
   internal IP (e.g. `portal.example.com` → `10.0.0.10`), issued via DNS-01.
-- Certificate sources (`TLS_SOURCE`): `file` (mounted `fullchain.pem` + `privkey.pem` in `/certs`)
-  or `api` (periodic pull from a generic certificate API: URL + bearer token, PEM response).
-  A watcher reloads nginx on change; self-signed fallback so setup works.
+- Certificate sources: `file` (implemented M3): `/data/certs/portal.crt` + `portal.key` (full chain,
+  PEM); legacy fallback `fullchain.pem` + `privkey.pem` mounted at `/certs`; self-signed fallback so
+  setup works. Invalid or non-matching pairs are ignored (logged). An s6 service (`cert-watch`, root)
+  polls the files every 10 s and reloads nginx after `nginx -t`. `api` (periodic pull from a generic
+  certificate API: URL + bearer token, PEM response) is deferred to M6 (`TLS_SOURCE`).
 - No built-in ACME client in v1 (recommendation): keeps the image small; any external ACME client
   can write the files or serve the API. Revisit on demand.
 - Router certificates for `login-by=https` (decided): one wildcard certificate (e.g.
   `*.guest.example.com`) obtained the same way; routers use names like `hotspot-a.guest.example.com`.
   The instance offers the cert to its routers via a token-protected download; the generated
   RouterOS script includes a scheduler entry that fetches and imports it periodically (decided).
+  Implemented M3: files `/data/certs/router.crt` + `router.key`; `GET /router-cert/<router id>/
+  {fingerprint|router.crt|router.key}` on the guest port with a per-router token in header
+  `X-Portal-Token` (local, encrypted). The script (scheduler at startup + every `PORTAL_ROUTER_CERT_INTERVAL`,
+  default 1d) compares the SHA-256 fingerprint and, when changed, imports the files and sets the
+  hotspot profile `ssl-certificate` **(RouterOS script syntax to verify)**.
 
 ## 7. Guest login
 
@@ -179,12 +187,20 @@ CoovaChilli) are future/community work.
   URL parameters are untrusted UX hints; the binding MAC is the one RADIUS reports.
 - Required for all methods: first name, last name, acceptance of current terms version.
 - Languages DE, IT, FR, EN (Laravel lang files); auto-detect via `Accept-Language`, switcher.
-- After success: one-time RADIUS credentials → auto-submit to router → `link-orig` or success page.
+- After success: one-time RADIUS credentials → auto-submit to router → status page (implemented M3:
+  router `dst` = signed portal URL, no cookie needed; remaining time, waiting page until RADIUS
+  accepted the token). `link-orig` is not used. Friendly error pages: no hotspot redirect,
+  misconfigured hotspot host / unknown site, expired, revoked, lockout, router login not completed.
+- Guest pages are plain server-rendered HTML (no Livewire); only the handoff auto-submit uses inline
+  JS, with a button as fallback.
 
 ### 7.2 Sequences
 
 **A. Code (6 digits, admin/manager-issued)**
-1. Guest enters name, accepts terms, enters code. (M2: terms checkbox only; versioned terms in M3.)
+1. Guest enters name, accepts terms (current version of the guest's locale, fallback default locale;
+   the submitted version must still be current), enters code. The acceptance records guest, terms
+   version, grant, site, MAC and time. Without any published terms a generic statement is accepted
+   (version null).
 2. Instance checks rate limits, code status, validity window, site restriction.
 3. If the code is bound to another MAC with an active session: Disconnect-Request for the old
    session (via its serving instance, §10.4), rebind code to the new MAC.
@@ -354,7 +370,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `instances` R | id, name, federation_url, cert_fingerprint, last_seen_at, clock_skew_ms |
 | `users` R | id, name, email, password, role (admin/manager), totp_secret (enc) |
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
-| `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port |
+| `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port, cert_token (enc) |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
 | `grants` R | id, type (code/sms/approval), code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
 | `grant_site` R | grant_id, site_id (none = all sites) |
@@ -364,8 +380,8 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `radius_accounting` | id, session_summary_id, nas_client_id, acct_session_id, username, last_update_at, terminate_cause, bytes_in, bytes_out, disconnect_sent_at |
 | `otp_challenges` | id, guest_id, phone_e164, code_hash, attempts, expires_at, verified_at |
 | `approval_requests` | id, guest_id, site_id, mac, status, decided_by, decided_via, duration_s, expires_at |
-| `terms_versions` R | id, locale, version, body, published_at |
-| `terms_acceptances` R | id, guest_id, terms_version_id, accepted_at, site_id, mac |
+| `terms_versions` R | id, locale, number (per locale; `version` is the replication column), body (plain text), published_at |
+| `terms_acceptances` R | id, guest_id, terms_version_id, grant_id, accepted_at, site_id, mac |
 | `channels` R | id, kind (notification/sms), driver, name, config (enc json), enabled |
 | `settings` R / `local_settings` | key, value (json) |
 | `login_attempts` | id, mac, ip, site_id, method, success, created_at |
@@ -384,8 +400,10 @@ acknowledged them.
   isolation recommended.
 - **Ports:** admin port only from VPN/admin networks; federation port only between instances;
   RADIUS UDP 1812/1813 to the instance and 3799 to routers only between routers and their home
-  instance. Strong per-router secrets; Message-Authenticator required (Blast-RADIUS) **(to verify
-  RouterOS support)**.
+  instance. Strong per-router secrets; Message-Authenticator required (Blast-RADIUS): RouterOS >= 7.15
+  rejects Accept/Reject without it (`require-message-auth`); FreeRADIUS 3.0.27 adds it to every reply,
+  the post-auth config adds it explicitly as well (checked with radclient). Generated scripts set
+  `/radius incoming port` explicitly (RouterOS default 1700).
 - **Secrets:** `APP_KEY`, internal API token, DB credentials in an env file on `/data` (generated
   on first start), never in RouterOS envs or the image. Secrets in DB via Laravel `encrypted`
   casts (local key or federation data key).
@@ -395,8 +413,8 @@ acknowledged them.
   MAC, and an attacker can rotate MACs (then the per-IP and global limits apply). Accepted trade-off
   for a small user base; limits stay configurable.
 - **Login handoff (M2):** one-time credentials are posted only to `link-login-only` URLs with
-  `https` and a host listed in the site's hotspot host names; `link-orig` is only passed to the router
-  as post-login target (http(s), no embedded credentials), the portal never redirects to it.
+  `https` and a host listed in the site's hotspot host names; the post-login target (`dst`) is the
+  portal status page (M3); the portal never redirects to `link-orig`.
 - **NAS addresses:** IPv4 only for now; IPv6 NAS addresses later.
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
@@ -427,7 +445,8 @@ federation-ready from M1.
 
 Status: M1 done; M2 implemented (v0.2.0), open: Disconnect-Request and login handoff tested on a
 real RouterOS router. Deferred from M2: voucher QR, audit log table (M6; M2 logs grant actions to
-the application log).
+the application log). M3 implemented (v0.3.0), open: captive browser tests on real devices, router
+certificate script on RouterOS; deferred to M6: certificate API pull, guest list with accepted terms.
 
 | # | Content | Acceptance criteria |
 |---|---|---|

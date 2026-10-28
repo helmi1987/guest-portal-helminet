@@ -10,8 +10,9 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (milestone M2: RADIUS and codes). Code login via RADIUS works; the polished
-portal UI, other login methods and federation follow (see CONCEPT.md §14).
+**Status:** early development (milestone M3: portal UI and i18n). Code login via RADIUS with versioned
+terms of use, DE/IT/FR/EN, HTTPS router login with automatic router certificate; other login methods
+and federation follow (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -30,8 +31,10 @@ docker exec -it guest-portal artisan portal:admin   # create the first admin
 - Router setup: admin UI → Sites → add site and router → "Router configuration" (RouterOS script)
   and `login.html` download.
 - `/data` holds the database, generated secrets (`.env`), certificates and backups.
-  Mount `fullchain.pem` + `privkey.pem` at `/certs` for a trusted certificate; otherwise a
-  self-signed one is generated.
+  Certificates (PEM, full chain + key) go to `/data/certs`: `portal.crt` + `portal.key` for the guest
+  and admin ports (otherwise a self-signed one is generated; legacy: `fullchain.pem` + `privkey.pem`
+  mounted at `/certs`), `router.crt` + `router.key` (e.g. a wildcard) for the routers' HTTPS login,
+  downloaded by each router's scheduler. Changed files are picked up within ~10 s (nginx reload).
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).
   RouterOS container: [docs/routeros-container.md](docs/routeros-container.md).
 - Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.
