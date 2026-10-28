@@ -11,6 +11,7 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutVite();
+        config(['portal.radius.clients_file' => sys_get_temp_dir().'/portal-test-'.getmypid().'/clients.conf']);
     }
 
     /** Simulate the nginx listener (FastCGI param PORTAL_ZONE). */
