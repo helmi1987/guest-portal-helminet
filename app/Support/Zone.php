@@ -1,0 +1,27 @@
+<?php
+
+namespace App\Support;
+
+use Illuminate\Http\Request;
+
+/**
+ * Listener a request arrived on. nginx passes it as FastCGI parameter PORTAL_ZONE;
+ * clients cannot set it (it is not an HTTP header).
+ */
+final class Zone
+{
+    public const GUEST = 'guest';
+
+    public const ADMIN = 'admin';
+
+    public const INTERNAL = 'internal';
+
+    public const ALL = 'all';
+
+    public static function of(Request $request): ?string
+    {
+        $zone = $request->server('PORTAL_ZONE') ?: config('portal.default_zone');
+
+        return in_array($zone, [self::GUEST, self::ADMIN, self::INTERNAL, self::ALL], true) ? $zone : null;
+    }
+}

@@ -1,0 +1,21 @@
+<div class="mx-auto mt-16 max-w-sm rounded-lg bg-white p-6 shadow">
+    <h1 class="mb-4 text-xl font-semibold">{{ __('portal.auth.title') }}</h1>
+    <form wire:submit="login" class="flex flex-col gap-4">
+        <label class="flex flex-col gap-1">
+            <span class="text-sm">{{ __('portal.auth.email') }}</span>
+            <input type="email" wire:model="email" autocomplete="username" required autofocus
+                   class="rounded border border-slate-300 px-3 py-2">
+            @error('email') <span class="text-sm text-red-600">{{ $message }}</span> @enderror
+        </label>
+        <label class="flex flex-col gap-1">
+            <span class="text-sm">{{ __('portal.auth.password') }}</span>
+            <input type="password" wire:model="password" autocomplete="current-password" required
+                   class="rounded border border-slate-300 px-3 py-2">
+            @error('password') <span class="text-sm text-red-600">{{ $message }}</span> @enderror
+        </label>
+        <label class="flex items-center gap-2 text-sm">
+            <input type="checkbox" wire:model="remember"> {{ __('portal.auth.remember') }}
+        </label>
+        <button type="submit" class="rounded bg-slate-900 px-4 py-2 font-medium text-white">{{ __('portal.auth.submit') }}</button>
+    </form>
+</div>
