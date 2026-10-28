@@ -41,8 +41,16 @@ server default {
         rest
     }
 
+    # RouterOS >= 7.15 (require-message-auth) drops Accept/Reject without Message-Authenticator
+    # (Blast-RADIUS). Adding the attribute makes FreeRADIUS calculate it for every reply.
     post-auth {
+        update reply {
+            &Message-Authenticator := 0x00
+        }
         Post-Auth-Type REJECT {
+            update reply {
+                &Message-Authenticator := 0x00
+            }
         }
     }
 }

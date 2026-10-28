@@ -6,7 +6,8 @@ Generic example; adjust names, addresses and disks to your setup. Commands marke
 ## Prerequisites
 
 - Container package installed, device mode allows containers:
-  `/system/device-mode/update container=yes` (needs physical confirmation) **(to verify)**.
+  `/system/device-mode/update container=yes`, then confirm physically within 5 minutes (press a
+  button on the device or do a cold boot / power cycle).
 - External storage recommended (e.g. `usb1`), ~512 MB free RAM for the container.
 
 ## Network
@@ -26,15 +27,16 @@ Allow guests to reach only the guest port (TCP 443) of the instance; allow the a
 
 ```
 /container/config set registry-url=https://ghcr.io tmpdir=usb1/tmp
-/container/mounts add name=portal-data src=usb1/portal-data dst=/data
+/container/mounts add list=portal-data src=usb1/portal-data dst=/data
+/container/envs add list=portal key=APP_URL value=https://portal.example.com
 /container add remote-image=ghcr.io/OWNER/REPO:latest interface=veth-portal \
-    root-dir=usb1/portal-root mounts=portal-data start-on-boot=yes logging=yes
+    root-dir=usb1/portal-root mountlists=portal-data envlist=portal start-on-boot=yes logging=yes
 ```
 
 - While the image is private, set `username=` and a read-only token as `password=` in
   `/container/config`.
 - Only non-secret values belong in `/container/envs` (they appear in config exports), e.g.
-  `APP_URL=https://portal.example.com`. Secrets are generated on first start into `/data/.env`.
+  `APP_URL`. Secrets are generated on first start into `/data/.env`.
 - Memory limit: property name differs per version (`memory-high` / `memory-max`) **(to verify)**.
 
 ## First start
@@ -42,7 +44,8 @@ Allow guests to reach only the guest port (TCP 443) of the instance; allow the a
 1. `/container/start [find]`, watch `/log print where topics~"container"`.
 2. Create the first admin from a shell in the container:
    `/container/shell [find]` then `artisan portal:admin`.
-3. Open `https://<container-ip>:8443/admin` (self-signed certificate until one is mounted at `/certs`).
+3. Open `https://<container-ip>:8443/admin` (self-signed certificate until `portal.crt` and
+   `portal.key` are placed in `/data/certs`, see the README).
 
 ## Update
 

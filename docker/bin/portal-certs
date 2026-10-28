@@ -1,0 +1,58 @@
+#!/bin/sh
+# Selects the TLS certificate for nginx and fixes permissions of the router certificate.
+# Called by portal-init (every start) and cert-watch (on change). Runs as root.
+#   Portal (guest + admin ports): /data/certs/portal.crt + portal.key
+#     legacy fallback: $TLS_CERT_DIR (default /certs)/fullchain.pem + privkey.pem
+#     otherwise a self-signed certificate in /data/certs/selfsigned.*
+#   Router (login-by=https, downloaded by the routers): /data/certs/router.crt + router.key
+set -eu
+
+DATA_DIR="${PORTAL_DATA_DIR:-/data}"
+CERTS="$DATA_DIR/certs"
+RUN_DIR=/run/portal
+LEGACY_DIR="${TLS_CERT_DIR:-/certs}"
+
+log() { echo "[portal-certs] $*"; }
+
+# Certificate and key must parse and belong together.
+valid_pair() {
+    [ -s "$1" ] && [ -s "$2" ] || return 1
+    a="$(openssl x509 -noout -pubkey -in "$1" 2>/dev/null)" || return 1
+    b="$(openssl pkey -pubout -in "$2" 2>/dev/null)" || return 1
+    [ -n "$a" ] && [ "$a" = "$b" ]
+}
+
+mkdir -p "$CERTS" "$RUN_DIR"
+
+if valid_pair "$CERTS/portal.crt" "$CERTS/portal.key"; then
+    crt="$CERTS/portal.crt"; key="$CERTS/portal.key"
+elif valid_pair "$LEGACY_DIR/fullchain.pem" "$LEGACY_DIR/privkey.pem"; then
+    crt="$LEGACY_DIR/fullchain.pem"; key="$LEGACY_DIR/privkey.pem"
+else
+    [ -e "$CERTS/portal.crt" ] && log "WARNING: $CERTS/portal.crt/.key invalid or not matching, using self-signed"
+    if ! valid_pair "$CERTS/selfsigned.crt" "$CERTS/selfsigned.key"; then
+        log "generating self-signed fallback certificate"
+        openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+            -subj "/CN=${PORTAL_HOSTNAME:-portal.local}" \
+            -addext "subjectAltName=DNS:${PORTAL_HOSTNAME:-portal.local}" \
+            -keyout "$CERTS/selfsigned.key" -out "$CERTS/selfsigned.crt" 2>/dev/null
+        chmod 600 "$CERTS/selfsigned.key"
+    fi
+    crt="$CERTS/selfsigned.crt"; key="$CERTS/selfsigned.key"
+fi
+ln -sfn "$crt" "$RUN_DIR/fullchain.pem"
+ln -sfn "$key" "$RUN_DIR/privkey.pem"
+log "portal certificate: $crt"
+
+# The app (user portal) serves the router certificate to the routers; nothing else is readable.
+if [ -e "$CERTS/router.crt" ] || [ -e "$CERTS/router.key" ]; then
+    if valid_pair "$CERTS/router.crt" "$CERTS/router.key"; then
+        { chgrp portal "$CERTS/router.crt" "$CERTS/router.key" && chmod 640 "$CERTS/router.crt" "$CERTS/router.key"; } \
+            || log "WARNING: cannot set permissions of the router certificate (read-only mount?)"
+        log "router certificate: $CERTS/router.crt"
+    else
+        log "WARNING: $CERTS/router.crt/.key invalid or not matching, not offered to routers"
+        chmod 600 "$CERTS/router.key" 2>/dev/null || true
+    fi
+fi
+{ chgrp portal "$CERTS" && chmod 750 "$CERTS"; } 2>/dev/null || true

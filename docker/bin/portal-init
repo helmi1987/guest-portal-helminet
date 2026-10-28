@@ -39,24 +39,8 @@ if [ "${DB_CONNECTION:-sqlite}" = "sqlite" ]; then
     [ -f "$DB_FILE" ] || { log "creating SQLite database"; touch "$DB_FILE"; }
 fi
 
-# --- TLS certificate -----------------------------------------------------------
-CERT_DIR="${TLS_CERT_DIR:-/certs}"
-if [ -s "$CERT_DIR/fullchain.pem" ] && [ -s "$CERT_DIR/privkey.pem" ]; then
-    log "using mounted certificate from $CERT_DIR"
-    ln -sf "$CERT_DIR/fullchain.pem" "$RUN_DIR/fullchain.pem"
-    ln -sf "$CERT_DIR/privkey.pem" "$RUN_DIR/privkey.pem"
-else
-    if [ ! -s "$DATA_DIR/certs/selfsigned.crt" ]; then
-        log "no certificate mounted, generating self-signed fallback"
-        openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-            -subj "/CN=${PORTAL_HOSTNAME:-portal.local}" \
-            -addext "subjectAltName=DNS:${PORTAL_HOSTNAME:-portal.local}" \
-            -keyout "$DATA_DIR/certs/selfsigned.key" -out "$DATA_DIR/certs/selfsigned.crt" 2>/dev/null
-        chmod 600 "$DATA_DIR/certs/selfsigned.key"
-    fi
-    ln -sf "$DATA_DIR/certs/selfsigned.crt" "$RUN_DIR/fullchain.pem"
-    ln -sf "$DATA_DIR/certs/selfsigned.key" "$RUN_DIR/privkey.pem"
-fi
+# --- TLS certificates (portal + router), see portal-certs ---------------------
+/usr/local/bin/portal-certs
 
 # --- nginx listener ports ------------------------------------------------------
 sed -e "s/__GUEST_PORT__/${GUEST_PORT:-443}/g" \

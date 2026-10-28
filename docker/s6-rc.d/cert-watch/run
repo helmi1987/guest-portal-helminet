@@ -1,0 +1,22 @@
+#!/bin/sh
+# Re-selects the certificates and reloads nginx when certificate files on /data change
+# (e.g. renewed by an external ACME client). Polling: independent of inotify on the volume.
+CERTS="${PORTAL_DATA_DIR:-/data}/certs"
+LEGACY="${TLS_CERT_DIR:-/certs}"
+state() { cat "$CERTS"/portal.crt "$CERTS"/portal.key "$CERTS"/router.crt "$CERTS"/router.key \
+    "$LEGACY"/fullchain.pem "$LEGACY"/privkey.pem 2>/dev/null | cksum; }
+last="$(state)"
+while sleep 10; do
+    now="$(state)"
+    if [ "$now" != "$last" ]; then
+        echo "[cert-watch] certificate files changed"
+        last="$now"
+        portal-certs || continue
+        if nginx -t -q; then
+            s6-svc -h /run/service/nginx
+            echo "[cert-watch] nginx reloaded"
+        else
+            echo "[cert-watch] nginx config test failed, not reloaded"
+        fi
+    fi
+done

@@ -12,8 +12,7 @@ services:
       - "1813:1813/udp"
     volumes:
       - ./data:/data
-      # Optional: publicly trusted certificate (fullchain.pem + privkey.pem); else self-signed.
-      # - ./certs:/certs:ro
+      # Certificates: portal.crt/.key (else self-signed) and router.crt/.key in ./data/certs (see README).
     environment:
       APP_URL: https://portal.example.com
       PORTAL_HOSTNAME: portal.example.com
