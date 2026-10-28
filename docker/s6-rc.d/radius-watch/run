@@ -1,0 +1,13 @@
+#!/bin/sh
+# Restarts FreeRADIUS when Laravel rewrites the clients file (routers added/changed).
+# Polling keeps it independent of inotify support on the data volume.
+FILE="${PORTAL_DATA_DIR:-/data}/radius/clients.conf"
+last="$(cksum "$FILE" 2>/dev/null)"
+while sleep 3; do
+    now="$(cksum "$FILE" 2>/dev/null)"
+    if [ "$now" != "$last" ]; then
+        echo "[radius-watch] clients file changed, restarting FreeRADIUS"
+        s6-svc -r /run/service/freeradius
+        last="$now"
+    fi
+done

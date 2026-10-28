@@ -12,9 +12,13 @@ server default {
     }
 
     authorize {
+        # Tell Laravel which router (client entry "nas-<id>") sent the request.
+        update request {
+            &FreeRADIUS-Client-Shortname := "%{client:shortname}"
+        }
         rest
-        if (ok || updated) {
-            # Accept decided by Laravel (from M2 on).
+        if (updated) {
+            # Accept decided by Laravel (one-time credentials checked there).
             update control {
                 &Auth-Type := Accept
             }
@@ -28,6 +32,9 @@ server default {
     }
 
     preacct {
+        update request {
+            &FreeRADIUS-Client-Shortname := "%{client:shortname}"
+        }
     }
 
     accounting {

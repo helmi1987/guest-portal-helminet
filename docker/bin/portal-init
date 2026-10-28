@@ -66,12 +66,12 @@ sed -e "s/__GUEST_PORT__/${GUEST_PORT:-443}/g" \
 # Some runtimes (e.g. containers without IPv6) cannot bind [::].
 [ -f /proc/net/if_inet6 ] || sed -i '/listen \[::\]/d' "$RUN_DIR/nginx-portal.conf"
 
-# --- FreeRADIUS clients file (rendered by Laravel from M2 on) -----------------
+# --- FreeRADIUS clients file (rendered by Laravel, see portal:radius-clients) --
 [ -f "$DATA_DIR/radius/clients.conf" ] || \
     echo "# Managed by the portal. Do not edit." > "$DATA_DIR/radius/clients.conf"
 
 # --- Permissions -------------------------------------------------------------
-chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/backups"
+chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/backups" "$DATA_DIR/radius"
 chown portal:portal "$DATA_DIR" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 
@@ -83,5 +83,6 @@ as_portal php artisan config:clear >/dev/null
 as_portal php artisan route:clear >/dev/null
 as_portal php artisan migrate --force --no-interaction
 as_portal php artisan portal:init
+as_portal php artisan portal:radius-clients
 as_portal php artisan optimize >/dev/null
 log "done"

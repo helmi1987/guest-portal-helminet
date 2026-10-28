@@ -1,8 +1,7 @@
 <?php
 
-use Illuminate\Foundation\Inspiring;
-use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Schedule;
 
-Artisan::command('inspire', function () {
-    $this->comment(Inspiring::quote());
-})->purpose('Display an inspiring quote');
+// Run by the scheduler service (artisan schedule:work).
+Schedule::command('portal:enforce-grants')->everyMinute()->withoutOverlapping();
+Schedule::command('portal:purge')->dailyAt('03:30')->withoutOverlapping();
