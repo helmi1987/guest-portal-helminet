@@ -53,6 +53,14 @@
                 </ul>
             @endif
             <button type="submit" class="btn py-3 text-base">{{ __('portal.guest.connect') }}</button>
+            @if ($approvalEnabled)
+                {{-- No access code: ask an approver instead (name and terms are checked by the server). --}}
+                <div class="border-t border-slate-200 pt-4 text-sm text-slate-600">
+                    <p class="mb-2">{{ __('portal.guest.approval_intro') }}</p>
+                    <button type="submit" formaction="{{ route('guest.approval.request') }}" formnovalidate
+                            class="btn-light w-full py-3 text-base">{{ __('portal.guest.approval_request') }}</button>
+                </div>
+            @endif
         </form>
     </section>
 </x-layouts.guest>

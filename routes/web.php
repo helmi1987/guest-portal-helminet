@@ -1,13 +1,19 @@
 <?php
 
+use App\Http\Controllers\Admin\ApprovalController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\LogoutController;
+use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\TermsController;
+use App\Http\Controllers\ApprovalLinkController;
 use App\Http\Controllers\Guest\LocaleController;
 use App\Http\Controllers\Guest\PortalController;
 use App\Livewire\Admin\Login;
+use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
+use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 /*
 | Routes are split by listener ("zone", set by nginx per port):
@@ -23,9 +29,21 @@ Route::middleware(['zone:guest', 'locale'])->group(function () {
     Route::get('/portal', [PortalController::class, 'show'])->name('guest.portal');
     Route::post('/portal/code', [PortalController::class, 'redeem'])->name('guest.redeem')
         ->middleware('throttle:20,1');
+    Route::post('/portal/approval', [PortalController::class, 'requestApproval'])->name('guest.approval.request')
+        ->middleware('throttle:5,1');
+    Route::get('/portal/approval', [PortalController::class, 'approval'])->name('guest.approval');
     Route::get('/status/{grant}/{token}', [PortalController::class, 'status'])->name('guest.status')
         ->whereNumber('token')->middleware('signed:relative');
 });
+
+// Signed approve/deny links (Gotify, webhook): no login and no session, so opening a link does not
+// replace an admin session cookie; the signature authorizes GET (show) and POST (decide).
+Route::middleware(['zone:admin', 'signed:relative', 'throttle:30,1'])
+    ->withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class])
+    ->prefix('admin/approval-link')->group(function () {
+        Route::get('/{approval}', [ApprovalLinkController::class, 'show'])->name('approval.link');
+        Route::post('/{approval}', [ApprovalLinkController::class, 'decide']);
+    });
 
 Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () {
     Route::middleware('guest')->group(function () {
@@ -42,10 +60,18 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
             Route::post('/grants/{grant}/extend', [GrantController::class, 'extend'])->name('grants.extend');
             Route::post('/grants/{grant}/expiry', [GrantController::class, 'expiry'])->name('grants.expiry');
             Route::post('/grants/{grant}/revoke', [GrantController::class, 'revoke'])->name('grants.revoke');
+            Route::get('/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
+            Route::post('/approvals/{approval}', [ApprovalController::class, 'decide'])->name('approvals.decide');
         });
 
         Route::middleware('role:admin')->group(function () {
-            Route::view('/settings', 'admin.settings')->name('admin.settings');
+            Route::get('/settings', [SettingsController::class, 'show'])->name('admin.settings');
+            Route::post('/settings', [SettingsController::class, 'update'])->name('admin.settings.update');
+            Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('admin.channels.create');
+            Route::post('/channels', [SettingsController::class, 'storeChannel'])->name('admin.channels.store');
+            Route::get('/channels/{channel}', [SettingsController::class, 'editChannel'])->name('admin.channels.edit');
+            Route::put('/channels/{channel}', [SettingsController::class, 'updateChannel'])->name('admin.channels.update');
+            Route::delete('/channels/{channel}', [SettingsController::class, 'destroyChannel'])->name('admin.channels.destroy');
             Route::get('/terms', [TermsController::class, 'index'])->name('admin.terms');
             Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('admin.terms.update');
 

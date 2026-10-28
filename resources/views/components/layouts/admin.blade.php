@@ -15,6 +15,7 @@
                 <nav class="flex gap-4">
                     <a href="{{ route('admin.dashboard') }}" class="font-semibold">{{ __('portal.admin.title') }}</a>
                     <a href="{{ route('admin.grants.index') }}">{{ __('portal.grants.title') }}</a>
+                    <a href="{{ route('admin.approvals.index') }}">{{ __('portal.approvals.title') }}</a>
                     @if (auth()->user()->isAdmin())
                         <a href="{{ route('admin.sites.index') }}">{{ __('portal.sites.title') }}</a>
                         <a href="{{ route('admin.terms') }}">{{ __('portal.terms.title') }}</a>

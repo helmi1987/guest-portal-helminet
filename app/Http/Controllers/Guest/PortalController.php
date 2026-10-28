@@ -2,9 +2,13 @@
 
 namespace App\Http\Controllers\Guest;
 
+use App\Approval\ApprovalService;
+use App\Enums\ApprovalStatus;
 use App\Enums\GrantStatus;
 use App\Enums\GrantType;
 use App\Http\Controllers\Controller;
+use App\Models\ApprovalRequest;
+use App\Models\Channel;
 use App\Models\Grant;
 use App\Models\Guest;
 use App\Models\RadiusToken;
@@ -25,7 +29,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
- * Guest login with a code (CONCEPT.md §7.1, §7.2 A), status page and error pages.
+ * Guest login with a code or push approval (CONCEPT.md §7.1, §7.2 A/C), status page and error pages.
  */
 class PortalController extends Controller
 {
@@ -53,6 +57,7 @@ class PortalController extends Controller
             'site' => $site,
             'terms' => TermsVersion::current(app()->getLocale()),
             'routerFailed' => $this->previousHandoffFailed($request),
+            'approvalEnabled' => Channel::query()->activeNotification()->exists(),
         ]);
     }
 
@@ -117,6 +122,91 @@ class PortalController extends Controller
         Log::info('Guest code redeemed', ['grant' => $grant->id, 'site' => $site->slug, 'mac' => $mac,
             'terms_version' => $terms?->number]);
 
+        return $this->handoff($request, $grant, $site, $context, $token, $password);
+    }
+
+    /** Ask an approver for access (CONCEPT.md §7.2 C); the guest then waits on the approval page. */
+    public function requestApproval(Request $request, ApprovalService $approvals, LoginThrottle $throttle): Response|RedirectResponse
+    {
+        $data = $request->validate([
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'terms' => ['accepted'],
+            'terms_version' => ['nullable', 'string', 'max:26'],
+        ]);
+
+        [$site, $context] = $this->current($request);
+        if ($site === null || ! $context->isComplete() || ! Channel::query()->activeNotification()->exists()) {
+            return redirect()->route('guest.portal');
+        }
+        $terms = TermsVersion::current(app()->getLocale());
+        if (($data['terms_version'] ?? null) !== $terms?->id) {
+            throw ValidationException::withMessages(['terms' => __('portal.guest.errors.terms_changed')]);
+        }
+
+        $mac = $context->mac;
+        $recent = ApprovalRequest::query()->where('site_id', $site->id)->where('mac', $mac)
+            ->where('created_at', '>=', now()->subMinutes(ApprovalService::TTL_MINUTES))->latest()->get();
+        $pending = $recent->first(fn (ApprovalRequest $r) => $r->isPending());
+        if ($pending === null) {
+            // Limit notifications per device: at most 3 requests per 15 minutes.
+            if ($recent->count() >= 3 || $throttle->isLocked($mac, $request->ip())) {
+                return $this->error('locked', 429);
+            }
+            $pending = DB::transaction(function () use ($data, $approvals, $site, $mac, $terms, $request) {
+                $guest = Guest::create([
+                    'first_name' => trim($data['first_name']),
+                    'last_name' => trim($data['last_name']),
+                    'locale' => app()->getLocale(),
+                ]);
+                TermsAcceptance::create([
+                    'guest_id' => $guest->id,
+                    'terms_version_id' => $terms?->id,
+                    'site_id' => $site->id,
+                    'mac' => $mac,
+                    'accepted_at' => now(),
+                ]);
+
+                return $approvals->create($guest, $site, $mac, $request->ip());
+            });
+        }
+
+        $request->session()->put('approval_request', $pending->id);
+
+        return redirect()->route('guest.approval');
+    }
+
+    /** Waiting page (reloads itself); logs in automatically once approved. */
+    public function approval(Request $request, GrantManager $grants): View|Response|RedirectResponse
+    {
+        $approval = ApprovalRequest::query()->with('grant')->find($request->session()->get('approval_request'));
+        [$site, $context] = $this->current($request);
+        if ($approval === null || $site === null || $site->id !== $approval->site_id || ! $context->isComplete()) {
+            return redirect()->route('guest.portal');
+        }
+
+        return match ($approval->currentStatus()) {
+            ApprovalStatus::Pending => view('guest.approval'),
+            ApprovalStatus::Denied => $this->error('approval_denied', 403),
+            ApprovalStatus::Expired => $this->error('approval_expired', 403),
+            ApprovalStatus::Approved => $this->approvedHandoff($request, $grants, $approval, $site, $context),
+        };
+    }
+
+    private function approvedHandoff(Request $request, GrantManager $grants, ApprovalRequest $approval, Site $site, HotspotContext $context): View|Response
+    {
+        $grant = $approval->grant;
+        if ($grant === null || ! $grant->isUsable()) {
+            return $this->error($grant?->status() === GrantStatus::Revoked ? 'revoked' : 'expired', 403);
+        }
+        // Each visit issues fresh one-time credentials, so a failed router login can be retried.
+        [$token, $password] = $grants->issueToken($grant, $approval->guest, $site, $approval->mac);
+
+        return $this->handoff($request, $grant, $site, $context, $token, $password);
+    }
+
+    private function handoff(Request $request, Grant $grant, Site $site, HotspotContext $context, RadiusToken $token, string $password): View
+    {
         $request->session()->put('handoff_token', $token->id);
         // Valid until the grant ends (plus a margin for the "expired" page).
         $statusUrl = url(URL::temporarySignedRoute('guest.status', $grant->refresh()->expires_at->copy()->addHour(),
