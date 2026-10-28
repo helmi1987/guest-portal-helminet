@@ -37,6 +37,8 @@ docker exec -it guest-portal artisan portal:admin   # create the first admin
   downloaded by each router's scheduler. Changed files are picked up within ~10 s (nginx reload).
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).
   RouterOS container: [docs/routeros-container.md](docs/routeros-container.md).
+  Guest network (VLAN, Wi-Fi, firewall, hotspot, RADIUS, certificates):
+  [docs/guest-network-setup.md](docs/guest-network-setup.md).
 - Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.
 
 ## Development
