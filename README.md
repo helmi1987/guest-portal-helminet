@@ -10,9 +10,10 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (milestone M3: portal UI and i18n). Code login via RADIUS with versioned
-terms of use, DE/IT/FR/EN, HTTPS router login with automatic router certificate; other login methods
-and federation follow (see CONCEPT.md §14).
+**Status:** early development (milestone M4: notifications and push approval). Code login and push
+approval (Telegram group, Gotify, generic webhook, admin UI) via RADIUS with versioned terms of use,
+DE/IT/FR/EN, HTTPS router login with automatic router certificate; SMS and federation follow
+(see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -39,6 +40,10 @@ docker exec -it guest-portal artisan portal:admin   # create the first admin
   RouterOS container: [docs/routeros-container.md](docs/routeros-container.md).
   Guest network (VLAN, Wi-Fi, firewall, hotspot, RADIUS, certificates):
   [docs/guest-network-setup.md](docs/guest-network-setup.md).
+- Push approval: admin UI → Settings → admin URL for links (admin port as reached by approvers),
+  notification language, notification channels. Telegram: create a bot with BotFather, add it to the
+  approvers' group, enter bot token and group chat id (optionally an allowlist of user ids); button
+  presses are received by long polling (s6 service `telegram`), no inbound connection needed.
 - Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.
 
 ## Development

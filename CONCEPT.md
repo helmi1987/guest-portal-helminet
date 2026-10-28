@@ -227,11 +227,21 @@ CoovaChilli) are future/community work.
    - Telegram: message in the configured **group** with inline buttons (durations + deny).
      A callback is accepted only if `callback_query.message.chat.id` equals the configured group
      and, if an allowlist of Telegram user ids is set, `callback_query.from.id` is in it.
-     Updates via long polling `getUpdates` (optional webhook mode).
+     Updates via long polling `getUpdates` (s6 service `telegram`, `artisan portal:telegram-poll`);
+     webhook mode not implemented (optional, later). After a decision the message is edited
+     (decision, approver, duration; buttons removed).
    - Gotify / generic webhook: signed, time-limited approve/deny links to a confirmation page
-     (duration picker) on the admin port.
-4. Guest waiting page polls status (Livewire `wire:poll`); on approval a grant is created,
-   time running from approval.
+     (duration picker) on the admin port (base URL: setting "admin URL"). Links expire with the
+     request and are single use (request no longer pending); GET only shows, POST decides (link
+     previews cannot approve). The page runs without login and without session (an admin session
+     cookie is not replaced).
+   - Admin UI: admin/manager approve (8 h / 1 d / 1 w / custom hours) or deny.
+   - Notification language: setting "notification language". Decisions go to the app log
+     (audit table: M6).
+4. Guest waiting page reloads every 3 s (meta refresh, no JS/Livewire); on approval a grant
+   (type approval, restricted to the request's site) is created, time running from approval.
+   Denied/expired (15 min) requests show an error page. Max. 3 requests per device per 15 min; a
+   pending request of the same device is reused.
 5. Step 5 of A, triggered automatically from the waiting page.
 
 ### 7.3 Drivers
@@ -383,7 +393,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
 | `radius_accounting` | id, session_summary_id, nas_client_id, acct_session_id, username, last_update_at, terminate_cause, bytes_in, bytes_out, disconnect_sent_at |
 | `otp_challenges` | id, guest_id, phone_e164, code_hash, attempts, expires_at, verified_at |
-| `approval_requests` | id, guest_id, site_id, mac, status, decided_by, decided_via, duration_s, expires_at |
+| `approval_requests` | id, guest_id, site_id, mac, ip, status, decided_by, decided_via, decided_at, duration_s, grant_id, expires_at, meta (json: channel message ids); local, but with replication columns (origin needed to route decisions, §10.5) |
 | `terms_versions` R | id, locale, number (per locale; `version` is the replication column), body (plain text), published_at |
 | `terms_acceptances` R | id, guest_id, terms_version_id, grant_id, accepted_at, site_id, mac |
 | `channels` R | id, kind (notification/sms), driver, name, config (enc json), enabled |
@@ -451,6 +461,8 @@ Status: M1 done; M2 implemented (v0.2.0), open: Disconnect-Request and login han
 real RouterOS router. Deferred from M2: voucher QR, audit log table (M6; M2 logs grant actions to
 the application log). M3 implemented (v0.3.0), open: captive browser tests on real devices, router
 certificate script on RouterOS; deferred to M6: certificate API pull, guest list with accepted terms.
+M4 implemented (v0.4.0), open: tests with a real Telegram group, Gotify server and captive browsers;
+deferred: Telegram webhook mode, channel test button (§9), forwarding decisions between instances (M7).
 
 | # | Content | Acceptance criteria |
 |---|---|---|
