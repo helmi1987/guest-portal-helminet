@@ -1,0 +1,33 @@
+# rlm_rest: forwards authorize and accounting to the Laravel internal API.
+rest {
+    connect_uri = "http://127.0.0.1:$ENV{INTERNAL_PORT}"
+
+    authorize {
+        uri = "${..connect_uri}/internal/radius/authorize"
+        method = 'post'
+        body = 'json'
+        auth = 'basic'
+        username = 'radius'
+        password = $ENV{INTERNAL_API_TOKEN}
+    }
+
+    accounting {
+        uri = "${..connect_uri}/internal/radius/accounting"
+        method = 'post'
+        body = 'json'
+        auth = 'basic'
+        username = 'radius'
+        password = $ENV{INTERNAL_API_TOKEN}
+    }
+
+    pool {
+        start = 0
+        min = 0
+        max = 4
+        spare = 1
+        uses = 0
+        retry_delay = 30
+        lifetime = 0
+        idle_timeout = 60
+    }
+}

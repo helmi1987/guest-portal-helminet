@@ -1,0 +1,87 @@
+#!/bin/sh
+# First-start and every-start initialisation. Runs as s6 oneshot before all services.
+set -eu
+
+APP_DIR=/var/www/html
+DATA_DIR="${PORTAL_DATA_DIR:-/data}"
+RUN_DIR=/run/portal
+ENV_FILE="$DATA_DIR/.env"
+
+log() { echo "[portal-init] $*"; }
+
+mkdir -p "$DATA_DIR/db" "$DATA_DIR/certs" "$DATA_DIR/backups" "$DATA_DIR/radius" \
+    "$RUN_DIR" /run/nginx /run/php-fpm
+
+# --- Secrets env file (generated once, persisted on the volume) -------------
+if [ ! -f "$ENV_FILE" ]; then
+    log "generating $ENV_FILE"
+    umask 077
+    {
+        echo "# Generated on first start. Keep this file secret."
+        echo "APP_KEY=base64:$(head -c 32 /dev/urandom | base64)"
+        echo "INTERNAL_API_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')"
+    } > "$ENV_FILE"
+    umask 022
+fi
+grep -q '^INTERNAL_API_TOKEN=' "$ENV_FILE" || \
+    echo "INTERNAL_API_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')" >> "$ENV_FILE"
+ln -sf "$ENV_FILE" "$APP_DIR/.env"
+
+# Values needed by non-PHP services (FreeRADIUS) are exported to a root-only file.
+INTERNAL_API_TOKEN="$(sed -n 's/^INTERNAL_API_TOKEN=//p' "$ENV_FILE" | head -n1)"
+umask 077
+printf '%s' "$INTERNAL_API_TOKEN" > "$RUN_DIR/internal_api_token"
+umask 022
+
+# --- Database ----------------------------------------------------------------
+if [ "${DB_CONNECTION:-sqlite}" = "sqlite" ]; then
+    DB_FILE="${DB_DATABASE:-$DATA_DIR/db/database.sqlite}"
+    [ -f "$DB_FILE" ] || { log "creating SQLite database"; touch "$DB_FILE"; }
+fi
+
+# --- TLS certificate -----------------------------------------------------------
+CERT_DIR="${TLS_CERT_DIR:-/certs}"
+if [ -s "$CERT_DIR/fullchain.pem" ] && [ -s "$CERT_DIR/privkey.pem" ]; then
+    log "using mounted certificate from $CERT_DIR"
+    ln -sf "$CERT_DIR/fullchain.pem" "$RUN_DIR/fullchain.pem"
+    ln -sf "$CERT_DIR/privkey.pem" "$RUN_DIR/privkey.pem"
+else
+    if [ ! -s "$DATA_DIR/certs/selfsigned.crt" ]; then
+        log "no certificate mounted, generating self-signed fallback"
+        openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
+            -subj "/CN=${PORTAL_HOSTNAME:-portal.local}" \
+            -addext "subjectAltName=DNS:${PORTAL_HOSTNAME:-portal.local}" \
+            -keyout "$DATA_DIR/certs/selfsigned.key" -out "$DATA_DIR/certs/selfsigned.crt" 2>/dev/null
+        chmod 600 "$DATA_DIR/certs/selfsigned.key"
+    fi
+    ln -sf "$DATA_DIR/certs/selfsigned.crt" "$RUN_DIR/fullchain.pem"
+    ln -sf "$DATA_DIR/certs/selfsigned.key" "$RUN_DIR/privkey.pem"
+fi
+
+# --- nginx listener ports ------------------------------------------------------
+sed -e "s/__GUEST_PORT__/${GUEST_PORT:-443}/g" \
+    -e "s/__ADMIN_PORT__/${ADMIN_PORT:-8443}/g" \
+    -e "s/__INTERNAL_PORT__/${INTERNAL_PORT:-8080}/g" \
+    /etc/nginx/portal.conf.template > "$RUN_DIR/nginx-portal.conf"
+# Some runtimes (e.g. containers without IPv6) cannot bind [::].
+[ -f /proc/net/if_inet6 ] || sed -i '/listen \[::\]/d' "$RUN_DIR/nginx-portal.conf"
+
+# --- FreeRADIUS clients file (rendered by Laravel from M2 on) -----------------
+[ -f "$DATA_DIR/radius/clients.conf" ] || \
+    echo "# Managed by the portal. Do not edit." > "$DATA_DIR/radius/clients.conf"
+
+# --- Permissions -------------------------------------------------------------
+chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/backups"
+chown portal:portal "$DATA_DIR" "$ENV_FILE"
+chmod 600 "$ENV_FILE"
+
+# --- Laravel -------------------------------------------------------------------
+cd "$APP_DIR"
+as_portal() { s6-setuidgid portal "$@"; }
+# Drop caches from a previous start (cache:clear would need the DB before migrating).
+as_portal php artisan config:clear >/dev/null
+as_portal php artisan route:clear >/dev/null
+as_portal php artisan migrate --force --no-interaction
+as_portal php artisan portal:init
+as_portal php artisan optimize >/dev/null
+log "done"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# Run artisan as the application user, e.g. `docker exec -it <container> artisan portal:admin`.
+cd /var/www/html && exec s6-setuidgid portal php artisan "$@"

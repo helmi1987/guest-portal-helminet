@@ -1,0 +1,27 @@
+# Example for a regular Docker host. Copy to docker-compose.yml and adjust.
+# Port mapping: guest portal 443, admin UI 8443 (restrict to admin/VPN networks), RADIUS 1812/1813 UDP.
+services:
+  portal:
+    image: ghcr.io/OWNER/REPO:latest   # or :edge, or a pinned X.Y.Z-YYYYMMDD tag
+    container_name: guest-portal
+    restart: unless-stopped
+    ports:
+      - "443:443"
+      - "8443:8443"
+      - "1812:1812/udp"
+      - "1813:1813/udp"
+    volumes:
+      - ./data:/data
+      # Optional: publicly trusted certificate (fullchain.pem + privkey.pem); else self-signed.
+      # - ./certs:/certs:ro
+    environment:
+      APP_URL: https://portal.example.com
+      PORTAL_HOSTNAME: portal.example.com
+      TZ: UTC
+      # TRUSTED_PROXIES: 10.0.0.2   # when the admin UI is behind a reverse proxy
+      # Optional MariaDB/MySQL instead of SQLite:
+      # DB_CONNECTION: mariadb
+      # DB_HOST: db
+      # DB_DATABASE: portal
+      # DB_USERNAME: portal
+      # DB_PASSWORD is a secret: put it into data/.env, not here.

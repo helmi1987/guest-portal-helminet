@@ -1,0 +1,6 @@
+#!/bin/sh
+# -f: foreground, -l stdout: log to container output
+INTERNAL_API_TOKEN="$(cat /run/portal/internal_api_token)"
+export INTERNAL_API_TOKEN
+export INTERNAL_PORT="${INTERNAL_PORT:-8080}"
+exec radiusd -f -l stdout

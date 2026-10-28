@@ -1,0 +1,6 @@
+always reject {
+    rcode = reject
+}
+always ok {
+    rcode = ok
+}

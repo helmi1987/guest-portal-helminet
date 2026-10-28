@@ -1,0 +1,41 @@
+# Single virtual server: auth and accounting on the standard ports.
+server default {
+    listen {
+        type = auth
+        ipaddr = *
+        port = 1812
+    }
+    listen {
+        type = acct
+        ipaddr = *
+        port = 1813
+    }
+
+    authorize {
+        rest
+        if (ok || updated) {
+            # Accept decided by Laravel (from M2 on).
+            update control {
+                &Auth-Type := Accept
+            }
+        }
+        else {
+            reject
+        }
+    }
+
+    authenticate {
+    }
+
+    preacct {
+    }
+
+    accounting {
+        rest
+    }
+
+    post-auth {
+        Post-Auth-Type REJECT {
+        }
+    }
+}
