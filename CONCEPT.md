@@ -61,7 +61,13 @@ One Alpine Linux based image (decided):
 | Database | SQLite (WAL) on volume `/data` | Zero ops. Optional MariaDB/MySQL via `DB_CONNECTION` env for larger installs. |
 
 - Internal API: nginx listener on `127.0.0.1` only (e.g. port 8080) for FreeRADIUS → Laravel,
-  authenticated by a random shared token generated at first start.
+  authenticated by a random shared token generated at first start (sent by `rlm_rest` as HTTP
+  basic auth password).
+- Port separation (implemented M1): each nginx listener passes a zone (`guest`, `admin`,
+  `internal`) to Laravel as FastCGI parameter (not a client header); every route is bound to one
+  zone and answers 404 elsewhere. Admin routes live under `/admin`, internal ones under
+  `/internal`. Separate session cookies per zone. Ports via env `GUEST_PORT`, `ADMIN_PORT`,
+  `INTERNAL_PORT`.
 - FreeRADIUS clients (routers + secrets): Laravel renders a clients file into `/data` and
   restarts FreeRADIUS via s6 on change. Recommended over dynamic clients: few, static routers;
   restart takes about a second; router sessions are unaffected **(proposal)**.
@@ -74,7 +80,8 @@ One Alpine Linux based image (decided):
 | RouterOS container, amd64 / arm64 | Supported. |
 | armv7 | Not built now; revisit at public release. |
 
-Estimated memory (assumption, to measure in M1): ~150–250 MB. RouterOS devices mostly need external storage.
+Measured memory (M1 skeleton, amd64, idle after a few requests): ~120–150 MB. Re-measure with features.
+Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with PHP 8.3). RouterOS devices mostly need external storage.
 
 ## 3. RouterOS container specifics
 
@@ -233,6 +240,8 @@ All login methods produce a **grant**; a code is a grant created in advance.
 - 2FA (TOTP) strongly recommended, enforceable by setting.
 - First-start web setup: first admin (one-time setup token in container log), URLs, TLS source,
   "create federation" or "join federation".
+  Until it exists (and later as fallback), `artisan portal:admin` creates an admin or manager
+  from the container shell.
 
 Roles:
 

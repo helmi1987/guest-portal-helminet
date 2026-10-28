@@ -10,9 +10,40 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development / concept phase. No usable code yet.
+**Status:** early development (milestone M1: skeleton, image, CI). Guest login does not work yet.
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
+
+## Quick start
+
+```sh
+docker run -d --name guest-portal --restart unless-stopped \
+  -p 443:443 -p 8443:8443 -p 1812:1812/udp -p 1813:1813/udp \
+  -v "$PWD/data:/data" \
+  -e APP_URL=https://portal.example.com \
+  ghcr.io/OWNER/REPO:edge
+docker exec -it guest-portal artisan portal:admin   # create the first admin
+```
+
+- Guest portal: `https://<host>/`, admin UI: `https://<host>:8443/admin`.
+- `/data` holds the database, generated secrets (`.env`), certificates and backups.
+  Mount `fullchain.pem` + `privkey.pem` at `/certs` for a trusted certificate; otherwise a
+  self-signed one is generated.
+- Compose: [docker-compose.example.yml](docker-compose.example.yml).
+  RouterOS container: [docs/routeros-container.md](docs/routeros-container.md).
+- Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.
+
+## Development
+
+PHP 8.3+ (image: PHP 8.4 from Alpine), Node 22, Composer.
+
+```sh
+composer install && npm ci && npm run build
+cp .env.example .env && php artisan key:generate && php artisan migrate
+php artisan portal:admin
+php artisan serve          # PORTAL_DEFAULT_ZONE=all in .env serves guest and admin routes
+php artisan test
+```
 
 ## Notes for AI assistants
 
