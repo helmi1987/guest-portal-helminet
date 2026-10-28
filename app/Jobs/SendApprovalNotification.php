@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\ApprovalRequest;
 use App\Models\Channel;
+use App\Support\Redact;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
@@ -45,7 +46,7 @@ class SendApprovalNotification implements ShouldQueue
                 }
             } catch (Throwable $e) {
                 Log::warning('Approval notification failed', ['request' => $request->id, 'channel' => $channel->id,
-                    'driver' => $channel->driver, 'event' => $this->event, 'error' => $e->getMessage()]);
+                    'driver' => $channel->driver, 'event' => $this->event, 'error' => Redact::secrets($e->getMessage())]);
             }
         }
 

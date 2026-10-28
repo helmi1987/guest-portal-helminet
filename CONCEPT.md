@@ -240,8 +240,9 @@ CoovaChilli) are future/community work.
      (audit table: M6).
 4. Guest waiting page reloads every 3 s (meta refresh, no JS/Livewire); on approval a grant
    (type approval, restricted to the request's site) is created, time running from approval.
-   Denied/expired (15 min) requests show an error page. Max. 3 requests per device per 15 min; a
-   pending request of the same device is reused.
+   Denied/expired (15 min) requests show an error page. Max. 3 requests per device per 15 min and max.
+   10 open requests per site (`portal.approval.max_pending_per_site`); a pending request of the same
+   device is reused.
 5. Step 5 of A, triggered automatically from the waiting page.
 
 ### 7.3 Drivers
@@ -393,7 +394,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
 | `radius_accounting` | id, session_summary_id, nas_client_id, acct_session_id, username, last_update_at, terminate_cause, bytes_in, bytes_out, disconnect_sent_at |
 | `otp_challenges` | id, guest_id, phone_e164, code_hash, attempts, expires_at, verified_at |
-| `approval_requests` | id, guest_id, site_id, mac, ip, status, decided_by, decided_via, decided_at, duration_s, grant_id, expires_at, meta (json: channel message ids); local, but with replication columns (origin needed to route decisions, §10.5) |
+| `approval_requests` | id, guest_id, site_id, mac, status, decided_by, decided_via, decided_at, duration_s, grant_id, expires_at, meta (json: channel message ids); local, but with replication columns (origin needed to route decisions, §10.5) |
 | `terms_versions` R | id, locale, number (per locale; `version` is the replication column), body (plain text), published_at |
 | `terms_acceptances` R | id, guest_id, terms_version_id, grant_id, accepted_at, site_id, mac |
 | `channels` R | id, kind (notification/sms), driver, name, config (enc json), enabled |

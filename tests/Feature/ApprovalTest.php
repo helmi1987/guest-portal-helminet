@@ -14,6 +14,7 @@ use App\Models\LocalSetting;
 use App\Models\Setting;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\Redact;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -73,6 +74,9 @@ class ApprovalTest extends TestCase
 
         $this->onZone('guest')->get('/portal/approval')->assertOk()->assertViewHas('fields');
 
+        $this->assertSame('cURL error for https://api.telegram.org/bot***/getUpdates',
+            Redact::secrets('cURL error for https://api.telegram.org/bot123:ABC-def/getUpdates'));
+
         // The long-polling command processes updates (single pass).
         Artisan::call('portal:telegram-poll', ['--once' => true]);
         $this->assertSame(6, LocalSetting::get('telegram_offset.'.$channel->id));
@@ -101,9 +105,12 @@ class ApprovalTest extends TestCase
         $this->onZone('admin')->get($path.'x')->assertForbidden();
         $this->assertSame(ApprovalStatus::Pending, ApprovalRequest::sole()->status);
 
+        // The deny link can only deny.
+        $this->onZone('admin')->post($path, ['decision' => '1w'])->assertStatus(302);
+        $this->assertSame(ApprovalStatus::Pending, ApprovalRequest::sole()->status);
         $this->onZone('admin')->post($path, ['decision' => 'deny'])->assertOk()->assertSee(__('portal.approvals.notify.denied', ['by' => 'Link']));
         $this->assertSame(ApprovalStatus::Denied, ApprovalRequest::sole()->status);
-        $this->onZone('admin')->post($path, ['decision' => '1w'])->assertOk()->assertSee(__('portal.approvals.closed'));
+        $this->onZone('admin')->post($path, ['decision' => 'deny'])->assertOk()->assertSee(__('portal.approvals.closed'));
         $this->assertSame(ApprovalStatus::Denied, ApprovalRequest::sole()->status);
 
         $this->onZone('guest')->get('/portal/approval')->assertForbidden()
@@ -125,6 +132,11 @@ class ApprovalTest extends TestCase
             ->assertSessionHasNoErrors();
         $this->assertSame(7200, $request->fresh()->grant->duration_s);
         $this->assertSame($manager->id, $request->fresh()->grant->created_by);
+
+        // Global cap of open requests per site.
+        config(['portal.approval.max_pending_per_site' => 0]);
+        $this->requestApproval()->assertStatus(429)->assertSee(__('portal.guest.error_pages.approval_busy.title'));
+        config(['portal.approval.max_pending_per_site' => 10]);
 
         // A new request of the same device after the decision expires after 15 minutes.
         $this->requestApproval();

@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Approval\ApprovalSettings;
 use App\Approval\TelegramPoller;
 use App\Models\Channel;
+use App\Support\Redact;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Log;
 use Throwable;
@@ -36,7 +37,7 @@ class PollTelegram extends Command
                 try {
                     $poller->pollOnce($channel, $this->option('once') ? 0 : 25);
                 } catch (Throwable $e) {
-                    Log::warning('Telegram polling failed', ['channel' => $channel->id, 'error' => $e->getMessage()]);
+                    Log::warning('Telegram polling failed', ['channel' => $channel->id, 'error' => Redact::secrets($e->getMessage())]);
                     if (! $this->option('once')) {
                         sleep(10);
                     }

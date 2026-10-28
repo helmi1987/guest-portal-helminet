@@ -52,6 +52,7 @@ return [
             'router_failed' => ['title' => 'Accesso non completato', 'text' => 'Il router non ha confermato l\'accesso. Riprova.'],
             'approval_denied' => ['title' => 'Richiesta rifiutata', 'text' => 'La tua richiesta di accesso è stata rifiutata.'],
             'approval_expired' => ['title' => 'Richiesta scaduta', 'text' => 'La tua richiesta non ha ricevuto risposta in tempo. Riprova o chiedi un codice di accesso all\'host.'],
+            'approval_busy' => ['title' => 'Troppe richieste aperte', 'text' => 'Al momento ci sono troppe richieste aperte. Riprova più tardi.'],
         ],
     ],
     'terms' => [
@@ -230,7 +231,7 @@ return [
         'fields' => [
             'bot_token' => 'Token del bot',
             'chat_id' => 'ID chat del gruppo',
-            'allowed_user_ids' => 'ID utenti Telegram autorizzati',
+            'allowed_user_ids' => 'ID utenti Telegram autorizzati (vuoto = ogni membro del gruppo può approvare)',
             'url' => 'URL',
             'app_token' => 'Token app',
             'priority' => 'Priorità',
@@ -238,7 +239,7 @@ return [
         ],
         'field_help' => [
             'chat_id' => 'ID del gruppo in cui scrive il bot (di solito negativo). Contano solo i pulsanti premuti in questo gruppo.',
-            'allowed_user_ids' => 'Separati da virgola; vuoto = ogni membro del gruppo può decidere.',
+            'allowed_user_ids' => 'ID utenti Telegram separati da virgola. Vuoto: ogni membro del gruppo può approvare o rifiutare.',
             'url' => 'Gotify: URL di base del server. Webhook: endpoint che riceve il POST JSON.',
             'priority' => 'Priorità Gotify, predefinita 8.',
             'secret' => 'Chiave HMAC-SHA256 per l\'header X-Signature.',

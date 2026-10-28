@@ -22,13 +22,12 @@ class ApprovalService
 
     public function __construct(private GrantManager $grants) {}
 
-    public function create(Guest $guest, Site $site, string $mac, ?string $ip): ApprovalRequest
+    public function create(Guest $guest, Site $site, string $mac): ApprovalRequest
     {
         $request = ApprovalRequest::create([
             'guest_id' => $guest->id,
             'site_id' => $site->id,
             'mac' => $mac,
-            'ip' => $ip,
             'status' => ApprovalStatus::Pending,
             'expires_at' => now()->addMinutes(self::TTL_MINUTES),
         ]);

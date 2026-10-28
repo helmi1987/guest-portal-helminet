@@ -52,6 +52,7 @@ return [
             'router_failed' => ['title' => 'Connexion non terminée', 'text' => 'Le routeur n\'a pas confirmé la connexion. Veuillez réessayer.'],
             'approval_denied' => ['title' => 'Demande refusée', 'text' => 'Votre demande d\'accès a été refusée.'],
             'approval_expired' => ['title' => 'Demande expirée', 'text' => 'Votre demande n\'a pas reçu de réponse à temps. Veuillez réessayer ou demander un code d\'accès à votre hôte.'],
+            'approval_busy' => ['title' => 'Trop de demandes ouvertes', 'text' => 'Il y a actuellement trop de demandes ouvertes. Veuillez réessayer plus tard.'],
         ],
     ],
     'terms' => [
@@ -230,7 +231,7 @@ return [
         'fields' => [
             'bot_token' => 'Jeton du bot',
             'chat_id' => 'ID du chat de groupe',
-            'allowed_user_ids' => 'ID utilisateurs Telegram autorisés',
+            'allowed_user_ids' => 'ID utilisateurs Telegram autorisés (vide = tout membre du groupe peut approuver)',
             'url' => 'URL',
             'app_token' => 'Jeton d\'application',
             'priority' => 'Priorité',
@@ -238,7 +239,7 @@ return [
         ],
         'field_help' => [
             'chat_id' => 'ID du groupe où le bot écrit (généralement négatif). Seuls les boutons de ce groupe comptent.',
-            'allowed_user_ids' => 'Séparés par des virgules ; vide = tout membre du groupe peut décider.',
+            'allowed_user_ids' => 'ID utilisateurs Telegram séparés par des virgules. Vide : tout membre du groupe peut approuver ou refuser.',
             'url' => 'Gotify : URL de base du serveur. Webhook : point de terminaison recevant le POST JSON.',
             'priority' => 'Priorité Gotify, 8 par défaut.',
             'secret' => 'Clé HMAC-SHA256 pour l\'en-tête X-Signature.',

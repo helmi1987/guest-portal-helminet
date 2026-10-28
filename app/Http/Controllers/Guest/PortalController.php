@@ -153,7 +153,13 @@ class PortalController extends Controller
             if ($recent->count() >= 3 || $throttle->isLocked($mac, $request->ip())) {
                 return $this->error('locked', 429);
             }
-            $pending = DB::transaction(function () use ($data, $approvals, $site, $mac, $terms, $request) {
+            // Global cap per site against notification flooding (e.g. random MACs).
+            $open = ApprovalRequest::query()->where('site_id', $site->id)->where('status', ApprovalStatus::Pending)
+                ->where('expires_at', '>', now())->count();
+            if ($open >= config('portal.approval.max_pending_per_site')) {
+                return $this->error('approval_busy', 429);
+            }
+            $pending = DB::transaction(function () use ($data, $approvals, $site, $mac, $terms) {
                 $guest = Guest::create([
                     'first_name' => trim($data['first_name']),
                     'last_name' => trim($data['last_name']),
@@ -167,7 +173,7 @@ class PortalController extends Controller
                     'accepted_at' => now(),
                 ]);
 
-                return $approvals->create($guest, $site, $mac, $request->ip());
+                return $approvals->create($guest, $site, $mac);
             });
         }
 
@@ -181,7 +187,8 @@ class PortalController extends Controller
     {
         $approval = ApprovalRequest::query()->with('grant')->find($request->session()->get('approval_request'));
         [$site, $context] = $this->current($request);
-        if ($approval === null || $site === null || $site->id !== $approval->site_id || ! $context->isComplete()) {
+        if ($approval === null || $site === null || $site->id !== $approval->site_id || ! $context->isComplete()
+            || $context->mac !== $approval->mac) {
             return redirect()->route('guest.portal');
         }
 

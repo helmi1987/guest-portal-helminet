@@ -53,6 +53,11 @@ return [
         'fetch_interval' => env('PORTAL_ROUTER_CERT_INTERVAL', '1d'),
     ],
 
+    // Push approval: max. open requests per site (beyond that guests are asked to try later).
+    'approval' => [
+        'max_pending_per_site' => (int) env('PORTAL_APPROVAL_MAX_PENDING', 10),
+    ],
+
     // Code duration presets in seconds.
     'duration_presets' => ['8h' => 28800, '1d' => 86400, '1w' => 604800],
 

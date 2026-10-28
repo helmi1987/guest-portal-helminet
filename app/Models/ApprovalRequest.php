@@ -11,7 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 /**
  * A guest's request for access, decided by an approver (CONCEPT.md §7.2 C).
  */
-#[Fillable(['guest_id', 'site_id', 'mac', 'ip', 'status', 'decided_by', 'decided_via', 'decided_at',
+#[Fillable(['guest_id', 'site_id', 'mac', 'status', 'decided_by', 'decided_via', 'decided_at',
     'duration_s', 'grant_id', 'expires_at', 'meta'])]
 class ApprovalRequest extends Model
 {

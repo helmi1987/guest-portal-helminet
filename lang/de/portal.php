@@ -52,6 +52,7 @@ return [
             'router_failed' => ['title' => 'Anmeldung nicht abgeschlossen', 'text' => 'Der Router hat die Anmeldung nicht bestätigt. Bitte versuche es erneut.'],
             'approval_denied' => ['title' => 'Anfrage abgelehnt', 'text' => 'Deine Zugangsanfrage wurde abgelehnt.'],
             'approval_expired' => ['title' => 'Anfrage abgelaufen', 'text' => 'Deine Anfrage wurde nicht rechtzeitig beantwortet. Bitte versuche es erneut oder frage den Gastgeber nach einem Zugangscode.'],
+            'approval_busy' => ['title' => 'Zu viele offene Anfragen', 'text' => 'Im Moment sind zu viele Anfragen offen. Bitte versuche es später erneut.'],
         ],
     ],
     'terms' => [
@@ -230,7 +231,7 @@ return [
         'fields' => [
             'bot_token' => 'Bot-Token',
             'chat_id' => 'Gruppen-Chat-ID',
-            'allowed_user_ids' => 'Erlaubte Telegram-User-IDs',
+            'allowed_user_ids' => 'Erlaubte Telegram-User-IDs (leer = jedes Gruppenmitglied darf freigeben)',
             'url' => 'URL',
             'app_token' => 'App-Token',
             'priority' => 'Priorität',
@@ -238,7 +239,7 @@ return [
         ],
         'field_help' => [
             'chat_id' => 'ID der Gruppe, in die der Bot schreibt (meist negativ). Nur Tastendrücke in dieser Gruppe zählen.',
-            'allowed_user_ids' => 'Kommagetrennt; leer = jedes Gruppenmitglied darf entscheiden.',
+            'allowed_user_ids' => 'Kommagetrennte Telegram-User-IDs. Leer: jedes Mitglied der Gruppe darf freigeben oder ablehnen.',
             'url' => 'Gotify: Basis-URL des Servers. Webhook: Endpunkt für den JSON-POST.',
             'priority' => 'Gotify-Priorität, Standard 8.',
             'secret' => 'HMAC-SHA256-Schlüssel für den Header X-Signature.',

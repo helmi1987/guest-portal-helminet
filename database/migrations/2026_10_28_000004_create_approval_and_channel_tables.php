@@ -29,7 +29,6 @@ return new class extends Migration
             $table->foreignUlid('guest_id')->constrained()->cascadeOnDelete();
             $table->foreignUlid('site_id')->constrained()->cascadeOnDelete();
             $table->string('mac', 17)->index();
-            $table->string('ip', 45)->nullable();
             $table->string('status', 10)->default('pending')->index();
             $table->string('decided_by')->nullable();
             $table->string('decided_via', 20)->nullable();

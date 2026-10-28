@@ -6,8 +6,11 @@ use App\Approval\ApprovalMessage;
 use App\Approval\ApprovalSettings;
 use App\Models\ApprovalRequest;
 use App\Models\Channel;
+use App\Support\Redact;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use RuntimeException;
+use Throwable;
 
 /**
  * Telegram bot posting to one group with inline buttons (CONCEPT.md §7.2 C). Button presses are
@@ -62,11 +65,17 @@ class TelegramChannel implements NotificationChannel
         return implode(':', ['a', $request->id, $request->origin_instance_id, $choice]);
     }
 
+    /** Errors are rethrown without the bot token (it is part of the URL). */
     public function call(Channel $channel, string $method, array $params, int $timeout = 10): Response
     {
-        return Http::asJson()->timeout($timeout)
-            ->post(self::API.'/bot'.$channel->conf('bot_token').'/'.$method, $params)
-            ->throw();
+        try {
+            return Http::asJson()->timeout($timeout)
+                ->post(self::API.'/bot'.$channel->conf('bot_token').'/'.$method, $params)
+                ->throw();
+        } catch (Throwable $e) {
+            throw new RuntimeException('Telegram '.$method.' failed: '.str_replace((string) $channel->conf('bot_token'), '***',
+                Redact::secrets($e->getMessage())));
+        }
     }
 
     private function text(ApprovalRequest $request): string

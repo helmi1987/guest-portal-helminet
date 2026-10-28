@@ -52,6 +52,7 @@ return [
             'router_failed' => ['title' => 'Login not completed', 'text' => 'The router did not confirm the login. Please try again.'],
             'approval_denied' => ['title' => 'Request denied', 'text' => 'Your request for access was denied.'],
             'approval_expired' => ['title' => 'Request expired', 'text' => 'Your request was not answered in time. Please try again or ask your host for an access code.'],
+            'approval_busy' => ['title' => 'Too many open requests', 'text' => 'There are too many open requests at the moment. Please try again later.'],
         ],
     ],
     'terms' => [
@@ -230,7 +231,7 @@ return [
         'fields' => [
             'bot_token' => 'Bot token',
             'chat_id' => 'Group chat id',
-            'allowed_user_ids' => 'Allowed Telegram user ids',
+            'allowed_user_ids' => 'Allowed Telegram user ids (empty = every group member may approve)',
             'url' => 'URL',
             'app_token' => 'App token',
             'priority' => 'Priority',
@@ -238,7 +239,7 @@ return [
         ],
         'field_help' => [
             'chat_id' => 'Id of the group the bot posts to (usually negative). Only button presses in this group count.',
-            'allowed_user_ids' => 'Comma-separated; empty = every group member may decide.',
+            'allowed_user_ids' => 'Comma-separated Telegram user ids. Empty: every member of the group may approve or deny.',
             'url' => 'Gotify: server base URL. Webhook: endpoint receiving the JSON POST.',
             'priority' => 'Gotify message priority, default 8.',
             'secret' => 'HMAC-SHA256 key for the X-Signature header.',

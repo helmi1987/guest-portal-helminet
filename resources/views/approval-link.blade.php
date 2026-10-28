@@ -29,11 +29,14 @@
             <form method="POST" action="{{ request()->getRequestUri() }}" class="flex flex-col gap-2">
                 <p class="mb-1 text-sm text-slate-600">{{ __('portal.approvals.choose') }}</p>
                 @foreach (array_keys($durations) as $key)
+                    @continue($choice && $choice !== $key)
                     <button name="decision" value="{{ $key }}" class="{{ $choice === $key ? 'btn' : 'btn-light' }} py-3 text-base">
                         {{ __('portal.approvals.choices.'.$key) }}</button>
                 @endforeach
-                <button name="decision" value="deny" class="{{ $choice === 'deny' ? 'btn-danger' : 'btn-light' }} mt-2 py-3 text-base">
-                    {{ __('portal.approvals.choices.deny') }}</button>
+                @if (! $choice || $choice === 'deny')
+                    <button name="decision" value="deny" class="{{ $choice === 'deny' ? 'btn-danger' : 'btn-light' }} mt-2 py-3 text-base">
+                        {{ __('portal.approvals.choices.deny') }}</button>
+                @endif
             </form>
         @else
             <p class="rounded bg-amber-100 px-4 py-2 text-sm text-amber-900">{{ __('portal.approvals.closed') }}</p>
