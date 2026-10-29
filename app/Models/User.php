@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Casts\Federated;
 use App\Enums\Role;
 use App\Models\Concerns\Replicated;
 use App\Support\Redact;
@@ -25,7 +26,7 @@ class User extends Authenticatable
         return [
             'password' => 'hashed',
             'role' => Role::class,
-            'totp_secret' => 'encrypted',
+            'totp_secret' => Federated::class,
             'totp_confirmed_at' => 'datetime',
             'totp_last_step' => 'integer',
             'recovery_codes' => 'array',

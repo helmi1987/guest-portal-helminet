@@ -3,14 +3,15 @@
 namespace App\Auth\Oidc;
 
 use App\Approval\ApprovalSettings;
+use App\Federation\DataKey;
 use App\Models\Setting;
-use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
 /**
  * OIDC login settings for the admin UI (CONCEPT.md §9), replicated like all settings. The client
- * secret is stored encrypted under its own key and never leaves this class except for the token request.
+ * secret is stored under its own key, encrypted with the federation data key (CONCEPT.md §10.2), and
+ * never leaves this class except for the token request.
  */
 final class OidcSettings
 {
@@ -69,7 +70,7 @@ final class OidcSettings
         return self::clientSecret() !== null;
     }
 
-    /** A secret is stored but cannot be decrypted (e.g. other APP_KEY): it must be entered again. */
+    /** A secret is stored but cannot be decrypted (e.g. unknown data key): it must be entered again. */
     public static function clientSecretBroken(): bool
     {
         return self::storedSecret() !== null && self::decrypt(self::storedSecret()) === null;
@@ -100,7 +101,7 @@ final class OidcSettings
     private static function decrypt(string $stored): ?string
     {
         try {
-            return Crypt::decryptString($stored);
+            return app(DataKey::class)->decrypt($stored);
         } catch (Throwable) {
             return null;
         }
@@ -114,8 +115,21 @@ final class OidcSettings
     {
         Setting::put(self::KEY, array_merge(self::DEFAULTS, array_intersect_key($config, self::DEFAULTS)));
         if ($secret !== null) {
-            Setting::put(self::SECRET_SETTING, $secret === '' ? null : Crypt::encryptString($secret));
+            Setting::put(self::SECRET_SETTING, $secret === '' ? null : app(DataKey::class)->encrypt($secret));
         }
+    }
+
+    /** Re-encrypt the stored secret with the current data key (after a rotation); true if rewritten. */
+    public static function reencryptSecret(): bool
+    {
+        $stored = self::storedSecret();
+        $secret = $stored === null ? null : self::decrypt($stored);
+        if ($secret === null || DataKey::keyIdOf($stored) === app(DataKey::class)->currentId()) {
+            return false;
+        }
+        Setting::put(self::SECRET_SETTING, app(DataKey::class)->encrypt($secret));
+
+        return true;
     }
 
     /** Redirect URI to register at the identity provider (admin port, from the admin URL setting). */

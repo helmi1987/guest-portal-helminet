@@ -4,6 +4,7 @@ namespace App\Models;
 
 use App\Approval\Channels\NotificationChannel;
 use App\Approval\Channels\NotificationChannels;
+use App\Casts\Federated;
 use App\Models\Concerns\Replicated;
 use App\Sms\Drivers\SmsDriver;
 use App\Sms\Drivers\SmsDrivers;
@@ -12,7 +13,8 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
 /**
- * Notification channel or SMS provider (replicated, CONCEPT.md §7.3, §11). Config including secrets is encrypted.
+ * Notification channel or SMS provider (replicated, CONCEPT.md §7.3, §11). Config including secrets is
+ * encrypted with the federation data key (cast `federated`).
  */
 #[Fillable(['kind', 'driver', 'name', 'config', 'enabled'])]
 class Channel extends Model
@@ -27,7 +29,7 @@ class Channel extends Model
 
     protected function casts(): array
     {
-        return ['config' => 'encrypted:array', 'enabled' => 'boolean'];
+        return ['config' => Federated::class.':array', 'enabled' => 'boolean'];
     }
 
     public function scopeActiveNotification(Builder $query): void
