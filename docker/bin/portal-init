@@ -9,7 +9,7 @@ ENV_FILE="$DATA_DIR/.env"
 
 log() { echo "[portal-init] $*"; }
 
-mkdir -p "$DATA_DIR/db" "$DATA_DIR/certs" "$DATA_DIR/backups" "$DATA_DIR/radius" \
+mkdir -p "$DATA_DIR/db" "$DATA_DIR/certs" "$DATA_DIR/backups" "$DATA_DIR/radius" "$DATA_DIR/branding" \
     "$RUN_DIR" /run/nginx /run/php-fpm
 
 # --- Secrets env file (generated once, persisted on the volume) -------------
@@ -55,7 +55,7 @@ sed -e "s/__GUEST_PORT__/${GUEST_PORT:-443}/g" \
     echo "# Managed by the portal. Do not edit." > "$DATA_DIR/radius/clients.conf"
 
 # --- Permissions -------------------------------------------------------------
-chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/radius"
+chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/radius" "$DATA_DIR/branding"
 # Backups contain secrets. The folder may be a bind mount (e.g. NAS share) that refuses chown/chmod.
 { chown -R portal:portal "$DATA_DIR/backups" && chmod 700 "$DATA_DIR/backups"; } 2>/dev/null \
     || log "WARNING: cannot set owner/mode of $DATA_DIR/backups (the app user portal must be able to write)"

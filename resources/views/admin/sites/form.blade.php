@@ -33,6 +33,9 @@
     </form>
 
     @if ($site->exists)
+        @include('admin.branding.site', ['overrides' => \App\Branding\BrandingSettings::siteOverrides($site),
+            'global' => \App\Branding\BrandingSettings::global()])
+
         <section class="card mb-6">
             <div class="mb-4 flex items-center justify-between">
                 <h2 class="text-lg font-semibold">{{ __('portal.sites.routers') }}</h2>

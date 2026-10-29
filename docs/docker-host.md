@@ -40,7 +40,7 @@ Create a folder (e.g. `/opt/guest-portal`, Unraid: Compose Manager → Add New S
 ```yaml
 services:
   portal:
-    image: ghcr.io/OWNER/REPO:edge          # :latest after the first release, or a pinned X.Y.Z-YYYYMMDD tag
+    image: ghcr.io/helmi1987/mikrotik-guest-portal:edge          # :latest after the first release, or a pinned X.Y.Z-YYYYMMDD tag
     container_name: guest-portal
     restart: unless-stopped
     # --- Mode A: own LAN IP (remove the "ports:" block) ---
@@ -109,7 +109,8 @@ every 6 h from CertWarden or a URL returning a PEM bundle.
 ## 7. Next steps
 
 Admin UI → Sites → add site (hotspot host name) and router (NAS IP, as seen by the portal) →
-follow the router configuration / setup assistant. Backups: see section 9.
+follow the router configuration / setup assistant. Backups: see section 9. Logo, colours and
+custom CSS of the guest pages: admin UI → Settings → Appearance, see [branding.md](branding.md).
 
 ## 8. Update
 
@@ -117,7 +118,8 @@ follow the router configuration / setup assistant. Backups: see section 9.
 
 ## 9. Backups
 
-The portal writes a daily backup to `/data/backups` (database snapshot, `.env`, certificates;
+The portal writes a daily backup to `/data/backups` (database snapshot, `.env`, certificates,
+uploaded logo/favicon files from `/data/branding`;
 admin UI → Backups: create, download, delete, number kept). Backups contain secrets (`APP_KEY`
 decrypts stored passwords and tokens): keep them private. To keep them off the host, bind-mount a
 private share there, e.g. `- /mnt/user/backups/guest-portal:/data/backups`; the container user

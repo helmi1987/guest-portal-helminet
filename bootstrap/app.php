@@ -25,6 +25,8 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->group(base_path('routes/internal.php'));
             Route::middleware(['zone:guest', SubstituteBindings::class, 'throttle:30,1'])
                 ->group(base_path('routes/router.php'));
+            Route::middleware(['zone:guest,admin', 'throttle:300,1'])
+                ->group(base_path('routes/branding.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {

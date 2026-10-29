@@ -8,13 +8,29 @@
         'Noto Color Emoji';
 }
 
+/*
+| Branding variables (stable API, docs/branding.md). Defaults reproduce the built-in look; the theme
+| stylesheet (/branding/theme/...) loaded after this file overrides them.
+*/
+@layer base {
+    :root {
+        --gp-accent: var(--color-slate-900);
+        --gp-accent-contrast: #fff;
+        --gp-bg: var(--color-slate-100);
+        --gp-text: var(--color-slate-900);
+        --gp-surface: #fff;
+    }
+}
+
 @layer components {
-    .field { @apply rounded border border-slate-300 bg-white px-3 py-2; }
+    .field { @apply rounded border border-slate-300 bg-white px-3 py-2 text-slate-900; }
     .label { @apply flex flex-col gap-1 text-sm; }
-    .btn { @apply inline-block rounded bg-slate-900 px-4 py-2 font-medium text-white; }
-    .btn-light { @apply inline-block rounded border border-slate-300 bg-white px-3 py-1.5 text-sm; }
+    .btn { @apply inline-block rounded bg-(--gp-accent) px-4 py-2 font-medium text-(--gp-accent-contrast); }
+    .btn-light { @apply inline-block rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900; }
     .btn-danger { @apply inline-block rounded bg-red-700 px-3 py-1.5 text-sm font-medium text-white; }
-    .card { @apply rounded-lg bg-white p-6 shadow; }
+    .card { @apply rounded-lg bg-(--gp-surface) p-6 shadow; }
+    .gp-link { @apply text-(--gp-accent); }
+    .gp-logo { @apply text-(--gp-accent); }
     .data-table { @apply w-full text-left text-sm; }
     .data-table th { @apply border-b border-slate-200 px-2 py-2 font-semibold; }
     .data-table td { @apply border-b border-slate-100 px-2 py-2 align-top; }

@@ -3,6 +3,7 @@
 use App\Http\Controllers\Admin\ApprovalController;
 use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\BackupController;
+use App\Http\Controllers\Admin\BrandingController;
 use App\Http\Controllers\Admin\CertificateController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\GuestController;
@@ -110,6 +111,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('settings.sms');
                 Route::post('/settings/security', [SettingsController::class, 'updateSecurity'])->name('settings.security');
                 Route::post('/settings/oidc', [SettingsController::class, 'updateOidc'])->name('settings.oidc');
+                Route::post('/settings/branding', [BrandingController::class, 'updateGlobal'])->name('settings.branding');
                 Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('channels.test')
                     ->middleware('throttle:5,1');
                 Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('channels.create');
@@ -122,6 +124,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
 
                 Route::resource('sites', SiteController::class)->except(['show']);
                 Route::get('/sites/{site}/login.html', [SiteController::class, 'loginPage'])->name('sites.login-page');
+                Route::post('/sites/{site}/branding', [BrandingController::class, 'updateSite'])->name('sites.branding');
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');

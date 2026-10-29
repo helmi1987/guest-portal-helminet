@@ -1,4 +1,5 @@
 {{-- Signed approval link page (admin port, no login, no session): GET shows, POST decides. --}}
+@php($branding = \App\Branding\BrandingSettings::forAdmin())
 <!DOCTYPE html>
 <html lang="{{ app()->getLocale() }}">
 <head>
@@ -8,10 +9,12 @@
     <meta name="referrer" content="no-referrer">
     <title>{{ __('portal.approvals.title') }}</title>
     @vite(['resources/css/app.css'])
+    <x-branding.head :branding="$branding" />
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-900 antialiased">
-<main class="mx-auto max-w-md p-4 sm:py-10">
-    <section class="card">
+<body class="{{ $branding->bodyClasses('admin', 'approval-link') }} min-h-screen bg-(--gp-bg) text-(--gp-text) antialiased">
+<main class="gp-main mx-auto max-w-md p-4 sm:py-10">
+    <header class="gp-header mb-4"><x-branding.logo :branding="$branding" /></header>
+    <section class="gp-card card">
         <h1 class="mb-4 text-xl font-semibold">{{ __('portal.approvals.notify.title') }}</h1>
         <dl class="mb-4 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt class="text-slate-500">{{ __('portal.grants.guest') }}</dt><dd>{{ $approval->guestName() }}</dd>

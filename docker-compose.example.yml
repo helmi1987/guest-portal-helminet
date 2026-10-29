@@ -2,7 +2,7 @@
 # Port mapping: guest portal 443, admin UI 8443 (restrict to admin/VPN networks), RADIUS 1812/1813 UDP.
 services:
   portal:
-    image: ghcr.io/OWNER/REPO:latest   # or :edge, or a pinned X.Y.Z-YYYYMMDD tag
+    image: ghcr.io/helmi1987/mikrotik-guest-portal:latest   # or :edge, or a pinned X.Y.Z-YYYYMMDD tag
     container_name: guest-portal
     restart: unless-stopped
     ports:

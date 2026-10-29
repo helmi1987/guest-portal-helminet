@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Guest;
 
 use App\Approval\ApprovalService;
+use App\Branding\BrandingSettings;
 use App\Enums\ApprovalStatus;
 use App\Enums\GrantStatus;
 use App\Enums\GrantType;
@@ -355,6 +356,10 @@ class PortalController extends Controller
     {
         $grant = Grant::find($grant);
         $token = RadiusToken::query()->where('grant_id', $grant?->id)->find($token);
+        if ($token !== null) {
+            // Signed link without cookie: the site of the login decides the branding.
+            $request->attributes->set(BrandingSettings::SITE_ATTRIBUTE, Site::find($token->site_id));
+        }
         if ($grant === null) {
             return $this->error('expired', 403);
         }

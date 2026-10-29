@@ -10,14 +10,15 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (v0.9.0: admin extras, M6 parts A-E). Code login, SMS one-time password
+**Status:** early development (v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor
 login, audit log, backups, certificate pull from CertWarden or a URL, test buttons, guests & sessions list,
 bulk codes with printable A4 voucher sheet (Wi-Fi join QR) and CSV export, MAC whitelist (trusted devices
 online without the portal via RouterOS MAC authentication), OIDC login for the admin UI (e.g.
-Authentik); federation follows (see CONCEPT.md §14).
+Authentik), branding (logo, favicon, colours, custom CSS, per-site overrides); federation follows
+(see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -28,7 +29,7 @@ docker run -d --name guest-portal --restart unless-stopped \
   -p 443:443 -p 8443:8443 -p 1812:1812/udp -p 1813:1813/udp \
   -v "$PWD/data:/data" \
   -e APP_URL=https://portal.example.com \
-  ghcr.io/OWNER/REPO:edge
+  ghcr.io/helmi1987/mikrotik-guest-portal:edge
 docker exec -it guest-portal artisan portal:admin   # create the first admin
 ```
 
@@ -67,7 +68,10 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   expires; to cut access at once, delete the user in the portal. The password login stays as emergency access: keep one local admin.
   Portal 2FA after OIDC: "skip if the provider reports MFA" (default; `amr` claim or a configured `acr`
   value, optionally only if `auth_time` is recent), "always" or "never".
-- Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`; one `.tar.gz`, mode 0600,
+- Branding: admin UI → Settings → Appearance (logo, favicon, colours, custom CSS; admin only), per
+  site on the site page. Files are stored in `/data/branding`. Stable CSS hooks (`gp-*` classes,
+  `--gp-*` variables), examples and limits: [docs/branding.md](docs/branding.md).
+- Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`, `branding/`; one `.tar.gz`, mode 0600,
   14 kept by default), admin UI → Backups or `artisan portal:backup`. Backups contain secrets.
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).
   Docker host (Compose, e.g. Unraid): [docs/docker-host.md](docs/docker-host.md).
@@ -85,7 +89,7 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   hits are logged as warnings. Code and approval login keep working.
 - Restore: stop the container, delete `<data folder>/db/database.sqlite-wal` and `-shm` if present,
   extract the backup into the data folder (`tar -xzf portal-backup-….tar.gz -C <data folder>`;
-  entries mirror the folder: `db/database.sqlite`, `.env`, `certs/`, plus `backup-manifest.json`),
+  entries mirror the folder: `db/database.sqlite`, `.env`, `certs/`, `branding/`, plus `backup-manifest.json`),
   start the container. The
   `.env` must belong to the database (same `APP_KEY`), otherwise stored secrets cannot be decrypted.
 - `QUEUE_CONNECTION` must stay `database` (image default); `sync` is not supported (SMS would be sent
@@ -110,6 +114,8 @@ php artisan test
   "License" section is the only personal identifier allowed. No other personal names, locations or site
   names, real domains, IP addresses, hostnames, email addresses, usernames or descriptions of any
   real infrastructure. Use generic examples only (`portal.example.com`, `10.0.0.0/24`, "site A").
+  Approved exception: the container image URL `ghcr.io/helmi1987/mikrotik-guest-portal` (GitHub
+  user name in the registry path) in the README, docs and compose example; nothing else.
 - **No secrets** in code, docs, examples, tests, CI or commit messages.
 - **Language:** everything in the repository is English (code, comments, docs, commits, logs).
 - **Concept decisions live in `CONCEPT.md`.** Keep it up to date when a decision changes; do not

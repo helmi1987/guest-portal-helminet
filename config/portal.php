@@ -85,6 +85,16 @@ return [
         'database' => null,
     ],
 
+    // Branding (CONCEPT.md §9, docs/branding.md): uploaded logo/favicon files, stored by content hash
+    // next to the other persistent data (included in backups). Limits for uploads and custom CSS.
+    'branding' => [
+        'dir' => env('PORTAL_BRANDING_DIR', $dataDir.'/branding'),
+        'logo_max_bytes' => 524288,
+        'favicon_max_bytes' => 102400,
+        'max_pixels' => 4096,
+        'css_max_bytes' => 65536,
+    ],
+
     // Push approval: max. open requests per site (beyond that guests are asked to try later).
     'approval' => [
         'max_pending_per_site' => (int) env('PORTAL_APPROVAL_MAX_PENDING', 10),

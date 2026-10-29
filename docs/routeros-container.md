@@ -29,7 +29,7 @@ Allow guests to reach only the guest port (TCP 443) of the instance; allow the a
 /container/config set registry-url=https://ghcr.io tmpdir=usb1/tmp
 /container/mounts add list=portal-data src=usb1/portal-data dst=/data
 /container/envs add list=portal key=APP_URL value=https://portal.example.com
-/container add remote-image=ghcr.io/OWNER/REPO:latest interface=veth-portal \
+/container add remote-image=ghcr.io/helmi1987/mikrotik-guest-portal:latest interface=veth-portal \
     root-dir=usb1/portal-root mountlists=portal-data envlist=portal start-on-boot=yes logging=yes
 ```
 

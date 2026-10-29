@@ -10,10 +10,10 @@ use Throwable;
 
 /**
  * Backups per instance (CONCEPT.md §9): one tar.gz with a consistent SQLite snapshot (VACUUM INTO on
- * a separate connection, safe with WAL), the env file (APP_KEY decrypts the stored secrets) and the
- * certificate folder. Archives contain secrets: mode 0600, folder outside the web root.
- * Entry paths mirror the data folder (db/database.sqlite, .env, certs/...), so a restore is an
- * extract into the stopped container's data folder.
+ * a separate connection, safe with WAL), the env file (APP_KEY decrypts the stored secrets), the
+ * certificate folder and the branding files (logo/favicon). Archives contain secrets: mode 0600,
+ * folder outside the web root. Entry paths mirror the data folder (db/database.sqlite, .env,
+ * certs/..., branding/...), so a restore is an extract into the stopped container's data folder.
  */
 class BackupManager
 {
@@ -75,26 +75,8 @@ class BackupManager
                 $skipped[] = '.env';
             }
 
-            $certs = rtrim((string) config('portal.backup.certs_dir'), '/');
-            foreach (is_dir($certs) ? (scandir($certs) ?: []) : [] as $file) {
-                $path = "$certs/$file";
-                // Dot files: ".", ".." and temp files of the certificate pull.
-                if (str_starts_with($file, '.') || (! is_file($path) && ! is_link($path))) {
-                    continue;
-                }
-                // Only plain, safe names (ustar name field incl. "certs/"); no symlinks.
-                if (! preg_match(self::ENTRY_PATTERN, $file) || str_contains($file, '..') || is_link($path)) {
-                    $skipped[] = 'certs/'.mb_scrub($file);
-
-                    continue;
-                }
-                if (is_readable($path)) {
-                    $tar->addFile("certs/$file", $path);
-                    $files[] = "certs/$file";
-                } else {
-                    $skipped[] = "certs/$file";
-                }
-            }
+            $this->addFolder($tar, 'certs', (string) config('portal.backup.certs_dir'), $files, $skipped);
+            $this->addFolder($tar, 'branding', (string) config('portal.branding.dir'), $files, $skipped);
 
             $tar->addString(self::MANIFEST, json_encode([
                 'created_at' => now()->toIso8601String(),
@@ -202,6 +184,36 @@ class BackupManager
         }
 
         return $deleted;
+    }
+
+    /**
+     * Adds the plain files of a data subfolder (no recursion) as "<prefix>/<name>".
+     *
+     * @param  list<string>  $files
+     * @param  list<string>  $skipped
+     */
+    private function addFolder(TarGzWriter $tar, string $prefix, string $dir, array &$files, array &$skipped): void
+    {
+        $dir = rtrim($dir, '/');
+        foreach (is_dir($dir) ? (scandir($dir) ?: []) : [] as $file) {
+            $path = "$dir/$file";
+            // Dot files: ".", ".." and temp files (certificate pull, branding upload).
+            if (str_starts_with($file, '.') || (! is_file($path) && ! is_link($path))) {
+                continue;
+            }
+            // Only plain, safe names (ustar name field incl. the prefix); no symlinks.
+            if (! preg_match(self::ENTRY_PATTERN, $file) || strlen("$prefix/$file") > 100 || str_contains($file, '..') || is_link($path)) {
+                $skipped[] = "$prefix/".mb_scrub($file);
+
+                continue;
+            }
+            if (is_readable($path)) {
+                $tar->addFile("$prefix/$file", $path);
+                $files[] = "$prefix/$file";
+            } else {
+                $skipped[] = "$prefix/$file";
+            }
+        }
     }
 
     private function snapshotDatabase(string $target): void

@@ -7,13 +7,14 @@ use App\Models\AuditLog;
 use App\Models\LocalSetting;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\File;
 use PDO;
 use Tests\TestCase;
 
 /**
- * M6: backups (SQLite snapshot + env file + certificates as tar.gz), admin page, retention.
+ * M6: backups (SQLite snapshot + env file + certificates + branding files as tar.gz), admin page, retention.
  */
 class BackupTest extends TestCase
 {
@@ -85,6 +86,22 @@ class BackupTest extends TestCase
         $this->assertSame('portal-backup-20200103-000000.tar.gz', $names[1]);
         $this->assertFileExists($this->tmp.'/backups/unrelated.txt');
         $this->assertSame(2, count(AuditLog::where('action', 'backup.created')->sole()->data['pruned']));
+    }
+
+    public function test_backup_includes_uploaded_branding_files(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $png = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=');
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/branding',
+            ['logo' => UploadedFile::fake()->createWithContent('logo.png', $png)])->assertSessionHasNoErrors();
+        $name = hash('sha256', $png).'.png';
+        file_put_contents(config('portal.branding.dir').'/.tmp-upload', 'partial');
+
+        $backup = app(BackupManager::class)->create();
+        $entries = $this->untar($this->tmp.'/backups/'.$backup['name']);
+        $this->assertSame(['db/database.sqlite', '.env', 'certs/portal.crt', 'branding/'.$name, 'backup-manifest.json'], array_keys($entries));
+        $this->assertSame($png, $entries['branding/'.$name]);
+        File::deleteDirectory((string) config('portal.branding.dir'));
     }
 
     public function test_unsafe_names_are_skipped_failures_audited_and_sorting_uses_counter(): void

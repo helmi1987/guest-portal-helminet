@@ -1,3 +1,6 @@
+{{-- Admin UI: global branding only (no site overrides). ?plain=1 skips the theme stylesheet, e.g. to
+     repair broken custom CSS. gp-* classes are stable styling hooks (docs/branding.md). --}}
+@php($branding = \App\Branding\BrandingSettings::forAdmin())
 <!DOCTYPE html>
 <html lang="{{ app()->getLocale() }}">
 <head>
@@ -6,14 +9,15 @@
     <meta name="robots" content="noindex">
     <title>{{ isset($title) ? $title.' · ' : '' }}{{ __('portal.admin.title') }}</title>
     @vite(['resources/css/app.css'])
+    <x-branding.head :branding="$branding" :theme="! request()->boolean('plain')" />
     @livewireStyles
 </head>
-<body class="min-h-screen bg-slate-100 text-slate-900 antialiased">
+<body class="{{ $branding->bodyClasses('admin') }} min-h-screen bg-(--gp-bg) text-(--gp-text) antialiased">
     @auth
-        <header class="bg-slate-900 text-white">
+        <header class="gp-header bg-(--gp-accent) text-(--gp-accent-contrast)">
             <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 p-4">
-                <nav class="flex flex-wrap gap-4">
-                    <a href="{{ route('admin.dashboard') }}" class="font-semibold">{{ __('portal.admin.title') }}</a>
+                <nav class="gp-nav flex flex-wrap items-center gap-4">
+                    <a href="{{ route('admin.dashboard') }}" class="gp-title flex items-center gap-2 font-semibold"><x-branding.logo :branding="$branding" size="h-6" class="text-(--gp-accent-contrast)" />{{ __('portal.admin.title') }}</a>
                     <a href="{{ route('admin.grants.index') }}">{{ __('portal.grants.title') }}</a>
                     <a href="{{ route('admin.approvals.index') }}">{{ __('portal.approvals.title') }}</a>
                     <a href="{{ route('admin.guests.index') }}">{{ __('portal.guests.title') }}</a>
@@ -28,7 +32,7 @@
                         <a href="{{ route('admin.backups.index') }}">{{ __('portal.backups.title') }}</a>
                     @endif
                 </nav>
-                <div class="flex items-center gap-4 text-sm">
+                <div class="gp-user-menu flex items-center gap-4 text-sm">
                     <a href="{{ route('admin.profile') }}" class="underline">{{ auth()->user()->name }} ({{ auth()->user()->role->label() }})</a>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
@@ -38,11 +42,11 @@
             </div>
         </header>
     @endauth
-    <main class="mx-auto max-w-5xl p-6">
+    <main class="gp-main mx-auto max-w-5xl p-6">
         <x-admin.flash />
         {{ $slot }}
     </main>
-    <footer class="mx-auto max-w-5xl px-6 pb-6 text-xs text-slate-500">v{{ config('portal.version') }}</footer>
+    <footer class="gp-footer mx-auto max-w-5xl px-6 pb-6 text-xs opacity-60">v{{ config('portal.version') }}</footer>
     @livewireScripts
 </body>
 </html>

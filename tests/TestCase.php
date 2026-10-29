@@ -11,7 +11,9 @@ abstract class TestCase extends BaseTestCase
         parent::setUp();
 
         $this->withoutVite();
-        config(['portal.radius.clients_file' => sys_get_temp_dir().'/portal-test-'.getmypid().'/clients.conf']);
+        config(['portal.radius.clients_file' => sys_get_temp_dir().'/portal-test-'.getmypid().'/clients.conf',
+            // Fresh (not yet existing) branding folder per test.
+            'portal.branding.dir' => sys_get_temp_dir().'/portal-test-'.getmypid().'/branding-'.bin2hex(random_bytes(4))]);
     }
 
     /** Simulate the nginx listener (FastCGI param PORTAL_ZONE). */

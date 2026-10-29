@@ -6,6 +6,7 @@ use App\Approval\ApprovalSettings;
 use App\Auth\Oidc\OidcClient;
 use App\Auth\Oidc\OidcSettings;
 use App\Auth\TwoFactor;
+use App\Branding\BrandingSettings;
 use App\Http\Controllers\Controller;
 use App\Models\Channel;
 use App\Models\Setting;
@@ -26,6 +27,7 @@ use Throwable;
 
 /**
  * Settings (admin only): notification and SMS settings, channels and SMS providers (CONCEPT.md §9).
+ * Appearance (branding) is saved by Admin\BrandingController.
  */
 class SettingsController extends Controller
 {
@@ -45,6 +47,7 @@ class SettingsController extends Controller
             'oidcHasSecret' => OidcSettings::hasClientSecret(),
             'oidcSecretBroken' => OidcSettings::clientSecretBroken(),
             'oidcRedirectUri' => OidcSettings::redirectUri(),
+            'branding' => BrandingSettings::global(),
         ]);
     }
 

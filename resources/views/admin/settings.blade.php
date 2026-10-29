@@ -21,6 +21,8 @@
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 
+    @include('admin.branding.global', ['values' => $branding])
+
     <form method="POST" action="{{ route('admin.settings.security') }}" class="card mb-6 grid gap-4">
         @csrf
         <h2 class="text-lg font-semibold">{{ __('portal.settings.security') }}</h2>
