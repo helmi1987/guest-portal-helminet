@@ -300,6 +300,17 @@ All login methods produce a **grant**; a code is a grant created in advance.
   below zero remaining or revoking triggers Disconnect-Request.
 - 1 grant = 1 active device (MAC). New MAC with same code → old session disconnected, rebind.
   No IP binding.
+- Vouchers (implemented M6): 1-100 codes per batch with the same settings (one audit entry
+  `grant.bulk_created` with count and settings, never codes). Print view: A4 sheet, 2 x 5 cards
+  (code large, label, duration, expiry/redeem-until, SSID). **QR decision:** the QR is a Wi-Fi join
+  QR (`WIFI:S:<ssid>;T:nopass;;`, special characters escaped, an all-hex SSID quoted; guest SSID from the site's setup assistant input), rendered as
+  inline SVG (bacon-qr-code), no external service. Shown only when the code's sites (all sites when
+  unrestricted) have exactly one distinct SSID; otherwise the card shows the code only. No portal URL /
+  `?code=` pre-fill in the QR: a URL opened before joining the guest network cannot reach the portal,
+  after joining the hotspot redirect replaces it (the original URL only survives in `link-orig`, which
+  is unused by design), so the guest types the printed code. CSV export (admin only; code, label,
+  status, duration, expiry mode, validity, sites, created; formula prefixes neutralised; audited
+  `grant.exported` with count).
 - Brute force: rate limit per MAC and IP, global rate limit, lockout after N failures
   (configurable, e.g. 5 per 15 min per MAC), OTP 10 min / 3 tries. Trivial codes excluded.
 
@@ -334,15 +345,14 @@ Features:
 | Area | Content |
 |---|---|
 | Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods. |
-| Codes | Create single/bulk, print vouchers (QR with portal URL + code), edit, revoke. |
-| Sessions | Active sessions federation-wide (site, MAC, IP, start, remaining), revoke. |
-| Guests | Guest list, accepted terms version, grant history. |
+| Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke. |
+| Guests & sessions | Implemented M6 (admin + manager), one page: guests newest first (each login creates a guest row) with name, phone (masked for managers), login method (grant type; without grant: approval request or SMS challenge), site and accepted terms version + time of the latest acceptance, created; its grant (code/status/remaining, extend and revoke via the grant routes) and devices (MAC, online = open session summary of grant + MAC, IP, start/end, traffic from local accounting `bytes_in`/`bytes_out`). An open session without accounting update for `PORTAL_RADIUS_STALE_AFTER` (default 3 x interim interval = 900 s) is shown as "stale" (Stop probably lost; display only, data unchanged). Disconnect: Disconnect-Request job for an open session served by this instance (sessions of other instances: M7); the grant stays valid, audited `grant.disconnected`. Filters: site, method, running grants only, name (LIKE wildcards literal) or exact code; invalid filter values are ignored; 25 per page. Extend/shorten takes whole hours; a revoked grant cannot be extended (422). No new fields. |
 | Approvals | Pending requests (approve/deny in UI as well). |
 | Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login. |
 | Retention | Retention period (default 1 year); nightly purge job. |
 | Backup | Implemented M6, per instance: daily `portal:backup` (02:45) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<UTC timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY) and `certs/`; entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. |
-| Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create/edit/extend/expiry/revoke, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
+| Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create (bulk: one entry with count)/edit/extend/expiry/revoke/disconnect/CSV export, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
 | Federation | Peers, status, lag, join token, Telegram owner. |
 | RouterOS generator | Per site: copy-paste script (hotspot, RADIUS client, `/radius incoming`, walled garden, cert fetch), `login.html` download and upload instructions. |
 | Setup assistant | Per site (implemented v0.6.0): guided steps with copy buttons, commands generated by the NAS driver from saved inputs (sanitized): 1 RouterOS container (optional, inputs local to the instance; Docker host as alternative), 2 guest network (VLAN, bridge, subnet, gateway, DHCP pool, SSID, Wi-Fi mode CAPsMAN v1 / wifi CAPsMAN / local radio; stored in site setting `setup`, also fill the router script), DHCP option 114, firewall isolation, 3 hotspot + DNS names (no captive check hosts in the walled garden), 4 router script, 5 `login.html` via `/tool fetch` (route `/router-login/{nas}/login.html`, router token + NAS IP like the certificate download), 6 status per router (last RADIUS contact, certificate and `login.html` fetched), 7 diagnostics. |
@@ -510,10 +520,12 @@ M5 implemented (v0.5.0), open: Clickatell request format and delivery with a rea
 captive browsers; test button for SMS providers implemented (notification channels: M6).
 v0.6.0: setup assistant (§9), open: generated commands tested on real RouterOS (CAPsMAN v1/v2, local
 radio, DHCP option 114, `/tool fetch` of `login.html`), captive API with real devices.
-M6 in progress: part A implemented (roles applied to all admin routes, user management, TOTP 2FA,
+M6: part A implemented (roles applied to all admin routes, user management, TOTP 2FA,
 audit log table replacing the M2 log-only grant audit); part B implemented (backups, certificate pull
-from CertWarden/URL, test button for notification channels); open: vouchers with QR, sessions/guests,
-first-start web setup, CertWarden pull and backups tested on a real setup. Grants have no delete
+from CertWarden/URL, test button for notification channels); part C implemented (guests & sessions
+list, bulk codes with A4 voucher sheet, Wi-Fi join QR, CSV export); released as v0.7.0. Part D: OIDC
+login for the admin UI (v0.7.x). Open: first-start web setup, CertWarden pull, backups, voucher QR
+scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only).
 
 | # | Content | Acceptance criteria |

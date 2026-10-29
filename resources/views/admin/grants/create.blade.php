@@ -18,7 +18,7 @@
                 @endforeach
             </select></label>
         <label class="label">{{ __('portal.grants.quantity') }}
-            <input type="number" min="1" max="50" name="quantity" value="{{ old('quantity', 1) }}" required class="field"></label>
+            <input type="number" min="1" max="100" name="quantity" value="{{ old('quantity', 1) }}" required class="field"></label>
         @include('admin.grants._fields', ['grant' => null])
         <div class="md:col-span-2"><button class="btn">{{ __('portal.grants.create') }}</button></div>
     </form>

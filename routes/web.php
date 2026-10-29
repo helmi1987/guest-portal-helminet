@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\BackupController;
 use App\Http\Controllers\Admin\CertificateController;
 use App\Http\Controllers\Admin\GrantController;
+use App\Http\Controllers\Admin\GuestController;
 use App\Http\Controllers\Admin\LogoutController;
 use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\SettingsController;
@@ -80,7 +81,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
         });
 
         Route::middleware('two_factor')->group(function () {
-            // Admin + manager (CONCEPT.md §9): codes/grants, approvals.
+            // Admin + manager (CONCEPT.md §9): codes/grants, approvals, guests and sessions.
             Route::middleware('role:admin,manager')->name('admin.')->group(function () {
                 Route::view('/', 'admin.dashboard')->name('dashboard');
                 Route::get('/grants/print', [GrantController::class, 'print'])->name('grants.print');
@@ -90,10 +91,14 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/grants/{grant}/revoke', [GrantController::class, 'revoke'])->name('grants.revoke');
                 Route::get('/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
                 Route::post('/approvals/{approval}', [ApprovalController::class, 'decide'])->name('approvals.decide');
+                Route::get('/guests', [GuestController::class, 'index'])->name('guests.index');
+                Route::post('/sessions/{session}/disconnect', [GuestController::class, 'disconnect'])->name('sessions.disconnect')
+                    ->middleware('throttle:30,1');
             });
 
-            // Admin only: settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates.
+            // Admin only: code CSV export, settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates.
             Route::middleware('role:admin')->name('admin.')->group(function () {
+                Route::get('/grants/export', [GrantController::class, 'export'])->name('grants.export');
                 Route::get('/settings', [SettingsController::class, 'show'])->name('settings');
                 Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
                 Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('settings.sms');

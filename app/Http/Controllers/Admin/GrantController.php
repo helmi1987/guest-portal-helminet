@@ -9,12 +9,16 @@ use App\Http\Controllers\Controller;
 use App\Models\Grant;
 use App\Models\Site;
 use App\Services\GrantManager;
+use App\Services\VoucherQr;
 use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 /**
  * Codes / grants (admin + manager, CONCEPT.md §8).
@@ -43,7 +47,7 @@ class GrantController extends Controller
     public function store(Request $request, GrantManager $manager): RedirectResponse
     {
         $data = $request->validate([
-            'quantity' => ['required', 'integer', 'between:1,50'],
+            'quantity' => ['required', 'integer', 'between:1,100'],
             'duration' => ['required', Rule::in([...array_keys(config('portal.duration_presets')), 'custom'])],
             'custom_hours' => ['required_if:duration,custom', 'nullable', 'numeric', 'min:0.25', 'max:8760'],
             'expiry_mode' => ['required', Rule::enum(ExpiryMode::class)],
@@ -66,21 +70,27 @@ class GrantController extends Controller
             'site_ids' => $data['site_ids'] ?? [],
         ];
 
-        $grants = collect(range(1, $data['quantity']))
-            ->map(fn () => $manager->createCode($attributes, $request->user()));
-        foreach ($grants as $grant) {
-            Audit::log('grant.created', $grant, [
-                'duration_s' => $attributes['duration_s'], 'expiry_mode' => $attributes['expiry_mode'],
-                'label' => $attributes['label'], 'sites' => $attributes['site_ids'], 'batch' => $grants->count(),
-            ]);
-        }
+        $settings = [
+            'duration_s' => $attributes['duration_s'], 'expiry_mode' => $attributes['expiry_mode'],
+            'label' => $attributes['label'], 'sites' => $attributes['site_ids'],
+        ];
+        $grants = DB::transaction(function () use ($data, $attributes, $settings, $manager, $request) {
+            $grants = collect(range(1, $data['quantity']))->map(fn () => $manager->createCode($attributes, $request->user()));
+            // One entry per batch; never the codes themselves (CONCEPT.md §9).
+            $grants->count() === 1
+                ? Audit::log('grant.created', $grants->first(), $settings)
+                : Audit::log('grant.bulk_created', null, ['count' => $grants->count(), ...$settings]);
+
+            return $grants;
+        });
 
         return redirect()->route('admin.grants.print', ['ids' => $grants->pluck('id')->all()]);
     }
 
-    public function edit(Grant $grant): View
+    public function edit(Grant $grant, VoucherQr $qr): View
     {
         return view('admin.grants.edit', [
+            'qr' => $qr,
             'grant' => $grant->load(['siteLinks', 'devices.guest', 'sessions' => fn ($q) => $q->latest('started_at')->limit(20)]),
             'sites' => Site::query()->orderBy('name')->pluck('name', 'id'),
         ]);
@@ -114,12 +124,13 @@ class GrantController extends Controller
     /** Extend (positive) or shorten (negative) by hours. */
     public function extend(Request $request, Grant $grant, GrantManager $manager): RedirectResponse
     {
-        $hours = (float) $request->validate(['hours' => ['required', 'numeric', 'between:-8760,8760', 'not_in:0']])['hours'];
+        abort_if($grant->revoked_at !== null, 422, __('portal.grants.already_revoked'));
+        $hours = (int) $request->validate(['hours' => ['required', 'integer', 'between:-8760,8760', 'not_in:0']])['hours'];
         if ($hours > 0 && ! $grant->canExtend()) {
             return back()->withErrors(['hours' => __('portal.grants.max_extensions_reached')]);
         }
 
-        $manager->extend($grant, (int) round($hours * 3600));
+        $manager->extend($grant, $hours * 3600);
         Audit::log('grant.extended', $grant, ['hours' => $hours, 'expires_at' => $grant->expires_at?->toIso8601String()]);
 
         return back()->with('status', __('portal.saved'));
@@ -142,13 +153,53 @@ class GrantController extends Controller
         return back()->with('status', __('portal.grants.revoked'));
     }
 
-    public function print(Request $request): View
+    public function print(Request $request, VoucherQr $qr): View
     {
-        $ids = array_slice((array) $request->query('ids', []), 0, 100);
+        return view('admin.grants.print', ['grants' => $this->selected($request), 'qr' => $qr]);
+    }
 
-        return view('admin.grants.print', [
-            'grants' => Grant::query()->whereIn('id', $ids)->where('type', GrantType::Code)->get(),
-        ]);
+    /** CSV of the selected codes (admin only). */
+    public function export(Request $request): StreamedResponse
+    {
+        $grants = $this->selected($request);
+        $sites = Site::query()->pluck('name', 'id');
+        Audit::log('grant.exported', null, ['count' => $grants->count()]);
+
+        return response()->streamDownload(function () use ($grants, $sites) {
+            $out = fopen('php://output', 'w');
+            fputcsv($out, ['code', 'label', 'status', 'duration_hours', 'expiry_mode', 'valid_from', 'redeem_until', 'expires_at', 'sites', 'created_at'], escape: '');
+            foreach ($grants as $grant) {
+                fputcsv($out, array_map(self::csvCell(...), [
+                    $grant->code, $grant->label, $grant->status()->value, round($grant->duration_s / 3600, 2),
+                    $grant->expiry_mode->value, $grant->valid_from?->toIso8601String(), $grant->redeem_until?->toIso8601String(),
+                    $grant->expires_at?->toIso8601String(),
+                    $grant->siteLinks->map(fn ($l) => $sites[$l->site_id] ?? $l->site_id)->join(', ') ?: 'all',
+                    $grant->created_at?->toIso8601String(),
+                ]), escape: '');
+            }
+            fclose($out);
+        }, 'codes-'.now()->format('Ymd-His').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+    }
+
+    /** Code grants by ids[] (max. 100), in creation order. */
+    private function selected(Request $request): Collection
+    {
+        $ids = array_slice(array_filter((array) $request->query('ids', []), 'is_string'), 0, 100);
+
+        return Grant::query()->with('siteLinks')->whereIn('id', $ids)->where('type', GrantType::Code)
+            ->orderBy('created_at')->orderBy('id')->get();
+    }
+
+    /** Neutralise spreadsheet formulas in free-text cells (also behind leading whitespace or line breaks). */
+    private static function csvCell(mixed $value): mixed
+    {
+        if (! is_string($value)) {
+            return $value;
+        }
+        $dangerous = preg_match('/^[\t\r\n]/', $value) === 1
+            || preg_match('/^[=+\-@]/', ltrim($value, " \t\r\n\0\x0B")) === 1;
+
+        return $dangerous ? "'".$value : $value;
     }
 
     private function editableRules(): array

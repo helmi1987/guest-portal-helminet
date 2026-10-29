@@ -10,12 +10,13 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (milestone M5: SMS login; v0.6.0: setup assistant). Code login, SMS one-time password
+**Status:** early development (v0.7.0: admin extras, M6 parts A-C). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
-router certificate; M6 (in progress): users with roles admin/manager, TOTP two-factor login, audit log,
-backups, certificate pull from CertWarden or a URL, test button for notification channels;
-remaining admin extras and federation follow (see CONCEPT.md §14).
+router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor
+login, audit log, backups, certificate pull from CertWarden or a URL, test buttons, guests & sessions list,
+bulk codes with printable A4 voucher sheet (Wi-Fi join QR) and CSV export; OIDC login (M6 part D) and
+federation follow (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -45,6 +46,9 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   Admin UI → Certificates: current certificates and an optional source per certificate (CertWarden
   private cert chain with `<cert API key>.<key API key>`, or a URL returning key + certificate +
   chain as PEM with optional bearer token, own CA for a private CA), pulled every 6 h or on demand.
+- Vouchers: admin UI → Codes → create 1-100 codes at once; the print view is an A4 sheet (10 cards)
+  with the code, duration and a Wi-Fi join QR for the guest SSID entered in the setup assistant
+  (shown when the code's sites share one SSID); admins can export the codes as CSV.
 - Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`; one `.tar.gz`, mode 0600,
   14 kept by default), admin UI → Backups or `artisan portal:backup`. Backups contain secrets.
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).

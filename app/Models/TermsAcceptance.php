@@ -24,4 +24,9 @@ class TermsAcceptance extends Model
     {
         return $this->belongsTo(TermsVersion::class);
     }
+
+    public function grant(): BelongsTo
+    {
+        return $this->belongsTo(Grant::class);
+    }
 }

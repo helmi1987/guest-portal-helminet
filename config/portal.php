@@ -34,6 +34,8 @@ return [
         // Lifetime of the one-time credentials handed to the router.
         'token_ttl' => 60,
         'interim_interval' => (int) env('PORTAL_RADIUS_INTERIM', 300),
+        // An open session without accounting update for this long is shown as stale (lost Stop).
+        'stale_after' => (int) env('PORTAL_RADIUS_STALE_AFTER', 3 * (int) env('PORTAL_RADIUS_INTERIM', 300)),
         // radclient (freeradius-utils) sends Disconnect-Request (RFC 5176).
         'radclient' => env('PORTAL_RADCLIENT', 'radclient'),
         'disconnect_timeout' => 3,

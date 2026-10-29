@@ -11,6 +11,12 @@
             @if ($grant->remainingSeconds()) ({{ __('portal.grants.remaining') }} {{ \App\Support\Duration::format($grant->remainingSeconds()) }}) @endif</div>
         <div>{{ __('portal.grants.extensions') }}: {{ $grant->extensions_used }}{{ $grant->max_extensions !== null ? ' / '.$grant->max_extensions : '' }}</div>
         <div>{{ __('portal.grants.revoked_at') }}: {{ $grant->revoked_at?->format('Y-m-d H:i') ?? '–' }}</div>
+        @if ($grant->code && ($ssid = $qr->ssidFor($grant)))
+            <div class="flex items-center gap-3 md:col-span-3">
+                <div class="h-28 w-28 shrink-0 bg-white">{!! $qr->wifiSvg($ssid, 112) !!}</div>
+                <div>{{ __('portal.grants.wifi_qr', ['ssid' => $ssid]) }}</div>
+            </div>
+        @endif
     </section>
 
     @unless ($grant->revoked_at)
@@ -18,7 +24,7 @@
             <form method="POST" action="{{ route('admin.grants.extend', $grant) }}" class="flex items-end gap-2">
                 @csrf
                 <label class="label">{{ __('portal.grants.extend_hours') }}
-                    <input type="number" step="0.25" name="hours" value="24" class="field w-28"></label>
+                    <input type="number" step="1" name="hours" value="24" class="field w-28"></label>
                 <button class="btn-light">{{ __('portal.grants.apply') }}</button>
             </form>
             <form method="POST" action="{{ route('admin.grants.expiry', $grant) }}" class="flex items-end gap-2">

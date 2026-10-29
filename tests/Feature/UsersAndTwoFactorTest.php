@@ -122,6 +122,8 @@ class UsersAndTwoFactorTest extends TestCase
 
     public function test_code_failures_restart_login_and_ip_is_throttled(): void
     {
+        // The throttle message contains the remaining seconds: keep them from crossing a second boundary.
+        $this->freezeTime();
         $twoFactor = app(TwoFactor::class);
         // Five failures discard the pending login: the password is needed again, the account is not locked.
         $users = [$this->userWithTwoFactor(), $this->userWithTwoFactor(), $this->userWithTwoFactor()];
