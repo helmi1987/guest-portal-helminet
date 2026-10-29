@@ -14,6 +14,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
@@ -146,6 +147,19 @@ class SiteController extends Controller
             'hotspot_hosts' => ['nullable', 'string', 'max:500', 'regex:/^([A-Za-z0-9.\-]+(\s*,\s*[A-Za-z0-9.\-]+)*)?$/D'],
             'home_instance_id' => ['nullable', Rule::exists('instances', 'id')->whereNull('deleted_at')],
         ]);
+        $hosts = array_values(array_filter(array_map('trim', explode(',', strtolower($data['hotspot_hosts'] ?? '')))));
+        // The hotspot name is the router's own HTTPS login name (resolves to the guest gateway); it must
+        // never be the portal host, otherwise the static DNS entry points the portal name at the router.
+        $portalHosts = array_filter(array_map(fn ($h) => is_string($h) && $h !== '' ? strtolower($h) : null, [
+            parse_url((string) ($data['portal_url'] ?? ''), PHP_URL_HOST),
+            parse_url((string) config('app.url'), PHP_URL_HOST),
+            config('portal.hostname'),
+        ]));
+        foreach ($hosts as $host) {
+            if (in_array($host, $portalHosts, true)) {
+                throw ValidationException::withMessages(['hotspot_hosts' => __('portal.sites.hotspot_is_portal', ['host' => $host])]);
+            }
+        }
 
         return [
             'name' => $data['name'],
@@ -157,8 +171,7 @@ class SiteController extends Controller
                 'radius_address' => $data['radius_address'] ?? null,
                 'portal_address' => $data['portal_address'] ?? null,
                 'portal_url' => $data['portal_url'] ?? null,
-                'hotspot_hosts' => array_values(array_filter(array_map('trim',
-                    explode(',', strtolower($data['hotspot_hosts'] ?? ''))))),
+                'hotspot_hosts' => $hosts,
             ]),
         ];
     }

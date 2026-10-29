@@ -94,7 +94,11 @@ Copy PEM files (full chain + key) to `<data folder>/certs/`:
 
 Changes are picked up within about 10 s (nginx reload; routers fetch the router certificate via
 their scheduler). Instead of copying files, admin UI → Certificates can pull both certificates
-every 6 h from CertWarden or a URL returning a PEM bundle.
+every 6 h from CertWarden or a URL returning a PEM bundle. CertWarden: enter the server address
+only, without path (e.g. `https://certs.example.com`, not `.../certwarden` or `.../certwarden/app`;
+a path is removed on save and the resulting download URL is shown), the certificate name and the two
+API keys in their own fields (certificate API key, private key API key). On HTTP 404 check the server
+URL and certificate name, on 401/403 the keys and their order.
 
 ## 6. DNS and firewall
 
@@ -108,7 +112,7 @@ every 6 h from CertWarden or a URL returning a PEM bundle.
 
 ## 7. Next steps
 
-Admin UI → Sites → add site (hotspot host name) and router (NAS IP, as seen by the portal) →
+Admin UI → Sites → add site (hotspot host name) and router (router IP, as seen by the portal) →
 follow the router configuration / setup assistant. Backups: see section 9. Logo, colours and
 custom CSS of the guest pages: admin UI → Settings → Appearance, see [branding.md](branding.md).
 

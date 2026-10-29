@@ -107,11 +107,10 @@ class CertificatePuller
     /** HTTP GET with TLS verification (system CAs or the configured CA PEM). */
     private function fetch(array $source, ?string $apiKey): string
     {
-        $base = rtrim((string) $source['url'], '/');
-        [$url, $headers] = match ($source['type']) {
-            'certwarden' => [$base.'/certwarden/api/v1/download/privatecertchains/'.rawurlencode((string) $source['name']),
-                ['X-API-Key' => (string) $apiKey]],
-            'url' => [$base, $apiKey ? ['Authorization' => 'Bearer '.$apiKey] : []],
+        $url = (string) CertificateSources::downloadUrl($source);
+        $headers = match ($source['type']) {
+            'certwarden' => ['X-API-Key' => (string) $apiKey],
+            'url' => $apiKey ? ['Authorization' => 'Bearer '.$apiKey] : [],
         };
 
         $caFile = null;
@@ -130,7 +129,7 @@ class CertificatePuller
                 ->timeout((int) config('portal.cert_pull.timeout'))
                 ->get($url)->throw();
         } catch (RequestException $e) {
-            throw new CertificateException('HTTP '.$e->response->status());
+            throw new CertificateException('HTTP '.$e->response->status().self::statusHint($e->response->status()));
         } catch (ConnectionException) {
             throw new CertificateException('connection failed (host unreachable, timeout or TLS verification)');
         } finally {
@@ -194,6 +193,16 @@ class CertificatePuller
         }
 
         return $tmp;
+    }
+
+    /** Short English hint for the log and status (the admin UI adds a translated one). */
+    private static function statusHint(int $status): string
+    {
+        return match ($status) {
+            404 => ' (check server URL / certificate name)',
+            401, 403 => ' (check API keys / order)',
+            default => '',
+        };
     }
 
     /** API key and its CertWarden parts, for masking. */

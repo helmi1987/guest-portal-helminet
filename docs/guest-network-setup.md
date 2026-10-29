@@ -25,7 +25,7 @@ real values; the RADIUS secret especially is a password.
 | Guest subnet | 10.30.0.0/24 | 10.31.0.0/24 | Must not overlap LAN/VPN ranges |
 | Gateway (router IP in VLAN) | 10.30.0.1 | 10.31.0.1 | Also hotspot address, DNS |
 | DHCP pool | 10.30.0.10-10.30.0.250 | 10.31.0.10-10.31.0.250 | |
-| Router IP **as seen by the portal** | 10.0.1.1 | 10.0.2.1 | = NAS IP in the admin UI = `src-address` in `/radius` |
+| Router IP **as seen by the portal** | 10.0.1.1 | 10.0.2.1 | = Router IP in the admin UI = `src-address` in `/radius` |
 | Hotspot DNS name | `hotspot-a.guest.example.com` | `hotspot-b.guest.example.com` | Covered by the router certificate |
 | Router certificate name | `guest-portal` | `guest-portal` | Fixed, set by the generated script |
 | RADIUS secret | `<SECRET_FROM_ADMIN_UI>` | `<SECRET_FROM_ADMIN_UI>` | One per router, generated in the admin UI |
@@ -62,8 +62,17 @@ Central instance values (once):
 
 ## 2. Per site: bridge and VLAN filtering
 
-Assumes one bridge `bridge1` holds LAN ports and the trunk port(s) towards CAPs. If bridge VLAN
-filtering is already in use, only add the VLAN-30 entries.
+Assumes one bridge `bridge1` holds LAN ports and the trunk port(s) towards CAPs. The guest VLAN
+interface must sit on **the bridge that contains the trunk port to the CAPs** (usually the LAN bridge),
+never on a new, empty bridge: a VLAN interface on a bridge without ports receives nothing (no DHCP).
+`/interface bridge port print where bridge=bridge1` must list the trunk port.
+
+- `vlan-filtering=no` on that bridge: tagged frames from the trunk reach the VLAN interface without
+  any bridge VLAN entry; only 2.4 is needed. Do not switch filtering on just for the guest VLAN.
+- `vlan-filtering=yes`: the bridge drops VLAN 30 unless the bridge itself and the trunk port are
+  tagged members (2.3). If filtering is already in use, only add the VLAN-30 entry.
+
+The commands below show a full setup from scratch (new bridge with filtering).
 
 ```
 # 2.1 Bridge (skip if it exists). Enable vlan-filtering LAST.
@@ -308,21 +317,36 @@ Place the wildcard certificate for the hotspot host names on the instance as `/d
 and `/data/certs/router.key` (section 8.2). The script generated in Admin → Sites adds a scheduler entry (at startup and daily)
 that downloads the certificate from the instance with a per-router token, imports it only when the fingerprint changed and sets
 `ssl-certificate` in the hotspot profile `guest-portal` (certificate name `guest-portal`).
-- The download (`https://<PORTAL_HOST>/router-cert/...`, TCP 443) is sent with `src-address=<NAS IP>`; the instance accepts it
-  only from the NAS IP registered for that router (plus the token). So TCP 443 from the router's NAS IP to the portal must be
+- The download (`https://<PORTAL_HOST>/router-cert/...`, TCP 443) is sent with `src-address=<router IP>`; the instance accepts it
+  only from the router IP registered for that router (plus the token). So TCP 443 from the router's router IP to the portal must be
   routed without NAT and allowed on the central firewall (section 7.2/7.3). Denied downloads are logged by the instance.
   Behind a reverse proxy (`TRUSTED_PROXIES` set) the IP check is off by default (`PORTAL_ROUTER_CERT_CHECK_IP`).
 - The portal certificate must be publicly trusted: the fetch uses `check-certificate=yes`.
+
+How the certificate script identifies certificates (the chain PEM creates one certificate per PEM
+block: leaf + intermediate/root CAs):
+- The current certificate is the one set as `ssl-certificate` on the profile `guest-portal` (renaming it
+  does not matter); its fingerprint is compared with `/router-cert/<id>/fingerprint` (lowercase hex
+  SHA-256 without colons; both sides are normalised, RouterOS format **(to verify)**).
+- Imported certificates get the temporary name `guest-portal-import*` and `comment="guest-portal"`;
+  the leaf is the one whose fingerprint matches (fallback: the one with the private key). The profile
+  is switched to it, previous certificates with that comment are removed, then the leaf is renamed to
+  `guest-portal` and the CAs to `guest-portal-ca-<n>`. Certificates without the comment are never
+  touched; old certificates named `guest-portal*` (older script versions) get the comment once.
+- Errors are logged with the failing step (`:onerror`, RouterOS >= 7.13 **(to verify)**):
+  `/log print where message~"guest-portal"`.
 
 Manual import (troubleshooting only):
 ```
 /certificate import file-name=router.crt passphrase=""
 /certificate import file-name=router.key passphrase=""
-/certificate print     # the leaf certificate shows "private-key: yes"
+/certificate print     # the leaf certificate shows flag K (private key)
 ```
 
 ### 6.2 DNS name for the hotspot host
-Guests must resolve the hotspot name to the router's guest address:
+The hotspot name is the router's own HTTPS login name and resolves to the guest gateway; the portal
+name is the portal instance. They must differ (the admin UI rejects a hotspot host equal to the portal
+host). Guests must resolve the hotspot name to the router's guest address:
 ```
 /ip dns static add name=hotspot-a.guest.example.com address=10.30.0.1 comment="hotspot host"
 ```
@@ -356,7 +380,7 @@ The generated script contains `/radius add address=<INSTANCE_IP> secret=... serv
 src-address=<ROUTER_IP_SEEN_BY_PORTAL>` and `/radius incoming set accept=yes port=3799`. Always set `port=3799` explicitly: the manual
 names 1700 as the default port, and `accept` defaults to `no`. Check that:
 - `address` is the portal instance IP (not a NAT front address, see 7.3),
-- `src-address` is the router address you registered as NAS IP in the admin UI (the address the portal sees), reachable from the portal in both directions,
+- `src-address` is the router address you registered as Router IP in the admin UI (the address the portal sees), reachable from the portal in both directions,
 - the secret equals the one shown in the admin UI for this router.
 - Whether `/radius incoming` validates the source IP of incoming requests against the `/radius` entries is not documented **(to verify)**.
 - **RouterOS >= 7.15:** `/radius` has `require-message-auth` (default `yes-for-request-resp`). The portal's FreeRADIUS sends Message-Authenticator. If logins
@@ -390,10 +414,10 @@ site-to-site VPN/routing.
 
 ### 7.1 Why RADIUS must keep the real router IP
 FreeRADIUS accepts requests only from known clients, identified by source IP plus shared secret
-(CONCEPT section 2.2). The portal also stores the NAS IP per router and sends Disconnect requests
+(CONCEPT section 2.2). The portal also stores the router IP per router and sends Disconnect requests
 to that address. If a router's traffic is masqueraded or source-NATed on its way:
 - the portal sees a different IP -> request dropped silently ("unknown client"), or two routers collapse into one address and secrets/NAS records collide,
-- Disconnect is sent to the NAS IP of the router, but the router only accepts Disconnect from the addresses of its configured `/radius` entries, so
+- Disconnect is sent to the router IP of the router, but the router only accepts Disconnect from the addresses of its configured `/radius` entries, so
   replies/requests with the wrong source fail.
 
 So: no masquerade/srcnat on the VPN interface or between site LAN and the portal network, for
@@ -513,7 +537,7 @@ openssl s_client -connect portal.example.com:443 -servername portal.example.com 
 
 ## 9. Rollout order and final end-to-end test
 
-1. Worksheet filled; admin UI: site + router (NAS IP, secret) created.
+1. Worksheet filled; admin UI: site + router (router IP, secret) created.
 2. Central instance running; certificate valid; `https://portal.example.com` reachable from the
    central LAN.
 3. Per site: sections 2, 3, 4, 5 (guest SSID gets an address, internet works **without** hotspot
@@ -533,18 +557,79 @@ openssl s_client -connect portal.example.com:443 -servername portal.example.com 
 | Phone gets IP but no captive popup | Hotspot not on `vlan30-guest`, DNS not via router, firewall input drop blocks hotspot ports | `/ip hotspot print`, `/ip hotspot host print`; test a plain `http://` address; check dynamic hotspot rules |
 | Redirect goes to router default page | Custom `login.html` not uploaded / wrong `html-directory` | `/file print`, `/ip hotspot profile print`; re-upload |
 | Certificate warning on hotspot name | Wrong/expired certificate, name not in certificate, profile `dns-name` mismatch, certificate not imported with key | `/certificate print`, `dns-name` must match `*.guest.example.com` |
-| Router certificate not updated | Download denied: wrong token (re-paste script after regenerating), request not from the NAS IP (NAT, `src-address`), portal certificate not trusted (`check-certificate=yes`), files missing on the instance | `/log print where message~"guest-portal"`, instance log "Router certificate download denied", `/system script run guest-portal-cert` |
+| Router certificate not updated | Download denied: wrong token (re-paste script after regenerating), request not from the router IP (NAT, `src-address`), portal certificate not trusted (`check-certificate=yes`), files missing on the instance | `/log print where message~"guest-portal"`, instance log "Router certificate download denied", `/system script run guest-portal-cert` |
 | Certificate warning on portal | Self-signed fallback active, wrong name, chain missing | Put `portal.crt` + `portal.key` in `/data/certs` (reload is automatic) |
 | Portal page does not load before login | Walled garden missing, DNS rebinding filter, firewall drop | `/ip hotspot walled-garden print`, static DNS entry (8.1), forward rule 2 (5.4) |
-| Login returns to login page / "RADIUS timeout" | UDP 1812 blocked, wrong `address`, secret mismatch, NAS IP unknown to portal | `/radius monitor 0 once` (timeouts), `/log print where topics~"radius"`, portal RADIUS log, `tcpdump` on the instance |
+| Login returns to login page / "RADIUS timeout" | UDP 1812 blocked, wrong `address`, secret mismatch, router IP unknown to portal | `/radius monitor 0 once` (timeouts), `/log print where topics~"radius"`, portal RADIUS log, `tcpdump` on the instance |
 | Rejected although credentials fresh | Token expired (~60 s), MAC mismatch, site not allowed for the grant | Portal audit/RADIUS log; retry from the start |
-| NAS IP mismatch | masquerade/srcnat on the VPN or central router, `src-address` not set | Section 7.1; add a srcnat exception (`action=accept` for UDP 1812/1813/3799) above masquerade |
+| router IP mismatch | masquerade/srcnat on the VPN or central router, `src-address` not set | Section 7.1; add a srcnat exception (`action=accept` for UDP 1812/1813/3799) above masquerade |
 | Disconnect does nothing | Router not accepting (`/radius incoming accept=no`, port not 3799), UDP 3799 blocked on router input or tunnel, source of Disconnect differs from `/radius address`, wrong secret | `/radius incoming print`, input rule 5.3, central firewall 7.2, `tcpdump` UDP 3799 |
 | Session not removed after grant end | Scheduler (`portal:enforce-grants`) not running, Disconnect failing | Instance logs; see previous row |
 | Guest can reach LAN / router | Forward/input drop rules below an accept rule, interface list member missing | `/ip firewall filter print stats`, `/interface list member print` |
 | Guests see each other | Client isolation off | Datapath: `client-to-client-forwarding=no` (legacy) / `client-isolation=yes` (wifi) |
 | Works on one site, not on the other | Overlapping subnets, missing return route to the guest/router subnet on the central side | Routes and tunnel allowed networks both ways |
 | Mixed sites: SSID only on some APs | Provisioning rule only in one CAPsMAN system | Section 3.4: configure both systems |
+
+## 10a. Troubleshooting first setup
+
+Findings from a first real setup; the setup assistant shows the same checklist.
+
+1. **No DHCP for guests although the VLAN interface exists.** The "bridge" in the assistant was a new,
+   empty bridge. It must be the bridge that contains the trunk port to the CAPs (usually the LAN bridge):
+   ```
+   /interface bridge port print where bridge=<BRIDGE>      # must list the trunk port
+   /interface bridge print where name=<BRIDGE>             # vlan-filtering yes/no
+   /interface bridge vlan print where bridge=<BRIDGE>      # only with vlan-filtering=yes: VLAN 30 tagged on bridge + trunk
+   ```
+   Move the VLAN interface: `/interface vlan set [find where name=vlan30-guest] interface=<LAN_BRIDGE>`.
+2. **Portal name resolves to the router.** The hotspot host name was set equal to the portal host name,
+   so the static DNS entry pointed the portal name at the router. Use two names (e.g.
+   `hotspot-a.guest.example.com` for the router, `portal.example.com` for the portal); the admin UI now
+   rejects equal names.
+   ```
+   /ip dns static print where comment="guest-portal"       # hotspot name -> guest gateway, portal name -> portal IP
+   ```
+3. **Code and SMS logins fail, MAC whitelist works.** Until the router certificate is imported the
+   hotspot profile has only `login-by=mac`. Order: (1) portal certificate, (2) router certificate pulled
+   in the portal, (3) router script (certificate script) on the router, (4) `login.html` upload,
+   (5) verify:
+   ```
+   /certificate print where name~"guest-portal"
+   /ip hotspot profile print where name=guest-portal         # expect login-by=https,mac and ssl-certificate
+   /file print where name~"login.html"
+   ```
+4. **Certificate re-imported on every run / rename fails.** Older script versions imported the chain
+   with `name=guest-portal-new`, which creates several certificates (leaf and CAs) and broke the rename
+   and the name-based fingerprint check. Paste the current router script again; it compares the
+   certificate referenced by the profile and cleans up by comment (section 6.1).
+   ```
+   /system script run guest-portal-cert
+   /log print where message~"guest-portal"
+   /certificate print detail where comment="guest-portal"
+   ```
+5. **CertWarden pull: HTTP 404 / 401.** The server URL must be the server address only
+   (`https://certs.example.com`), not the UI URL (`.../certwarden` or `.../certwarden/app`, removed on
+   save); the admin UI shows the resulting download URL. Enter the certificate API key and the private
+   key API key in their own fields (sent as `<certificate key>.<private key key>`). 404: check the server
+   URL and the certificate name; 401/403: check both keys and their order.
+
+## 10b. Removing the portal from a router
+
+Setup assistant, step 8 "Remove everything again", generates the script. It removes, by name or comment
+`guest-portal`, in this order: certificate script + scheduler, hotspot server, hotspot profile, walled
+garden (host + IP), `/radius` entry, imported certificates (comment and legacy names `guest-portal*`),
+static DNS entries, DHCP option 114 (reference in the DHCP network first), firewall rules and address
+lists of the assistant. It is safe when entries do not exist and logs out connected guests.
+- `/radius incoming set accept=no` is only a commented hint (no comment on that menu; other uses).
+- `login.html` is not removed automatically (the html directory may be shared with other hotspots).
+- Optional blocks: the RouterOS container (veth, bridge, mounts, envs; data on the disk stays) and the
+  guest network infrastructure (Wi-Fi configuration, DHCP server/network/pool, gateway address,
+  interface list `GUEST`, bridge VLAN entry, VLAN interface): run a line only if it was created for the
+  guest network. Remove `cfg-guest` from the CAPsMAN provisioning slave list first.
+- Firewall rules created by assistant versions before 0.12.1 use comments `guest: ...`/`portal: ...`;
+  the script lists print commands for them.
+- In the portal afterwards: delete the router (site page, Routers) or the whole site; this removes the
+  RADIUS secret and the certificate token.
 
 ## 11. Sources and verification state
 

@@ -113,7 +113,7 @@ class CertificatePullTest extends TestCase
 
         $this->onZone('admin')->actingAs($admin)->put('/admin/certificates/portal', ['type' => 'certwarden',
             'url' => 'http://certs.example.com', 'name' => 'a/b', 'ca_pem' => 'nonsense'])
-            ->assertSessionHasErrors(['url', 'name', 'api_key']);
+            ->assertSessionHasErrors(['url', 'name', 'api_key_cert', 'api_key_key']);
         $this->onZone('admin')->actingAs($admin)->put('/admin/certificates/portal', ['type' => 'url',
             'url' => 'https://certs.example.com', 'ca_pem' => 'nonsense'])->assertSessionHasErrors(['ca_pem']);
         $this->onZone('admin')->actingAs(User::factory()->create())->get('/admin/certificates')->assertForbidden();
@@ -168,6 +168,62 @@ class CertificatePullTest extends TestCase
         Http::fake(['*' => Http::response('nothing querysecret9', 500)]);
         $this->onZone('admin')->actingAs($admin)->post('/admin/certificates/router/pull')->assertSessionHasErrors('pull');
         $this->assertStringNotContainsString('querysecret9', json_encode(CertificateSources::status('router')));
+    }
+
+    public function test_certwarden_url_is_normalised_and_download_url_shown(): void
+    {
+        $admin = User::factory()->admin()->create();
+        foreach (['https://certs.example.com/', 'https://certs.example.com/certwarden', 'https://certs.example.com/certwarden/app',
+            'https://certs.example.com/certwarden/app/certificates/'] as $input) {
+            $this->assertSame('https://certs.example.com', CertificateSources::normalizeCertwardenUrl($input));
+        }
+        $this->assertSame('https://certwarden.example.com', CertificateSources::normalizeCertwardenUrl('https://certwarden.example.com/'));
+
+        $this->onZone('admin')->actingAs($admin)->put('/admin/certificates/router', ['type' => 'certwarden',
+            'url' => 'https://certs.example.com/certwarden/app/', 'name' => 'wildcard', 'api_key_cert' => 'certapikey0123',
+            'api_key_key' => 'keyapikey4567'])->assertSessionHasNoErrors();
+        $this->assertSame('https://certs.example.com', CertificateSources::get('router')['url']);
+        $this->onZone('admin')->actingAs($admin)->get('/admin/certificates')->assertOk()
+            ->assertSee('https://certs.example.com/certwarden/api/v1/download/privatecertchains/wildcard')
+            ->assertDontSee('certapikey0123');
+
+        // Legacy stored value with path: the puller normalises too; 404 and 401 get a hint.
+        CertificateSources::put('router', 'certwarden', 'https://certs.example.com/certwarden', 'wildcard', null, null);
+        Http::fake(['certs.example.com/*' => Http::sequence()->push('', 404)->push('', 401)]);
+        $this->onZone('admin')->actingAs($admin)->post('/admin/certificates/router/pull')
+            ->assertSessionHasErrors(['pull' => __('portal.certificates.pull_failed', ['error' => 'HTTP 404 (check server URL / certificate name)'])
+                .' '.__('portal.certificates.hints.not_found')]);
+        Http::assertSent(fn (Request $r) => $r->url() === 'https://certs.example.com/certwarden/api/v1/download/privatecertchains/wildcard');
+        $this->onZone('admin')->actingAs($admin)->get('/admin/certificates')->assertSee(__('portal.certificates.hints.not_found'));
+        $this->onZone('admin')->actingAs($admin)->post('/admin/certificates/router/pull')->assertSessionHasErrors('pull');
+        $this->assertStringContainsString('HTTP 401 (check API keys / order)', CertificateSources::status('router')['error']);
+    }
+
+    public function test_certwarden_keys_are_combined_in_order_and_legacy_value_is_kept(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $put = fn (array $data) => $this->onZone('admin')->actingAs($admin)->put('/admin/certificates/portal',
+            ['type' => 'certwarden', 'url' => 'https://certs.example.com', 'name' => 'portal-cert'] + $data);
+
+        // Both keys required for a new source, no dots (separator) inside a key.
+        $put(['api_key_cert' => 'certapikey0123'])->assertSessionHasErrors('api_key_key');
+        $put(['api_key_cert' => 'a.b', 'api_key_key' => 'c'])->assertSessionHasErrors('api_key_cert');
+        $put(['api_key_cert' => 'certapikey0123', 'api_key_key' => 'keyapikey4567'])->assertSessionHasNoErrors();
+        $this->assertSame(self::API_KEY, CertificateSources::apiKey('portal'));
+
+        // Legacy combined value (saved before the two fields): changing one part keeps the other.
+        CertificateSources::put('portal', 'certwarden', 'https://certs.example.com', 'portal-cert', null, 'oldcert.oldkey');
+        $put([])->assertSessionHasNoErrors();
+        $this->assertSame('oldcert.oldkey', CertificateSources::apiKey('portal'));
+        $put(['api_key_key' => 'newkey'])->assertSessionHasNoErrors();
+        $this->assertSame('oldcert.newkey', CertificateSources::apiKey('portal'));
+        $put(['api_key_cert' => 'newcert'])->assertSessionHasNoErrors();
+        $this->assertSame('newcert.newkey', CertificateSources::apiKey('portal'));
+
+        // URL source keeps its single bearer token field.
+        $this->onZone('admin')->actingAs($admin)->put('/admin/certificates/router', ['type' => 'url',
+            'url' => 'https://pem.example.com/router.pem', 'api_key' => 'bearer-1'])->assertSessionHasNoErrors();
+        $this->assertSame('bearer-1', CertificateSources::apiKey('router'));
     }
 
     /** @return array{0: string, 1: string} self-signed certificate PEM and key PEM */

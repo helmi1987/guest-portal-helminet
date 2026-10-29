@@ -150,7 +150,10 @@ class MikrotikRos7Driver implements NasDriver
         # router certificate (e.g. a wildcard). login-by=https needs ssl-certificate (without it the
         # profile may fall back to ssl-certificate=none), so both are set together: here if the
         # certificate "{$n}" already exists, otherwise by the certificate script after the import.
-        # Until then the RADIUS logins of the portal fail (no HTTPS login on the router).
+        # IMPORTANT: until the router certificate is imported the profile has only login-by=mac, so code
+        # and SMS logins of the portal CANNOT work yet. Order: (1) portal certificate, (2) router
+        # certificate pulled in the portal, (3) certificate script on this router, (4) login.html upload,
+        # (5) check: /ip hotspot profile print where name={$n}  (login-by=https,mac + ssl-certificate)
         # login-by=mac: MAC authentication for the MAC whitelist of the portal and for roaming devices
         # (federation: a device logged in at another site with a code valid here), active from the
         # start. The router first sends an Access-Request with the MAC as User-Name (default
@@ -217,10 +220,10 @@ class MikrotikRos7Driver implements NasDriver
             ->filter(fn ($p) => $p >= 1 && $p <= 65535)->unique()->sort()->implode(',') ?: '3799';
 
         $trunk = $g['wifi_mode'] === 'capsman2'
-            ? "/interface bridge port add bridge={$g['bridge']} interface=<TRUNK_PORT_TO_CAP> frame-types=admit-all ingress-filtering=yes\n"
-                ."/interface bridge vlan add bridge={$g['bridge']} tagged={$g['bridge']},<TRUNK_PORT_TO_CAP> vlan-ids={$g['vlan_id']}"
-            : "# No trunk port needed (traffic is forwarded by this router)\n"
-                ."/interface bridge vlan add bridge={$g['bridge']} tagged={$g['bridge']} vlan-ids={$g['vlan_id']}";
+            ? "# Trunk port to the CAPs: must already be a port of this bridge (see the print above); only if not:\n"
+                ."# /interface bridge port add bridge={$g['bridge']} interface=<TRUNK_PORT_TO_CAP>"
+            : '# No trunk port needed (guest traffic is forwarded by this router into the bridge)';
+        $vlanTagged = $g['wifi_mode'] === 'capsman2' ? "{$g['bridge']},<TRUNK_PORT_TO_CAP>" : $g['bridge'];
 
         $wifi = match ($g['wifi_mode']) {
             'capsman1' => <<<RSC
@@ -261,6 +264,24 @@ class MikrotikRos7Driver implements NasDriver
             RSC,
         };
 
+        $wifiRemove = match ($g['wifi_mode']) {
+            'capsman1' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
+                ."/caps-man provisioning print\n"
+                ."/caps-man configuration remove [find where name=cfg-guest]\n"
+                ."/caps-man security remove [find where name=sec-guest]\n"
+                .'/caps-man datapath remove [find where name=dp-guest]',
+            'capsman2' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
+                ."/interface wifi provisioning print\n"
+                ."/interface wifi configuration remove [find where name=cfg-guest]\n"
+                ."/interface wifi security remove [find where name=sec-guest]\n"
+                .'/interface wifi datapath remove [find where name=dp-guest]',
+            default => "# only if created for the guest network: virtual AP and its configuration\n"
+                ."/interface wifi remove [find where name=wifi-guest]\n"
+                ."/interface wifi configuration remove [find where name=cfg-guest]\n"
+                ."/interface wifi security remove [find where name=sec-guest]\n"
+                .'/interface wifi datapath remove [find where name=dp-guest]',
+        };
+
         return [
             'container' => [
                 'device_mode' => <<<'RSC'
@@ -286,14 +307,29 @@ class MikrotikRos7Driver implements NasDriver
             ],
             'network' => [
                 'vlan' => <<<RSC
-                # Use Safe Mode (Ctrl+X). Bridge "{$g['bridge']}" must exist; enable vlan-filtering last.
+                # Use Safe Mode (Ctrl+X). "{$g['bridge']}" must be the bridge that CONTAINS THE TRUNK PORT to the
+                # access points / CAPs (usually your LAN bridge). Do NOT create a separate empty bridge for the
+                # guests: a VLAN interface on a bridge without ports receives nothing (guests get no DHCP).
+                # Check: the trunk port to the CAPs must be listed here
+                /interface bridge port print where bridge={$g['bridge']}
+                # Shows vlan-filtering of the bridge (see the optional block below)
+                /interface bridge print where name={$g['bridge']}
                 {$trunk}
                 /interface vlan add name={$g['interface']} interface={$g['bridge']} vlan-id={$g['vlan_id']}
-                /interface bridge set {$g['bridge']} vlan-filtering=yes
+                RSC,
+                'vlan_filtering' => <<<RSC
+                # OPTIONAL, only if bridge "{$g['bridge']}" has vlan-filtering=yes.
+                # vlan-filtering=no: tagged frames from the trunk reach the VLAN interface without any entry
+                #   here; skip this block and do not switch filtering on just for the guest VLAN.
+                # vlan-filtering=yes: the bridge drops VLAN {$g['vlan_id']} unless the bridge itself (for the
+                #   VLAN interface) and the trunk port are tagged members:
+                /interface bridge vlan add bridge={$g['bridge']} tagged={$vlanTagged} vlan-ids={$g['vlan_id']} comment="{$n}"
+                # Check (VLAN {$g['vlan_id']} must list the bridge and the trunk port as tagged):
+                /interface bridge vlan print where bridge={$g['bridge']}
                 RSC,
                 'wifi' => $wifi,
                 'dhcp' => <<<RSC
-                /ip address add address={$g['gateway']}{$g['prefix']} interface={$g['interface']} comment="guest gateway"
+                /ip address add address={$g['gateway']}{$g['prefix']} interface={$g['interface']} comment="{$n}: guest gateway"
                 /ip pool add name={$g['pool_name']} ranges={$g['pool']}
                 /ip dhcp-server add name=guest-dhcp interface={$g['interface']} address-pool={$g['pool_name']} \\
                     lease-time=30m disabled=no
@@ -310,33 +346,36 @@ class MikrotikRos7Driver implements NasDriver
                 /ip dhcp-server network set [find where address="{$g['subnet']}"] dhcp-option=captive-portal
                 RSC,
                 'firewall' => <<<RSC
-                /interface list add name=GUEST
-                /interface list member add list=GUEST interface={$g['interface']}
+                /interface list add name=GUEST comment="{$n}"
+                /interface list member add list=GUEST interface={$g['interface']} comment="{$n}"
                 /ip firewall address-list
-                add list=PORTAL address={$portalIp} comment="portal instance (guest port)"
-                add list=PORTAL_RADIUS address={$radiusIp} comment="portal instance (RADIUS, Disconnect)"
-                add list=RFC1918 address=10.0.0.0/8
-                add list=RFC1918 address=172.16.0.0/12
-                add list=RFC1918 address=192.168.0.0/16
+                add list=PORTAL address={$portalIp} comment="{$n}: portal instance (guest port)"
+                add list=PORTAL_RADIUS address={$radiusIp} comment="{$n}: portal instance (RADIUS, Disconnect)"
+                add list=RFC1918 address=10.0.0.0/8 comment="{$n}"
+                add list=RFC1918 address=172.16.0.0/12 comment="{$n}"
+                add list=RFC1918 address=192.168.0.0/16 comment="{$n}"
                 # Input: place before your "drop all not from LAN" rule, after established/related accept
                 /ip firewall filter
-                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=67 comment="guest: DHCP"
-                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=53 comment="guest: DNS"
-                add chain=input action=accept in-interface-list=GUEST protocol=tcp dst-port=53 comment="guest: DNS tcp"
-                add chain=input action=accept in-interface-list=GUEST protocol=icmp limit=10,20:packet comment="guest: ping gateway"
-                add chain=input action=accept protocol=udp src-address-list=PORTAL_RADIUS dst-port={$coaPorts} comment="portal: Disconnect/CoA"
-                add chain=input action=drop in-interface-list=GUEST comment="guest: no router management"
+                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=67 comment="{$n}: guest DHCP"
+                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=53 comment="{$n}: guest DNS"
+                add chain=input action=accept in-interface-list=GUEST protocol=tcp dst-port=53 comment="{$n}: guest DNS tcp"
+                add chain=input action=accept in-interface-list=GUEST protocol=icmp limit=10,20:packet comment="{$n}: guest ping gateway"
+                add chain=input action=accept protocol=udp src-address-list=PORTAL_RADIUS dst-port={$coaPorts} comment="{$n}: Disconnect/CoA"
+                add chain=input action=drop in-interface-list=GUEST comment="{$n}: guest no router management"
                 # Forward: insert before your generic rules (order matters; assumes a WAN interface list)
-                add chain=forward action=accept connection-state=established,related comment="stateful"
-                add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="guest: portal"
-                add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="guest: no LAN / other VLANs / VPN"
-                add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="nothing initiates towards guests"
-                add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="guest: internet"
+                add chain=forward action=accept connection-state=established,related comment="{$n}: stateful"
+                add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="{$n}: guest to portal"
+                add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="{$n}: guest no LAN / other VLANs / VPN"
+                add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="{$n}: nothing initiates towards guests"
+                add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="{$n}: guest internet"
                 RSC,
             ],
             'hotspot' => [
                 'dns' => <<<RSC
-                # Guests resolve the hotspot name to the router and the portal name to the instance
+                # Two different names: the hotspot name is the router's own HTTPS login name and resolves to the
+                # guest gateway; the portal name is the portal instance. They must never be the same.
+                #   {$dnsName} -> {$g['gateway']} (router, guest gateway)
+                #   {$portalHost} -> {$portalIp} (portal instance)
                 /ip dns static
                 remove [find comment="{$n}"]
                 add name={$dnsName} address={$g['gateway']} comment="{$n}"
@@ -345,6 +384,19 @@ class MikrotikRos7Driver implements NasDriver
                 'hotspot' => rtrim($this->hotspotSection($site, $dnsName)),
             ],
             'diagnostics' => [
+                'verify' => <<<RSC
+                # Certificate and login checklist (in this order):
+                # 1. portal certificate, 2. router certificate pulled in the portal, 3. certificate script
+                # on this router, 4. login.html uploaded, 5. these checks:
+                # imported router certificate (leaf "{$n}" with flag K = private key, CAs "{$n}-ca-<n>")
+                /certificate print where name~"{$n}"
+                # expected: login-by=https,mac and ssl-certificate set
+                /ip hotspot profile print where name={$n}
+                # expected: login.html in the html-directory of the profile (default hotspot/)
+                /file print where name~"login.html"
+                # last runs of the certificate script
+                /log print where message~"{$n}"
+                RSC,
                 'diagnostics' => <<<'RSC'
                 /radius print
                 # Use the number of the "guest-portal" entry from /radius print, or (to verify):
@@ -353,6 +405,72 @@ class MikrotikRos7Driver implements NasDriver
                 /ip hotspot active print
                 /ip hotspot host print
                 /log print where topics~"hotspot|radius"
+                RSC,
+            ],
+            'uninstall' => [
+                'uninstall' => <<<RSC
+                # Removes everything the router script and the setup assistant created, identified by the name
+                # or comment "{$n}". Safe to run when entries do not exist. Logs out connected guests.
+                # Order matters: script/scheduler, hotspot (uses the certificate), then the certificates.
+                /system scheduler remove [find where name="{$n}-cert"]
+                /system script remove [find where name="{$n}-cert"]
+                /ip hotspot remove [find where name="{$n}"]
+                /ip hotspot profile remove [find where name="{$n}"]
+                /ip hotspot walled-garden remove [find where comment="{$n}"]
+                /ip hotspot walled-garden ip remove [find where comment="{$n}"]
+                /radius remove [find where comment="{$n}"]
+                # /radius incoming has no comment: only if nothing else uses Disconnect/CoA on this router:
+                # /radius incoming set accept=no
+                # Certificates imported by the certificate script (comment) and of older versions (names)
+                /certificate remove [find where comment="{$n}"]
+                /certificate remove [find where name~"^{$n}"]
+                /file remove [find where name="{$n}.crt" || name="{$n}.key"]
+                /ip dns static remove [find where comment="{$n}"]
+                # DHCP option 114: first remove the reference (clears all DHCP options of this network)
+                /ip dhcp-server network set [find where dhcp-option~"captive-portal"] dhcp-option=""
+                /ip dhcp-server option remove [find where name="captive-portal"]
+                # Firewall rules and address lists of the assistant (comment starts with "{$n}")
+                /ip firewall filter remove [find where comment~"^{$n}"]
+                /ip firewall nat remove [find where comment~"^{$n}"]
+                /ip firewall address-list remove [find where comment~"^{$n}"]
+                # Older assistant versions used other comments; check and remove manually if present:
+                # /ip firewall filter print where comment~"^(guest|portal): |^stateful\\$|^nothing initiates"
+                # /ip firewall address-list print where list=PORTAL || list=PORTAL_RADIUS || list=RFC1918
+                # login.html: the html-directory (default hotspot/) may be shared with other hotspots, so it
+                # is not removed here. Delete it only if no other hotspot uses it (RouterOS creates the
+                # default files again for a newly created hotspot, to verify):
+                # /file remove [find where name~"hotspot/login.html"]
+                RSC,
+                'uninstall_container' => <<<RSC
+                # OPTIONAL, only if the portal runs as RouterOS container on this router (step 1).
+                # Data in {$c['disk']}/portal-data and {$c['disk']}/portal-root stays (back up, then /file remove).
+                # Device mode container=yes stays enabled.
+                /container stop [find where interface=veth-portal]
+                :delay 10s
+                /container remove [find where interface=veth-portal]
+                /container mounts remove [find where list=portal-data]
+                /container envs remove [find where list=portal]
+                /ip address remove [find where interface={$c['bridge']}]
+                /interface bridge port remove [find where interface=veth-portal]
+                /interface bridge remove [find where name={$c['bridge']}]
+                /interface veth remove [find where name=veth-portal]
+                RSC,
+                'uninstall_network' => <<<RSC
+                # OPTIONAL network infrastructure of step 2. Run a line ONLY if it was created for the guest
+                # network (not if it existed before or is used otherwise). Wi-Fi first, VLAN interface last.
+                {$wifiRemove}
+                # only if created for the guest network: DHCP server, network, pool, gateway address
+                /ip dhcp-server remove [find where name=guest-dhcp]
+                /ip dhcp-server network remove [find where address="{$g['subnet']}"]
+                /ip pool remove [find where name={$g['pool_name']}]
+                /ip address remove [find where interface={$g['interface']}]
+                # only if created for the guest network: interface list GUEST
+                /interface list member remove [find where list=GUEST]
+                /interface list remove [find where name=GUEST]
+                # only if created for the guest network: bridge VLAN entry (optional block of step 2)
+                /interface bridge vlan remove [find where comment="{$n}"]
+                # only if created for the guest network: guest VLAN interface
+                /interface vlan remove [find where name={$g['interface']}]
                 RSC,
             ],
         ];
@@ -402,14 +520,28 @@ class MikrotikRos7Driver implements NasDriver
     /**
      * Script + scheduler that fetch the router certificate from the instance and set it on the hotspot
      * profile when its fingerprint changed (CONCEPT.md §6). RouterOS syntax details: to verify per version.
+     *
+     * Robust against chain imports: importing the PEM chain creates one certificate per PEM block (leaf +
+     * CA certificates) with generated names, so nothing relies on names. The current certificate is the
+     * one referenced by the profile's ssl-certificate (renaming by the user does not matter), the new
+     * leaf is the imported certificate whose fingerprint matches /fingerprint (fallback: the one with a
+     * private key). All certificates imported by this script carry comment "guest-portal"; only those
+     * are removed later.
      */
     private function certScript(string $base, string $token, string $sourceIp): string
     {
         $interval = preg_replace('/[^0-9dhms]/', '', (string) config('portal.router_cert.fetch_interval')) ?: '1d';
         $script = <<<'RSC'
         # Router certificate for login-by=https, fetched from the instance at startup and every __INTERVAL__.
-        # Imported only when its fingerprint changed; sets ssl-certificate and login-by=https,mac of hotspot profile "__NAME__". check-certificate=yes needs a trusted portal certificate.
-        # The download is accepted only from this router's NAS IP (src-address) with its token.
+        # Imported only when its fingerprint differs from the certificate set on hotspot profile "__NAME__";
+        # then sets ssl-certificate and login-by=https,mac. check-certificate=yes needs a trusted portal certificate.
+        # The download is accepted only from this router's IP (src-address) with its token.
+        # Imported certificates (leaf + chain CAs) get comment="__NAME__"; the leaf is renamed to "__NAME__",
+        # the CA certificates to "__NAME__-ca-<n>". Only certificates with this comment are ever removed.
+        # Fingerprints are compared lowercase without ":" (instance: sha256 lowercase hex; RouterOS
+        # "fingerprint" property: format to verify, normalised here).
+        # Errors are logged with the failing step: /log print where message~"__NAME__"
+        # Uses :onerror (RouterOS >= 7.13, to verify on the installed version).
         /system scheduler
         remove [find name="__NAME__-cert"]
         /system script
@@ -419,26 +551,86 @@ class MikrotikRos7Driver implements NasDriver
         :local hdr "X-Portal-Token: __TOKEN__"
         :local src "__SRC__"
         :local name "__NAME__"
-        :local newname "__NAME__-new"
-        :do {
-            :local fp ([/tool fetch url=($base . "/fingerprint") http-header-field=$hdr src-address=$src check-certificate=yes output=user as-value]->"data")
+        :local tmp "__NAME__-import"
+        :local step "start"
+        # Lowercase hex without ":", spaces or line breaks
+        :local norm do={
+            :local s [:tostr $1]
+            :local r ""
+            :local up "ABCDEF"
+            :local lo "abcdef"
+            :if ([:len $s] > 0) do={
+                :for i from=0 to=([:len $s] - 1) do={
+                    :local ch [:pick $s $i]
+                    :local p [:find $up $ch]
+                    :if ([:typeof $p] = "num") do={ :set ch [:pick $lo $p] }
+                    :if ([:typeof [:find "0123456789abcdef" $ch]] = "num") do={ :set r ($r . $ch) }
+                }
+            }
+            :return $r
+        }
+        :onerror err in={
+            :set step "hotspot profile"
+            :local profs [/ip hotspot profile find where name=$name]
+            :if ([:len $profs] = 0) do={ :error ("hotspot profile " . $name . " not found") }
+            :local prof [:pick $profs 0]
+            :set step "fetch fingerprint"
+            :local fp [$norm ([/tool fetch url=($base . "/fingerprint") http-header-field=$hdr src-address=$src check-certificate=yes output=user as-value]->"data")]
+            :if ([:len $fp] != 64) do={ :error "unexpected fingerprint from the instance" }
+            :set step "current certificate"
+            # Certificate currently set on the profile (by reference, whatever its name is)
+            :local sc [:tostr [/ip hotspot profile get $prof ssl-certificate]]
             :local cur ""
-            :foreach c in=[/certificate find where name=$name] do={ :set cur [/certificate get $c fingerprint] }
-            :if ([:len $fp] = 64 && $fp != $cur) do={
+            :if ($sc != "none" && [:len $sc] > 0) do={
+                :foreach c in=[/certificate find where name=$sc] do={ :set cur [$norm [/certificate get $c fingerprint]] }
+            }
+            :if ($fp != $cur) do={
+                :set step "download"
                 /tool fetch url=($base . "/router.crt") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".crt")
                 /tool fetch url=($base . "/router.key") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".key")
                 :delay 2s
-                /certificate remove [find where name=$newname]
-                /certificate import file-name=($name . ".crt") passphrase="" name=$newname
-                /certificate import file-name=($name . ".key") passphrase="" name=$newname
+                :set step "cleanup before import"
+                # Leftovers of an aborted run, legacy names of older script versions without comment
+                /certificate remove [find where name~("^" . $tmp)]
+                /certificate set [find where name~("^" . $name) && comment=""] comment=$name
+                # Previous CA certificates of this script (all except the certificate in use); the chain
+                # is imported again below. Certificates without this comment are never touched.
+                /certificate remove [find where comment=$name && name!=$sc]
+                :set step "import certificate chain"
+                /certificate import file-name=($name . ".crt") passphrase="" name=$tmp
+                :set step "import private key"
+                # name= as in earlier versions; whether the key import renames the matched certificate: to verify
+                /certificate import file-name=($name . ".key") passphrase="" name=$tmp
                 /file remove [find where name=($name . ".crt")]
                 /file remove [find where name=($name . ".key")]
-                /ip hotspot profile set [find where name=$name] ssl-certificate=$newname login-by=https,mac
-                /certificate remove [find where name=$name]
-                /certificate set [find where name=$newname] name=$name
-                :log info "__NAME__: router certificate updated"
+                :set step "find imported leaf"
+                /certificate set [find where name~("^" . $tmp)] comment=$name
+                :local leaf ""
+                :foreach c in=[/certificate find where name~("^" . $tmp)] do={
+                    :if ([$norm [/certificate get $c fingerprint]] = $fp) do={ :set leaf $c }
+                }
+                :if ([:typeof $leaf] != "id") do={
+                    # Fallback: the imported certificate that received the private key (to verify)
+                    :foreach c in=[/certificate find where name~("^" . $tmp) && private-key] do={ :set leaf $c }
+                }
+                :if ([:typeof $leaf] != "id") do={ :error "imported leaf certificate not found" }
+                :if (![/certificate get $leaf private-key]) do={ :error "private key not matched to the leaf certificate" }
+                :set step "set hotspot profile"
+                /ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac
+                :set step "remove previous certificate"
+                /certificate remove [find where comment=$name && !(name~("^" . $tmp))]
+                :set step "rename"
+                :onerror e in={ /certificate set $leaf name=$name } do={ :log warning ($name . ": leaf not renamed: " . $e) }
+                :local i 1
+                :foreach c in=[/certificate find where name~("^" . $tmp)] do={
+                    :onerror e in={ /certificate set $c name=($name . "-ca-" . $i) } do={ :log warning ($name . ": CA not renamed: " . $e) }
+                    :set i ($i + 1)
+                }
+                # Set again by name in case the profile keeps the name instead of a reference (to verify)
+                /ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac
+                :log info ($name . ": router certificate updated")
             }
-        } on-error={ :log warning "__NAME__: router certificate update failed" }
+        } do={ :log warning ($name . ": router certificate update failed at step '" . $step . "': " . $err) }
         }
         /system scheduler
         add name=__NAME__-cert interval=__INTERVAL__ start-time=startup on-event=__NAME__-cert policy=read,write,policy,test

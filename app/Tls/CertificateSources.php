@@ -122,6 +122,64 @@ final class CertificateSources
         ]);
     }
 
+    /**
+     * CertWarden server URL without path: users often paste the UI URL (".../certwarden" or
+     * ".../certwarden/app/..."); the download path is appended by downloadUrl(). Trailing "/" removed.
+     */
+    public static function normalizeCertwardenUrl(string $url): string
+    {
+        $url = rtrim(trim($url), '/');
+
+        return rtrim((string) preg_replace('#/certwarden(/.*)?$#i', '', $url), '/');
+    }
+
+    /** Full download URL (without key) of a source, null for type none or a missing URL. */
+    public static function downloadUrl(array $source): ?string
+    {
+        $base = rtrim((string) ($source['url'] ?? ''), '/');
+        if ($base === '') {
+            return null;
+        }
+
+        return match ($source['type'] ?? 'none') {
+            'certwarden' => self::normalizeCertwardenUrl($base).'/certwarden/api/v1/download/privatecertchains/'
+                .rawurlencode((string) ($source['name'] ?? '')),
+            'url' => $base,
+            default => null,
+        };
+    }
+
+    /**
+     * CertWarden API key "<certificate API key>.<private key API key>" (stored combined, also for
+     * values saved before the two separate fields existed).
+     */
+    public static function combineCertwardenKeys(string $certKey, string $privateKey): string
+    {
+        return trim($certKey).'.'.trim($privateKey);
+    }
+
+    /** @return array{0: string, 1: string} certificate API key, private key API key ('' if missing) */
+    public static function splitCertwardenKey(?string $combined): array
+    {
+        $parts = explode('.', (string) $combined, 2);
+
+        return [$parts[0], $parts[1] ?? ''];
+    }
+
+    /** Translated hint for an HTTP status in a pull error ("HTTP 404 ..."), null if none. */
+    public static function errorHint(?string $error): ?string
+    {
+        if ($error === null || ! preg_match('/^HTTP (\d{3})/', $error, $m)) {
+            return null;
+        }
+
+        return match ((int) $m[1]) {
+            404 => __('portal.certificates.hints.not_found'),
+            401, 403 => __('portal.certificates.hints.unauthorized'),
+            default => null,
+        };
+    }
+
     /** Host name the portal certificate must cover: PORTAL_HOSTNAME, else the APP_URL host. */
     public static function portalHost(): ?string
     {

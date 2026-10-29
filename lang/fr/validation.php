@@ -96,7 +96,9 @@ return [
         'portal_url' => 'URL du portail',
         'hotspot_hosts' => 'hôtes hotspot',
         'nas_ip' => 'IP du routeur',
-        'nas_identifier' => 'NAS identifier',
+        'nas_identifier' => 'identifiant du routeur',
+        'api_key_cert' => 'clé API du certificat',
+        'api_key_key' => 'clé API de la clé privée',
         'coa_port' => 'port CoA',
         // Codes and grants
         'quantity' => 'quantité',

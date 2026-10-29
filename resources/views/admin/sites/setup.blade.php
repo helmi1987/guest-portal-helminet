@@ -12,6 +12,8 @@
     <h1 class="mb-2 text-2xl font-semibold">{{ __('portal.setup.title') }}: {{ $site->name }}</h1>
     <p class="mb-6 text-sm text-slate-600">{{ __('portal.setup.intro') }}</p>
 
+    @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $commands['diagnostics']['verify'] ?? ''])
+
     {{-- 1. RouterOS container (optional) --}}
     <details id="step-container" class="card mb-6" @if ($errors->hasAny(['veth_address', 'veth_gateway', 'disk', 'image'])) open @endif>
         <summary class="cursor-pointer text-lg font-semibold">1. {{ __('portal.setup.container.title') }}
@@ -47,8 +49,9 @@
             @csrf
             <label class="label">{{ __('portal.setup.network.vlan_id') }}
                 <input name="vlan_id" type="number" min="1" max="4094" value="{{ $field($setup, 'vlan_id') }}" placeholder="30" required class="field"></label>
-            <label class="label">{{ __('portal.setup.network.bridge') }}
-                <input name="bridge" value="{{ $field($setup, 'bridge') }}" placeholder="bridge1" required class="field"></label>
+            <label class="label md:col-span-2">{{ __('portal.setup.network.bridge') }}
+                <input name="bridge" value="{{ $field($setup, 'bridge') }}" placeholder="bridge1" required class="field">
+                <span class="text-xs text-slate-500">{{ __('portal.setup.network.bridge_help') }}</span></label>
             <label class="label">{{ __('portal.setup.network.interface') }}
                 <input name="interface" value="{{ $field($setup, 'interface') }}" placeholder="vlan30-guest" required class="field"></label>
             <label class="label">{{ __('portal.setup.network.ssid') }}
@@ -67,7 +70,10 @@
                 </select></label>
             <div class="md:col-span-4"><button class="btn">{{ __('portal.save') }}</button></div>
         </form>
+        <p class="mb-2 text-sm text-amber-800">{{ __('portal.setup.network.bridge_warning') }}</p>
         <x-admin.code :title="__('portal.setup.blocks.vlan')" :code="$commands['network']['vlan']" />
+        <p class="mb-2 text-sm text-slate-600">{{ __('portal.setup.network.vlan_filtering_help') }}</p>
+        <x-admin.code :title="__('portal.setup.blocks.vlan_filtering')" :code="$commands['network']['vlan_filtering']" />
         <x-admin.code :title="__('portal.setup.blocks.wifi')" :code="$commands['network']['wifi']" />
         @if (($setup['wifi_mode'] ?? 'capsman2') !== 'local') <p class="mb-4 text-sm text-amber-800">{{ __('portal.setup.network.slaves_help') }}</p> @endif
         <x-admin.code :title="__('portal.setup.blocks.dhcp')" :code="$commands['network']['dhcp']" />
@@ -83,6 +89,13 @@
             <x-admin.step-status :ok="$hostsSet" :label="$hostsSet ? __('portal.setup.saved') : __('portal.setup.missing')" /></h2>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.hotspot.help') }}
             @unless ($hostsSet) <a href="{{ route('admin.sites.edit', $site) }}" class="underline">{{ __('portal.sites.hotspot_hosts') }}</a> @endunless</p>
+        @php($hotspotHost = ((array) $site->setting('hotspot_hosts', []))[0] ?? '<HOTSPOT_DNS_NAME>')
+        @php($portalHostName = parse_url((string) ($site->setting('portal_url') ?: config('app.url')), PHP_URL_HOST) ?: '<PORTAL_HOST>')
+        <p class="mb-1 text-sm text-slate-600">{{ __('portal.setup.hotspot.dns_entries') }}</p>
+        <ul class="mb-3 list-disc pl-6 text-sm">
+            <li><code>{{ $hotspotHost }}</code> &rarr; <code>{{ $setup['gateway'] ?? '<HOTSPOT_GATEWAY_IP>' }}</code> ({{ __('portal.setup.hotspot.dns_hotspot') }})</li>
+            <li><code>{{ $portalHostName }}</code> &rarr; <code>{{ $site->setting('portal_address') ?: ($site->setting('radius_address') ?: '<INSTANCE_IP>') }}</code> ({{ __('portal.setup.hotspot.dns_portal') }})</li>
+        </ul>
         <x-admin.code :title="__('portal.setup.blocks.dns')" :code="$commands['hotspot']['dns']" />
         <x-admin.code :title="__('portal.setup.blocks.hotspot')" :code="$commands['hotspot']['hotspot']" />
         <p class="text-sm text-amber-800">{{ __('portal.setup.hotspot.captive_hosts') }}</p>
@@ -143,6 +156,16 @@
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.diagnostics.help') }}</p>
         <x-admin.code :code="$commands['diagnostics']['diagnostics']" />
     </section>
+
+    {{-- 8. Uninstall --}}
+    <details id="step-uninstall" class="card mb-6">
+        <summary class="cursor-pointer text-lg font-semibold">8. {{ __('portal.setup.uninstall.title') }}</summary>
+        <p class="my-3 text-sm text-slate-600">{{ __('portal.setup.uninstall.help') }}</p>
+        <x-admin.code :title="__('portal.setup.blocks.uninstall')" :code="$commands['uninstall']['uninstall']" />
+        <x-admin.code :title="__('portal.setup.blocks.uninstall_container')" :code="$commands['uninstall']['uninstall_container']" />
+        <x-admin.code :title="__('portal.setup.blocks.uninstall_network')" :code="$commands['uninstall']['uninstall_network']" />
+        <p class="text-sm text-amber-800">{{ __('portal.setup.uninstall.portal_hint') }}</p>
+    </details>
 
     <p><a href="{{ route('admin.sites.edit', $site) }}" class="btn-light">{{ __('portal.back') }}</a></p>
 </x-layouts.admin>

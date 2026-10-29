@@ -19,7 +19,8 @@
                 @endforeach
             </select></label>
         <label class="label">{{ __('portal.sites.portal_url') }}
-            <input name="portal_url" value="{{ old('portal_url', $site->setting('portal_url')) }}" placeholder="{{ config('app.url') }}" class="field"></label>
+            <input name="portal_url" value="{{ old('portal_url', $site->setting('portal_url')) }}" placeholder="{{ config('app.url') }}" class="field">
+            <span class="text-xs text-slate-500">{{ __('portal.sites.portal_url_help') }}</span></label>
         <label class="label">{{ __('portal.sites.radius_address') }}
             <input name="radius_address" value="{{ old('radius_address', $site->setting('radius_address')) }}" placeholder="10.0.0.10" class="field">
             <span class="text-xs text-slate-500">{{ __('portal.sites.radius_address_help') }}</span></label>
@@ -40,6 +41,10 @@
             <span class="text-xs text-slate-500">{{ __('portal.sites.hotspot_hosts_help') }}</span></label>
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
+
+    @if ($site->exists)
+        @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $site->driver()->setupCommands($site, [])['diagnostics']['verify'] ?? ''])
+    @endif
 
     @if ($site->exists && ! $site->isServedHere())
         <section class="card mb-6 flex flex-wrap items-center justify-between gap-4 border-2 border-amber-300">

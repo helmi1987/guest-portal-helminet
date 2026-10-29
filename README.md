@@ -10,7 +10,7 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (M7 federation in progress; v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
+**Status:** early development (M7 federation in progress; v0.12.1: setup fixes (bridge, host names, router certificate script, CertWarden keys, uninstall); v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor
@@ -46,7 +46,7 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   mounted at `/certs`), `router.crt` + `router.key` (e.g. a wildcard) for the routers' HTTPS login,
   downloaded by each router's scheduler. Changed files are picked up within ~10 s (nginx reload).
   Admin UI → Certificates: current certificates and an optional source per certificate (CertWarden
-  private cert chain with `<cert API key>.<key API key>`, or a URL returning key + certificate +
+  private cert chain: server URL without path, certificate and private key API keys in two fields; or a URL returning key + certificate +
   chain as PEM with optional bearer token, own CA for a private CA), pulled every 6 h or on demand.
 - Vouchers: admin UI → Codes → create 1-100 codes at once; the print view is an A4 sheet (10 cards)
   with the code, duration and a Wi-Fi join QR for the guest SSID entered in the setup assistant

@@ -32,7 +32,9 @@ return [
         'portal_url' => 'portal URL',
         'hotspot_hosts' => 'hotspot hosts',
         'nas_ip' => 'router IP',
-        'nas_identifier' => 'NAS identifier',
+        'nas_identifier' => 'router identifier',
+        'api_key_cert' => 'certificate API key',
+        'api_key_key' => 'private key API key',
         'coa_port' => 'CoA port',
         // Codes and grants
         'quantity' => 'quantity',

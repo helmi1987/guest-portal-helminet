@@ -60,14 +60,21 @@ class CertificateController extends Controller
         if ($current['url'] !== null && $request->input('url') === CertificateSources::maskUrl($current['url'])) {
             $request->merge(['url' => $current['url']]);
         }
+        $certwarden = $request->input('type') === 'certwarden';
         $data = $request->validate([
             'type' => ['required', Rule::in(CertificateSources::TYPES)],
             'url' => ['nullable', 'required_unless:type,none', 'url:https', 'max:500'],
             'name' => ['nullable', 'required_if:type,certwarden', 'regex:/^[A-Za-z0-9._-]+$/', 'max:200'],
-            'api_key' => [$request->input('type') === 'certwarden' && ! $current['has_api_key'] ? 'required' : 'nullable',
-                'string', 'max:500'],
+            'api_key' => ['nullable', 'string', 'max:500'],
+            // CertWarden: two keys, combined as "<certificate API key>.<private key API key>"
+            // (a combined value in api_key is still accepted, e.g. from scripts using the old form field)
+            'api_key_cert' => ['nullable', ...($certwarden && ! $current['has_api_key'] ? ['required_without:api_key'] : []), 'string', 'max:250', 'regex:/^[^\s.]*$/'],
+            'api_key_key' => ['nullable', ...($certwarden && ! $current['has_api_key'] ? ['required_without:api_key'] : []), 'string', 'max:250', 'regex:/^[^\s.]*$/'],
             'remove_api_key' => ['boolean'],
             'ca_pem' => ['nullable', 'string', 'max:20000'],
+        ], [
+            'api_key_cert.required_without' => __('validation.required'),
+            'api_key_key.required_without' => __('validation.required'),
         ]);
         if (isset($data['url']) && (parse_url($data['url'], PHP_URL_USER) !== null || parse_url($data['url'], PHP_URL_PASS) !== null)) {
             throw ValidationException::withMessages(['url' => __('portal.certificates.url_userinfo')]);
@@ -76,7 +83,10 @@ class CertificateController extends Controller
         if ($ca !== '' && (! str_contains($ca, '-----BEGIN CERTIFICATE-----') || @openssl_x509_read($ca) === false)) {
             throw ValidationException::withMessages(['ca_pem' => __('portal.certificates.ca_invalid')]);
         }
-        $apiKey = trim((string) ($data['api_key'] ?? ''));
+        if ($data['type'] === 'certwarden' && isset($data['url'])) {
+            $data['url'] = CertificateSources::normalizeCertwardenUrl($data['url']);
+        }
+        $apiKey = $certwarden ? $this->certwardenKey($target, $current, $data) : trim((string) ($data['api_key'] ?? ''));
 
         CertificateSources::put($target, $data['type'], $data['url'] ?? null, $data['name'] ?? null, $ca ?: null,
             $apiKey !== '' ? $apiKey : ($request->boolean('remove_api_key') ? '' : null));
@@ -84,6 +94,30 @@ class CertificateController extends Controller
             'name' => $data['name'] ?? null, 'custom_ca' => $ca !== '']);
 
         return back()->with('status', __('portal.saved'));
+    }
+
+    /**
+     * New combined CertWarden key from the two fields; an empty field keeps the stored part (also of
+     * a combined value saved before the two fields existed). '' = keep the stored key unchanged.
+     *
+     * @throws ValidationException when only one key is entered and no stored key exists
+     */
+    private function certwardenKey(string $target, array $current, array $data): string
+    {
+        $cert = trim((string) ($data['api_key_cert'] ?? ''));
+        $key = trim((string) ($data['api_key_key'] ?? ''));
+        if ($cert === '' && $key === '') {
+            return trim((string) ($data['api_key'] ?? ''));
+        }
+        [$storedCert, $storedKey] = CertificateSources::splitCertwardenKey($current['has_api_key'] ? CertificateSources::apiKey($target) : null);
+        $cert = $cert !== '' ? $cert : $storedCert;
+        $key = $key !== '' ? $key : $storedKey;
+        if ($cert === '' || $key === '') {
+            throw ValidationException::withMessages([($cert === '' ? 'api_key_cert' : 'api_key_key') => __('validation.required',
+                ['attribute' => __('portal.certificates.'.($cert === '' ? 'api_key_cert' : 'api_key_key'))])]);
+        }
+
+        return CertificateSources::combineCertwardenKeys($cert, $key);
     }
 
     public function pull(string $target, CertificatePuller $puller): RedirectResponse
@@ -94,7 +128,9 @@ class CertificateController extends Controller
         } catch (CertificateException $e) {
             Audit::log('certificate.pulled', null, ['target' => $target, 'result' => CertificatePuller::FAILED]);
 
-            return back()->withErrors(['pull' => __('portal.certificates.pull_failed', ['error' => $e->getMessage()])]);
+            $hint = CertificateSources::errorHint($e->getMessage());
+
+            return back()->withErrors(['pull' => __('portal.certificates.pull_failed', ['error' => $e->getMessage()]).($hint ? ' '.$hint : '')]);
         }
         Audit::log('certificate.pulled', null, ['target' => $target, 'result' => $result]);
 

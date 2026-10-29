@@ -109,7 +109,7 @@ class SetupAssistantTest extends TestCase
 
         $this->assertStringContainsString('add list=PORTAL address=10.0.0.20', $firewall);
         $this->assertStringContainsString('add list=PORTAL_RADIUS address=10.0.0.10', $firewall);
-        $this->assertStringContainsString('src-address-list=PORTAL_RADIUS dst-port=1700,3799 comment="portal: Disconnect/CoA"', $firewall);
+        $this->assertStringContainsString('src-address-list=PORTAL_RADIUS dst-port=1700,3799 comment="guest-portal: Disconnect/CoA"', $firewall);
     }
 
     public function test_hotspot_hosts_reject_spaces_and_script_characters(): void
@@ -213,5 +213,94 @@ class SetupAssistantTest extends TestCase
         $api('10.30.0.21')->assertJson(['captive' => true]);
         $this->withServerVariables(['PORTAL_ZONE' => 'guest', 'REMOTE_ADDR' => '10.30.0.20'])->get('/captive/unknown')
             ->assertOk()->assertExactJson(['captive' => true]);
+    }
+
+    public function test_hotspot_host_must_differ_from_portal_host(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $base = ['name' => 'Site A', 'slug' => 'site-a', 'driver' => 'mikrotik_ros7'];
+        $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['hotspot_hosts' => 'hotspot-a.guest.example.com, Portal.example.com'])
+            ->assertSessionHasErrors(['hotspot_hosts' => __('portal.sites.hotspot_is_portal', ['host' => 'portal.example.com'])]);
+        $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['portal_url' => 'https://guest.example.com',
+            'hotspot_hosts' => 'guest.example.com'])->assertSessionHasErrors('hotspot_hosts');
+        $this->assertSame(['hotspot-a.guest.example.com'], $this->site->fresh()->setting('hotspot_hosts'));
+
+        app()->setLocale('de');
+        $this->assertStringContainsString('ist der Portal-Hostname', __('portal.sites.hotspot_is_portal', ['host' => 'x']));
+        app()->setLocale('en');
+
+        $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['portal_url' => 'https://guest.example.com',
+            'hotspot_hosts' => 'hotspot-a.guest.example.com'])->assertSessionHasNoErrors();
+    }
+
+    public function test_page_shows_bridge_check_both_dns_entries_checklist_and_uninstall(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['vlan_id' => 30, 'bridge' => 'bridge1',
+            'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250',
+            'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2']])]);
+
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
+            ->assertSee(__('portal.setup.checklist.warning'))
+            ->assertSee(__('portal.setup.network.bridge_help'))
+            ->assertSee('/interface bridge port print where bridge=bridge1', false)
+            ->assertSee('/interface bridge vlan add bridge=bridge1 tagged=bridge1,<TRUNK_PORT_TO_CAP> vlan-ids=30')
+            ->assertDontSee('/interface bridge set bridge1 vlan-filtering=yes', false)
+            ->assertSee('add name=hotspot-a.guest.example.com address=10.30.0.1', false)
+            ->assertSee('add name=portal.example.com address=10.0.0.10', false)
+            ->assertSee('/ip hotspot profile print where name=guest-portal', false)
+            ->assertSee('/certificate print where name~"guest-portal"')
+            ->assertSee('/file print where name~"login.html"')
+            ->assertSee(__('portal.setup.uninstall.title'));
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/edit")->assertOk()
+            ->assertSee(__('portal.setup.checklist.warning'))->assertSee(__('portal.sites.nas_ip'));
+
+        $u = $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['uninstall'];
+        $script = $u['uninstall'];
+        foreach (['/system scheduler remove [find where name="guest-portal-cert"]', '/system script remove [find where name="guest-portal-cert"]',
+            '/ip hotspot remove [find where name="guest-portal"]', '/ip hotspot profile remove [find where name="guest-portal"]',
+            '/ip hotspot walled-garden remove [find where comment="guest-portal"]', '/ip hotspot walled-garden ip remove [find where comment="guest-portal"]',
+            '/radius remove [find where comment="guest-portal"]', '# /radius incoming set accept=no',
+            '/certificate remove [find where comment="guest-portal"]', '/certificate remove [find where name~"^guest-portal"]',
+            '/ip dns static remove [find where comment="guest-portal"]', 'dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal"]',
+            '/ip firewall filter remove [find where comment~"^guest-portal"]', '/ip firewall address-list remove [find where comment~"^guest-portal"]'] as $line) {
+            $this->assertStringContainsString($line, $script);
+        }
+        // Order: hotspot before profile, profile before certificates, option reference before the option.
+        $this->assertLessThan(strpos($script, '/ip hotspot profile remove'), strpos($script, '/ip hotspot remove'));
+        $this->assertLessThan(strpos($script, '/certificate remove'), strpos($script, '/ip hotspot profile remove'));
+        $this->assertLessThan(strpos($script, '/ip dhcp-server option remove'), strpos($script, 'dhcp-option=""'));
+        $this->assertStringContainsString('/interface/veth remove', str_replace('/interface veth', '/interface/veth', $u['uninstall_container']));
+        foreach (['/interface wifi configuration remove [find where name=cfg-guest]', '/ip dhcp-server remove [find where name=guest-dhcp]',
+            '/ip pool remove [find where name=guest-pool]', '/interface vlan remove [find where name=vlan30-guest]',
+            '/interface list remove [find where name=GUEST]'] as $line) {
+            $this->assertStringContainsString($line, $u['uninstall_network']);
+        }
+        $this->assertLessThan(strpos($u['uninstall_network'], '/interface vlan remove'), strpos($u['uninstall_network'], '/ip address remove'));
+    }
+
+    public function test_certificate_script_identifies_leaf_by_fingerprint_and_profile_reference(): void
+    {
+        $script = $this->site->driver()->configScript($this->site, $this->nas);
+        foreach ([
+            ':local tmp "guest-portal-import"',
+            ':local sc [:tostr [/ip hotspot profile get $prof ssl-certificate]]',
+            ':foreach c in=[/certificate find where name=$sc] do={ :set cur [$norm [/certificate get $c fingerprint]] }',
+            '/certificate import file-name=($name . ".crt") passphrase="" name=$tmp',
+            '/certificate set [find where name~("^" . $tmp)] comment=$name',
+            ':if ([$norm [/certificate get $c fingerprint]] = $fp) do={ :set leaf $c }',
+            '/certificate find where name~("^" . $tmp) && private-key',
+            '/ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac',
+            '/certificate remove [find where comment=$name && !(name~("^" . $tmp))]',
+            '/certificate set $c name=($name . "-ca-" . $i)',
+            ':onerror err in={',
+            'router certificate update failed at step',
+        ] as $line) {
+            $this->assertStringContainsString($line, $script);
+        }
+        // No name-based comparison any more (chain imports create several certificates).
+        $this->assertStringNotContainsString('find where name=$name] do={ :set cur', $script);
+        $this->assertStringNotContainsString('guest-portal-new', $script);
+        $this->assertStringContainsString('logins of the portal CANNOT work yet', $script);
     }
 }
