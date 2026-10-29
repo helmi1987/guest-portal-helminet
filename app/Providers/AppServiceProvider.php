@@ -2,6 +2,7 @@
 
 namespace App\Providers;
 
+use App\Federation\ApplyHooks;
 use App\Federation\DataKey;
 use App\Federation\Outbox;
 use App\Http\Middleware\EnsureZone;
@@ -20,6 +21,7 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Hlc::class);
         $this->app->singleton(DataKey::class);
         $this->app->singleton(Outbox::class);
+        $this->app->singleton(ApplyHooks::class);
     }
 
     public function boot(): void

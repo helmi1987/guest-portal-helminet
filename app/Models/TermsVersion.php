@@ -28,7 +28,9 @@ class TermsVersion extends Model
 
     public static function latestFor(string $locale): ?self
     {
-        return static::query()->where('locale', $locale)->orderByDesc('number')->first();
+        // Numbers may repeat after a federation merge (no unique index): newest publication wins.
+        return static::query()->where('locale', $locale)->orderByDesc('number')->orderByDesc('published_at')
+            ->orderByDesc('id')->first();
     }
 
     /** Current terms shown to a guest: own locale, else the app default locale, else any locale. */

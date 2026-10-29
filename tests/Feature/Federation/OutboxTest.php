@@ -4,9 +4,11 @@ namespace Tests\Feature\Federation;
 
 use App\Enums\ExpiryMode;
 use App\Enums\GrantType;
+use App\Federation\Applier;
 use App\Federation\Federation;
 use App\Federation\FutureVersionException;
 use App\Models\Grant;
+use App\Models\MacWhitelist;
 use App\Models\SessionSummary;
 use App\Models\Setting;
 use App\Models\Site;
@@ -162,5 +164,22 @@ class OutboxTest extends TestCase
         $this->assertLessThan(Hlc::format(1, 0, '01B'), Hlc::format(1, 0, '01A'));
         $this->assertLessThan(Hlc::format(1, 1, '01A'), Hlc::format(1, 0, '01B'));
         $this->assertLessThan(Hlc::format(2, 0, '01A'), Hlc::format(1, 99, '01Z'));
+    }
+
+    public function test_conflict_resolution_of_the_apply_engine_passes_the_guard(): void
+    {
+        Carbon::setTestNow('2026-10-30 12:00:00');
+        $local = MacWhitelist::create(['mac' => 'AA:BB:CC:DD:EE:FF', 'comment' => 'local']);
+        $origin = '01JREMOTE00000000000000000';
+        $version = Hlc::format(Hlc::wallMs() + 1000, 0, $origin);
+        $id = '01JWHITELIST00000000000000';
+
+        $result = app(Applier::class)->apply($origin, [['origin' => $origin, 'seq' => 1, 'table' => 'mac_whitelist',
+            'record_id' => $id, 'version' => $version, 'payload' => ['id' => $id, 'mac' => 'AA:BB:CC:DD:EE:FF',
+                'comment' => 'remote', 'active' => 1, 'created_at' => '2026-10-30 12:00:01', 'updated_at' => '2026-10-30 12:00:01']]]);
+
+        $this->assertSame('ok', $result->status);
+        $this->assertTrue($local->fresh()->trashed());
+        $this->assertSame([], FederationWriteGuard::violations());
     }
 }

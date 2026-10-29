@@ -2,6 +2,7 @@
 
 namespace Tests;
 
+use App\Federation\Applier;
 use App\Federation\Federation;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -16,6 +17,8 @@ final class FederationWriteGuard
     public static function install(): void
     {
         DB::statement('CREATE TABLE _federation_writes (tbl TEXT, id TEXT, version TEXT, kind TEXT)');
+        // Conflict rules of the apply engine change rows without a new version on purpose.
+        DB::connection()->getPdo()->sqliteCreateFunction('fed_resolving', fn () => Applier::isResolving() ? 1 : 0, 0);
         foreach (array_keys(Federation::TABLES) as $table) {
             DB::unprepared("CREATE TRIGGER _fedguard_{$table}_ins AFTER INSERT ON \"{$table}\" BEGIN "
                 ."INSERT INTO _federation_writes VALUES ('{$table}', NEW.id, NEW.version, 'insert'); END");
@@ -23,7 +26,7 @@ final class FederationWriteGuard
                 ->map(fn ($c) => "NEW.\"$c\" IS NOT OLD.\"$c\"")->implode(' OR ');
             DB::unprepared("CREATE TRIGGER _fedguard_{$table}_upd AFTER UPDATE ON \"{$table}\" BEGIN "
                 ."INSERT INTO _federation_writes VALUES ('{$table}', NEW.id, NEW.version, "
-                ."CASE WHEN NEW.version IS OLD.version AND ($changed) THEN 'same_version' ELSE 'update' END); END");
+                ."CASE WHEN NEW.version IS OLD.version AND ($changed) AND NOT fed_resolving() THEN 'same_version' ELSE 'update' END); END");
         }
     }
 

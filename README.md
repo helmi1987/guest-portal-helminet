@@ -10,7 +10,7 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
+**Status:** early development (M7 federation in progress; v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor

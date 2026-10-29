@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Models\Concerns\Replicated;
+use App\Support\DeterministicId;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
@@ -20,21 +21,10 @@ class Setting extends Model
         return ['value' => 'json'];
     }
 
-    private const CROCKFORD = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
-
-    /** Deterministic ULID-shaped id of a key: "0" + 25 Crockford base32 characters of sha256(key). */
+    /** Deterministic id of a setting key. */
     public static function idFor(string $key): string
     {
-        $bits = '';
-        foreach (str_split(hash('sha256', $key, true)) as $byte) {
-            $bits .= str_pad(decbin(ord($byte)), 8, '0', STR_PAD_LEFT);
-        }
-        $id = '0';
-        for ($i = 0; $i < 25; $i++) {
-            $id .= self::CROCKFORD[bindec(substr($bits, $i * 5, 5))];
-        }
-
-        return $id;
+        return DeterministicId::for($key);
     }
 
     public function newUniqueId(): string

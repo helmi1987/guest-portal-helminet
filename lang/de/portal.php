@@ -467,6 +467,7 @@ return [
             'terms' => 'Nutzungsbedingungen',
             'backup' => 'Backups',
             'certificate' => 'Zertifikate',
+            'federation' => 'Föderation',
         ],
     ],
     'settings' => [

@@ -435,79 +435,121 @@ Features:
 
 ## 10. Federation (multi-instance)
 
+Decisions 2026-10-29 (M7). Implementation status: parts A-C (change log, data key, apply engine)
+implemented; transport, pairing, hooks and UI follow (§14).
+
 ### 10.1 Model
 
 - Each instance is fully self-sufficient: own portal, FreeRADIUS, DB. A site keeps working
   when WAN or other instances are down. A single instance serving several sites stays supported
   (federation of one).
-- Recommended: **multi-master** replication. Every instance's admin UI shows and edits the
-  federated state; writes are applied locally and replicated. Reasons: no single point of
-  failure for admin writes, a cut-off site can still issue codes, data volume and write rate are
-  tiny, conflicts are rare with few admins. Rejected alternative: designated primary for writes
-  (simpler conflicts, but site admin work stops when the primary is unreachable).
-- "One admin UI": logically one; any instance (or one behind a reverse proxy) can be used.
+- Typical topology: one instance (container) per site, connected by WireGuard as a **star**: the
+  hub instance (HQ, the first instance) is paired with every site; sites talk via the hub, which
+  relays events. Hub down: the sites do not sync with each other (accepted). Each router resolves
+  the portal host name by static DNS to its local instance; the same wildcard certificate everywhere.
+- **Multi-master**: every instance's admin UI shows and edits the federated state; writes are
+  applied locally and replicated. Rejected: designated primary for writes.
+- Partition: each instance keeps working with the last known state; catch-up after reconnect.
+- **Hub unreachable** (no successful heartbeat for 2 min, **(assumption)**): non-hub instances accept
+  only SMS login and site codes for new logins (hooks `Grant::isAllowedWhileOffline()`,
+  `SiteCode::isAllowedWhileOffline()`); redeemed codes and known devices keep working. Admin setting
+  "offline: SMS only", default on; never applied on the hub.
 
 ### 10.2 Trust and transport
 
-- Federation API on its own port (default 9443), mTLS with per-instance self-signed certificates;
-  peers pin each other's certificate fingerprint.
-- Pairing: an admin creates a one-time join token (short-lived, single use) on an existing
-  instance; the new instance presents token + its certificate; the existing instance returns peer
-  list, pinned certs, federation data key and a snapshot. The join is then announced to all peers.
-- Federation data key: shared key used for `encrypted` casts of replicated fields (channel
-  secrets, TOTP secrets), distinct from the local `APP_KEY`. Removing a peer = tombstone its
-  instance record (pin revoked everywhere) and rotate the data key **(proposal)**.
-- Full mesh (few instances): push events to all peers immediately; pull catch-up on reconnect.
+- Federation API on its own port 9443 (nginx zone `federation`), mTLS with a per-instance keypair and
+  self-signed certificate in `/data/federation/`; peers pin the SPKI sha256 (`CURLOPT_PINNEDPUBLICKEY`);
+  nginx `ssl_verify_client optional_no_ca` passes the client fingerprint, Laravel checks it against
+  `instances.cert_fingerprint`. No shared secret.
+- Events are signed per origin (Ed25519, libsodium), since the hub relays events of other origins.
+- Pairing: only fresh instances join (before the setup admin exists); the hub is the first instance.
+  An admin creates a one-time join token (15 min, stored hashed); the new instance calls
+  `POST /federation/join` with token, its fingerprint and Ed25519 public key; it shows the hub's
+  fingerprint for confirmation. The hub returns peer list, pins, data key and a snapshot (topologically
+  sorted) and announces the new instance to its peers.
+- Transport: push after commit (queue job, `POST /federation/events`); pull every 30 s
+  (`GET /federation/events?origin=&after=&limit=500`); heartbeat `GET /federation/status` (time,
+  protocol, cursors). Further endpoints: `GET /federation/snapshot`, `GET /federation/branding/{hash}.{ext}`,
+  `POST /federation/sessions/{id}/disconnect`, `POST /federation/approvals/{id}/decide`.
+- Federation data key (implemented part B): replicated secrets use the cast `federated`
+  (`fdk1:<key id>:<ciphertext>`, AES-256-GCM): TOTP secrets, channel config, OIDC client secret. The key
+  ring lives in `local_settings` (each key encrypted with the local `APP_KEY`); reading accepts every known
+  key, writing uses the current one. Rotation: new key becomes current, old keys stay readable;
+  affected fields are re-encrypted as normal events. Removing a peer rotates the key automatically and
+  shows a checklist of channel/SMS/OIDC secrets to renew (a removed peer knew them).
+- Protocol: integer `FEDERATION_PROTOCOL` in events and heartbeats; unknown columns are ignored,
+  missing columns get their default; a higher protocol pauses applying events of that peer + UI warning
+  (rolling updates).
 
 ### 10.3 Replication
 
-- Each instance appends changes to an **outbox event log** with a per-origin sequence number.
-  Peers keep a cursor per origin (`GET /federation/events?origin=..&after=..`); events are
-  idempotent, so retransmissions are harmless and offline instances catch up later.
-- Records keyed by ULID; each replicated row has `origin_instance_id`, `version` (hybrid logical
-  clock timestamp + instance id as tie-break), `updated_at`, `deleted_at` (tombstone).
-- Conflicts: last-writer-wins per record by `version`; exception: **revocation is sticky**
-  (a revoked grant stays revoked unless an explicit later un-revoke). Duplicate 6-digit codes
-  created concurrently on partitioned instances: both stay valid as separate grants; redemption
-  picks the unredeemed one allowed at the site; admin UI shows a conflict marker (decided; no
-  code-range partitioning).
-- MAC whitelist (M7, to implement): entries for the same MAC created on partitioned instances must be
-  resolved when applying events: the newer version wins, the other is tombstoned (unique MAC among
-  non-deleted rows). Until then lookups take the newest version.
-- Branding files (v0.10.0): settings reference logo/favicon by content hash (`{hash, ext}`), the files
-  stay local per instance (no file replication yet). An instance without the referenced file shows the
-  built-in default; M7 must fetch missing files by hash from the origin peer (content-addressed, so the
-  hash verifies the transfer).
-- Clocks: NTP required on all instances (wall-clock expiry). Heartbeats compare clocks; above a
-  configurable skew (e.g. 30 s) the admin UI warns, above a hard limit replication pauses.
+- **Change log** (implemented part A): `federation_events` (origin, seq, table, record_id, version,
+  payload = full row, proto, sig), unique (origin, seq). Every write of a replicated row records an event
+  in the same DB transaction (model events saved = create/update/restore, deleted = tombstone; a force
+  delete is a local purge without event). Query-builder writes of replicated tables are not allowed
+  without recording the row (`Outbox::record()`); a test guard fails on such writes. Foreign events are
+  stored as well (relay, catch-up). `peer_cursors` (origin, last_seq, pause state); ack state per peer
+  follows with the transport.
+- Records keyed by ULID with `origin_instance_id`, `version`, `updated_at`, `deleted_at` (tombstone).
+  `version` is a persistent hybrid logical clock (`<ms>.<counter>.<instance id>`, sortable string, the
+  instance id breaks ties); received versions advance it; versions more than
+  `portal.federation.max_future_ms` (5 min) ahead are rejected.
+- **Apply** (implemented part C): events of an origin are applied raw in seq order (DB upsert, no model
+  events, no new version, no re-emit), inside one transaction with deferred foreign keys; a missing
+  parent row or a sequence gap stops the batch until the rest arrived; unknown table or higher protocol
+  pause the origin; table hooks run after commit.
+- Conflicts: **last-writer-wins per row** by `version`. Grants: field merge, `revoked_at` earliest
+  non-null (sticky, there is no un-revoke), `first_login_at` earliest (with it the earlier `expires_at`),
+  `extensions_used` maximum, other fields LWW. Duplicate 6-digit codes created concurrently stay valid as
+  separate grants; redemption picks the unredeemed one allowed at the site.
+- Natural keys: settings have an id derived from the key; `sites.slug`, `users.email` and
+  `users.oidc_subject`: the older ULID wins, the loser's slug/email gets the suffix `-dup-<id tail>`
+  (OIDC subject cleared) + audit entry + UI warning; `terms_versions` has no unique (locale, number);
+  MAC whitelist: newer version wins, the other entry is tombstoned; active device per grant ("1 code =
+  1 active device"): the device with the newer `bound_at` wins, the older one is unbound (and
+  disconnected by its serving instance); site codes: one active per site, the newer version wins, the
+  other is deactivated. Resolutions are deterministic, so every instance reaches the same state without
+  extra events.
+- Same code redeemed at two sites with different devices during a partition: allowed; after the merge
+  the rule above unbinds the older device.
+- Deletes: tombstones only; hard delete after all peers acknowledged + retention; events for unknown rows
+  older than the purge horizon (retention period) are dropped (no resurrection); the local retention
+  purge emits no events.
+- Backups/restore: a restore sets `federation_resync_required`; the instance fetches its own events back
+  from peers and continues its sequence after the highest one before accepting writes.
+- Clocks: NTP required. Heartbeats compare clocks: warning above 30 s skew, replication with that peer
+  paused above 5 min.
+- Branding files: settings reference logo/favicon by content hash; an apply hook fetches a missing file
+  from the origin, then other peers (sha256, type detection and limits checked).
 
 | Replicated | Local only |
 |---|---|
-| Grants/codes, site codes, site restrictions, revocations, device (MAC) bindings, MAC whitelist + its site restriction, guests, terms versions + acceptances, users/roles, sites (catalog, incl. site branding overrides), shared config (Telegram, Clickatell, Gotify, webhook, languages, retention, SMS duration, country allowlist, branding incl. colours/CSS and logo/favicon references), audit log | RADIUS tokens, OTP challenges, approval requests, login attempts/rate limits, NAS clients + secrets, raw accounting, TLS/ports/backup settings, local env, branding files (`/data/branding`) |
-| Session summaries (grant, MAC, site, serving instance, start, stop) | Accounting details (interim updates, counters) |
+| Instances (incl. `admin_url`), grants/codes incl. duration/expiry/sites, site codes, devices (MAC bindings), MAC whitelist + its site restriction, guests, terms versions + acceptances, users/roles incl. TOTP (secret with the data key, last step, hashed recovery codes), sites, channels, settings (global, incl. branding references), audit log | Session summaries and accounting, NAS clients + RADIUS secrets, RADIUS tokens, OTP challenges, approval requests, login attempts, SMS log, local settings (incl. data key ring), certificate sources, backup settings, Telegram offset, Laravel sessions, branding files |
 
 ### 10.4 Roaming and remote actions
 
-- Guest with a valid grant arrives at site B: the hotspot redirects to B's portal; B finds an
-  active grant bound to the reported MAC and allowed at site B and immediately issues a one-time
-  token (no guest input, "welcome back" page with auto-submit). RADIUS at B verifies
-  `Calling-Station-Id` against the replicated binding. Works offline from other peers as long as
-  the grant was replicated before.
-- No MAC-only login for grants: roaming guests always pass briefly through the portal (decided).
-  `login-by=mac` serves only the admin-managed MAC whitelist (§5).
-- Disconnects are sent only by the instance serving the session (known from session summaries).
-  A revoke/rebind on another instance emits an event; the serving instance disconnects on
-  receipt. Partitioned site: revocation applies on reconnect; until then Session-Timeout bounds
+- A valid code allowed for the new site works there. A known device (MAC with a running grant that
+  allows this site) is logged in automatically at another site via MAC authentication
+  (`login-by=https,mac`, like the MAC whitelist) for the remaining time. RADIUS tokens stay local; a
+  token is only accepted when the site's `home_instance_id` is the local instance.
+- Disconnects are sent only by the instance serving the session (local accounting): apply hooks on
+  grants, devices and MAC whitelist (+ site links) call the existing disconnect logic. The admin button
+  for a session of another instance calls `/federation/sessions/{id}/disconnect` at its serving instance
+  (synchronous). Partitioned site: revocation applies on reconnect; until then Session-Timeout bounds
   access (known limit).
 
 ### 10.5 Notifications and Telegram ownership
 
-- SMS, Gotify and webhook messages are sent only by the instance where the guest is waiting.
-- Telegram `getUpdates` must run on exactly one instance: the **Telegram owner**, a replicated
-  setting chosen by an admin (manual switch in the admin UI, decided). Any instance can
-  send the group message (`sendMessage`); callback data carries request id + origin instance; the
-  owner verifies chat/user and forwards the decision as an event to the origin instance.
-- Signed approve/deny links (Gotify/webhook) are verifiable by any instance; decision forwarded to origin.
+- SMS, Gotify and webhook messages are sent only by the instance where the guest is waiting; approval
+  links point to that instance's admin URL (`instances.admin_url`).
+- One Telegram bot, polled (`getUpdates`) only by the **Telegram owner** (default the hub), switchable
+  manually in the admin UI (list of instances). Callbacks for requests of other instances are forwarded
+  to `/federation/approvals/{id}/decide` at the origin instance.
+
+### 10.6 Security of the federation
+
+- A compromised peer can read all replicated data including the data key, but not the RADIUS secrets of
+  other sites; event signatures prevent it from forging events of other origins.
 
 ## 11. Data model
 
@@ -516,8 +558,8 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 
 | Table | Key fields |
 |---|---|
-| `instances` R | id, name, federation_url, cert_fingerprint, last_seen_at, clock_skew_ms |
-| `users` R | id, name, email, password, role (admin/manager), totp_secret (enc), totp_confirmed_at, totp_last_step, recovery_codes (hashed), oidc_subject (unique, `<iss> <sub>`) |
+| `instances` R | id, name, federation_url, cert_fingerprint, last_seen_at, clock_skew_ms (M7 adds admin_url) |
+| `users` R | id, name, email, password, role (admin/manager), totp_secret (`federated`), totp_confirmed_at, totp_last_step, recovery_codes (hashed), oidc_subject (unique, `<iss> <sub>`) |
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
 | `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port, cert_token (enc), last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
@@ -525,7 +567,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
-| `session_summaries` R | id, grant_id (null for whitelist sessions), mac_whitelist_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at |
+| `session_summaries` | id, grant_id (null for whitelist sessions), mac_whitelist_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at; local since the M7 decision (replication columns kept, §15) |
 | `mac_whitelist` R | id, mac (AA:BB:CC:DD:EE:FF, unique among non-deleted), comment, expires_at, active, created_by |
 | `mac_whitelist_site` R | mac_whitelist_id, site_id (none = all sites) |
 | `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
@@ -533,13 +575,13 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `otp_challenges` | id, guest_id, site_id, mac, phone_e164, code_hash, attempts, sends, last_sent_at, expires_at, verified_at, grant_id; local, with replication columns |
 | `sms_messages` | id, otp_challenge_id, site_id, channel_id, mac, phone_e164, status, provider_id, error (local: cost caps, delivery result) |
 | `approval_requests` | id, guest_id, site_id, mac, status, decided_by, decided_via, decided_at, duration_s, grant_id, expires_at, meta (json: channel message ids); local, but with replication columns (origin needed to route decisions, §10.5) |
-| `terms_versions` R | id, locale, number (per locale; `version` is the replication column), body (plain text), published_at |
+| `terms_versions` R | id, locale, number (per locale, not unique since M7; `version` is the replication column), body (plain text), published_at |
 | `terms_acceptances` R | id, guest_id, terms_version_id, grant_id, accepted_at, site_id, mac |
-| `channels` R | id, kind (notification/sms), driver, name, config (enc json), enabled |
-| `settings` R / `local_settings` | key, value (json) |
+| `channels` R | id, kind (notification/sms), driver, name, config (`federated` json), enabled |
+| `settings` R / `local_settings` | id (settings: derived from key), key, value (json); OIDC client secret `federated` |
 | `login_attempts` | id, mac, ip, site_id, method, success, created_at |
 | `audit_logs` R | id, user_id, actor (label), action, subject_type, subject_id, data (json), ip, created_at |
-| `federation_events` / `peer_cursors` | outbox (origin, seq, table, record_id, version, payload) / cursor per origin |
+| `federation_events` / `peer_cursors` | change log, local and foreign (origin, seq, table, record_id, version, payload, proto, sig, created_at; unique origin+seq) / last_seq + pause state per origin |
 | Laravel defaults | `jobs`, `failed_jobs`, `cache`, `sessions`, `migrations` |
 
 Purge job removes guests, devices, summaries, accounting, attempts, acceptances, OTP challenges,
@@ -624,6 +666,8 @@ login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authe
 (User-Name format, `login-by=mac` before the certificate, reject handling) tested on real RouterOS. Open: first-start web setup, CertWarden pull, backups, voucher QR
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
+M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`) and C
+(apply engine with conflict rules) implemented; D-L open.
 
 | # | Content | Acceptance criteria |
 |---|---|---|
@@ -638,4 +682,6 @@ scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants h
 
 ## 15. Open questions
 
-None at this time.
+- Session summaries are local (M7 decision 1), but the admin view and the remote disconnect button for
+  sessions of other instances (§10.4) need them replicated (or fetched from the serving instance).
+  Decide before part G.
