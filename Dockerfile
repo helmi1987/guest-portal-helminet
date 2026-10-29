@@ -81,10 +81,11 @@ ENV S6_KEEP_ENV=1 \
     PORTAL_DATA_DIR=/data \
     GUEST_PORT=443 \
     ADMIN_PORT=8443 \
-    INTERNAL_PORT=8080
+    INTERNAL_PORT=8080 \
+    FEDERATION_PORT=9443
 
 VOLUME ["/data"]
-EXPOSE 443/tcp 8443/tcp 1812/udp 1813/udp
+EXPOSE 443/tcp 8443/tcp 9443/tcp 1812/udp 1813/udp
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
     CMD curl -fsS "http://127.0.0.1:${INTERNAL_PORT}/up" >/dev/null || exit 1

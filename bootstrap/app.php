@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\AuthenticateFederationPeer;
 use App\Http\Middleware\DetectZone;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureTwoFactor;
@@ -27,6 +28,10 @@ return Application::configure(basePath: dirname(__DIR__))
                 ->group(base_path('routes/router.php'));
             Route::middleware(['zone:guest,admin', 'throttle:300,1'])
                 ->group(base_path('routes/branding.php'));
+            // Federation API between instances (port 9443, mTLS): no session, cookies or CSRF.
+            Route::middleware(['zone:federation', 'throttle:600,1'])
+                ->prefix('federation')
+                ->group(base_path('routes/federation.php'));
         },
     )
     ->withMiddleware(function (Middleware $middleware): void {
@@ -36,6 +41,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => EnsureRole::class,
             'two_factor' => EnsureTwoFactor::class,
             'locale' => SetLocale::class,
+            'federation.peer' => AuthenticateFederationPeer::class,
         ]);
         // The zone check must run before auth redirects, otherwise /admin on the guest port redirects.
         $middleware->prependToPriorityList(EncryptCookies::class, EnsureZone::class);
@@ -45,6 +51,6 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('internal/*') || $request->expectsJson(),
+            fn (Request $request) => $request->is('internal/*', 'federation/*') || $request->expectsJson(),
         );
     })->create();

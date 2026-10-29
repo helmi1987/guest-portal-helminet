@@ -11,11 +11,13 @@ class InitPortal extends Command
 {
     protected $signature = 'portal:init';
 
-    protected $description = 'Ensure the local instance identity exists (run at container start)';
+    protected $description = 'Ensure the local instance identity (id, federation pin, signing key) exists (run at container start)';
 
     public function handle(LocalInstance $instance): int
     {
         $this->line('Instance: '.$instance->id());
+        $model = $instance->refreshIdentity();
+        $this->line('Federation certificate: '.($model->cert_fingerprint ?? 'none'));
 
         if (! User::query()->where('role', Role::Admin)->exists()) {
             $this->warn('No admin user yet. Create one with: artisan portal:admin');

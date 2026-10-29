@@ -8,6 +8,9 @@
 # Files may be written by the operator or by the app's certificate pull (portal:cert-pull).
 # Symlinks in /data/certs are ignored. Keys in /data/certs: root:portal 640 (nginx master reads
 # them as root; the app reads them for the router download, the pull comparison and backups).
+#   Federation (mTLS between instances, port 9443): /data/federation/federation.crt + .key,
+#     generated once at container start (self-signed; peers pin the public key, so it needs no CA
+#     and no renewal). Key root:portal 640: nginx reads it as root, the app as client certificate.
 # --watch: if no valid pair exists (e.g. a pull is replacing the files), nothing is changed and
 # the exit code is 3, so nginx keeps its loaded certificate and cert-watch retries.
 set -eu
@@ -88,6 +91,28 @@ if [ -e "$CERTS/router.crt" ] || [ -e "$CERTS/router.key" ] || [ -L "$CERTS/rout
         log "WARNING: $CERTS/router.crt/.key invalid or not matching, not offered to routers"
     fi
 fi
+# Federation key and certificate (container start only, never replaced while running: peers pin
+# the public key, a new key means pairing again).
+FED="$DATA_DIR/federation"
+if [ "$WATCH" = 0 ]; then
+    if [ -L "$FED" ] || [ -L "$FED/federation.crt" ] || [ -L "$FED/federation.key" ]; then
+        log "WARNING: $FED or its files are symlinks, federation listener without certificate"
+    else
+        mkdir -p "$FED"
+        if ! valid_pair "$FED/federation.crt" "$FED/federation.key"; then
+            [ -e "$FED/federation.key" ] && log "WARNING: $FED/federation.crt/.key invalid, generating a new pair (peers must pair again)"
+            log "generating federation key and certificate"
+            rm -f "$FED/federation.crt" "$FED/federation.key"
+            openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+                -subj "/CN=portal-federation" -keyout "$FED/federation.key" -out "$FED/federation.crt" 2>/dev/null
+        fi
+        own 644 "$FED/federation.crt"; own 640 "$FED/federation.key"
+        { chown -h root:portal "$FED" && chmod 750 "$FED"; } 2>/dev/null || true
+        ln -sfn "$FED/federation.crt" "$RUN_DIR/federation.crt"
+        ln -sfn "$FED/federation.key" "$RUN_DIR/federation.key"
+    fi
+fi
+
 # Folder writable by the app (group portal): the certificate pull replaces files atomically by rename.
 { chown -h root:portal "$CERTS" && chmod 770 "$CERTS"; } 2>/dev/null || true
 

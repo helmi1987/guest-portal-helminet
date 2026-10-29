@@ -6,7 +6,11 @@ use App\Models\Concerns\Replicated;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['name', 'federation_url', 'cert_fingerprint'])]
+/**
+ * Federation member (replicated, CONCEPT.md §10.2): federation URL, certificate pin (SPKI sha256) and
+ * Ed25519 public key for event signatures.
+ */
+#[Fillable(['name', 'federation_url', 'cert_fingerprint', 'signing_public_key'])]
 class Instance extends Model
 {
     use Replicated;

@@ -31,6 +31,33 @@ server {
     include /etc/nginx/portal-app.conf;
 }
 
+# Federation API between instances (CONCEPT.md §10.2): mTLS with the instance's own self-signed
+# certificate. Every peer must present its certificate; it is not checked against a CA here
+# (optional_no_ca), Laravel compares its public key pin (SPKI sha256) with instances.cert_fingerprint.
+# Only /federation/... is served.
+server {
+    listen __FEDERATION_PORT__ ssl;
+    listen [::]:__FEDERATION_PORT__ ssl;
+    ssl_certificate /run/portal/federation.crt;
+    ssl_certificate_key /run/portal/federation.key;
+    ssl_verify_client optional_no_ca;
+    root /var/www/html/public;
+    add_header X-Content-Type-Options "nosniff" always;
+
+    location / { return 404; }
+    location ^~ /federation/ { rewrite ^ /index.php last; }
+    location = /index.php {
+        internal;
+        fastcgi_pass unix:/run/php-fpm/php-fpm.sock;
+        include fastcgi_params;
+        fastcgi_param SCRIPT_FILENAME $realpath_root/index.php;
+        fastcgi_param DOCUMENT_ROOT $realpath_root;
+        fastcgi_param PORTAL_ZONE federation;
+        fastcgi_param PORTAL_CLIENT_CERT $ssl_client_escaped_cert;
+        fastcgi_param HTTP_PROXY "";
+    }
+}
+
 # Internal API (FreeRADIUS -> Laravel, healthcheck). Loopback only.
 server {
     listen 127.0.0.1:__INTERNAL_PORT__;

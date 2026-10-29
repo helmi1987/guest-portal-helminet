@@ -435,8 +435,8 @@ Features:
 
 ## 10. Federation (multi-instance)
 
-Decisions 2026-10-29 (M7). Implementation status: parts A-C (change log, data key, apply engine)
-implemented; transport, pairing, hooks and UI follow (§14).
+Decisions 2026-10-29 (M7). Implementation status: parts A-D (change log, data key, apply engine,
+federation listener with mTLS) implemented; pairing, sync, hooks and UI follow (§14).
 
 ### 10.1 Model
 
@@ -459,8 +459,13 @@ implemented; transport, pairing, hooks and UI follow (§14).
 
 - Federation API on its own port 9443 (nginx zone `federation`), mTLS with a per-instance keypair and
   self-signed certificate in `/data/federation/`; peers pin the SPKI sha256 (`CURLOPT_PINNEDPUBLICKEY`);
-  nginx `ssl_verify_client optional_no_ca` passes the client fingerprint, Laravel checks it against
-  `instances.cert_fingerprint`. No shared secret.
+  nginx `ssl_verify_client optional_no_ca` passes the client certificate, Laravel checks its pin against
+  `instances.cert_fingerprint`. No shared secret. Implemented (part D): `portal-certs` generates the EC key
+  and a 10-year self-signed certificate once (`/data/federation/federation.{crt,key}`, key root:portal 640);
+  the pin format is curl's `sha256//<base64>`; port env `FEDERATION_PORT` (default 9443), own URL
+  `PORTAL_FEDERATION_URL` (editable later); peer calls verify no CA, pin the key (set on the curl handle,
+  Guzzle does not accept the option), present the client certificate, no redirects, short timeouts. Ed25519
+  key pair in `local_settings` (secret encrypted with `APP_KEY`), public key in `instances.signing_public_key`.
 - Events are signed per origin (Ed25519, libsodium), since the hub relays events of other origins.
 - Pairing: only fresh instances join (before the setup admin exists); the hub is the first instance.
   An admin creates a one-time join token (15 min, stored hashed); the new instance calls
@@ -672,8 +677,8 @@ login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authe
 (User-Name format, `login-by=mac` before the certificate, reject handling) tested on real RouterOS. Open: first-start web setup, CertWarden pull, backups, voucher QR
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
-M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`) and C
-(apply engine with conflict rules) implemented; D-L open.
+M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
+(apply engine with conflict rules) and D (federation listener, mTLS pin, peer client) implemented; E-L open.
 
 | # | Content | Acceptance criteria |
 |---|---|---|

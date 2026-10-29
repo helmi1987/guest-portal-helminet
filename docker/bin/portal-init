@@ -46,6 +46,7 @@ fi
 sed -e "s/__GUEST_PORT__/${GUEST_PORT:-443}/g" \
     -e "s/__ADMIN_PORT__/${ADMIN_PORT:-8443}/g" \
     -e "s/__INTERNAL_PORT__/${INTERNAL_PORT:-8080}/g" \
+    -e "s/__FEDERATION_PORT__/${FEDERATION_PORT:-9443}/g" \
     /etc/nginx/portal.conf.template > "$RUN_DIR/nginx-portal.conf"
 # Some runtimes (e.g. containers without IPv6) cannot bind [::].
 [ -f /proc/net/if_inet6 ] || sed -i '/listen \[::\]/d' "$RUN_DIR/nginx-portal.conf"

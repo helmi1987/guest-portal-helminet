@@ -16,6 +16,9 @@ final class Zone
 
     public const INTERNAL = 'internal';
 
+    /** Federation API between instances (port 9443, mTLS). */
+    public const FEDERATION = 'federation';
+
     public const ALL = 'all';
 
     public static function of(Request $request): ?string
@@ -27,6 +30,6 @@ final class Zone
             return null;
         }
 
-        return in_array($zone, [self::GUEST, self::ADMIN, self::INTERNAL, self::ALL], true) ? $zone : null;
+        return in_array($zone, [self::GUEST, self::ADMIN, self::INTERNAL, self::FEDERATION, self::ALL], true) ? $zone : null;
     }
 }
