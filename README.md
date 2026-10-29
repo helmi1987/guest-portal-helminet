@@ -10,14 +10,14 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (v0.8.0: admin extras, M6 parts A-C and E). Code login, SMS one-time password
+**Status:** early development (v0.9.0: admin extras, M6 parts A-E). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor
 login, audit log, backups, certificate pull from CertWarden or a URL, test buttons, guests & sessions list,
 bulk codes with printable A4 voucher sheet (Wi-Fi join QR) and CSV export, MAC whitelist (trusted devices
-online without the portal via RouterOS MAC authentication); OIDC login (M6 part D) and
-federation follow (see CONCEPT.md §14).
+online without the portal via RouterOS MAC authentication), OIDC login for the admin UI (e.g.
+Authentik); federation follows (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -53,6 +53,20 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
 - MAC whitelist: admin UI → MAC whitelist (or "allow this device permanently" in the guest list).
   Needs `login-by=https,mac` on the hotspot profile (set by the generated router script). MAC
   addresses can be spoofed: whitelist only trusted devices.
+- OIDC login (admin UI only), e.g. Authentik: create a provider of type "OAuth2/OpenID Provider"
+  (confidential client) with redirect URI `https://<admin host>:8443/admin/oidc/callback` (shown with a
+  copy button in admin UI → Settings → Single sign-on; derived from the admin URL setting), keep the
+  scopes `openid`, `profile`, `email` (Authentik's default `profile` mapping returns the group names
+  as claim `groups`; otherwise add a scope mapping for it, to verify), create an application for it
+  and the groups `portal-admin` / `portal-manager`.
+  Then enter issuer URL (`https://<idp host>/application/o/<app slug>/`), client ID and secret in
+  Settings. Users are created on their first login (verified email required) with the role from their group;
+  without one of the groups the login is denied. Existing local users are linked by verified email
+  (setting, default on; a user with portal 2FA enters the code once when linking). Deactivating a user
+  or removing the groups at the provider takes effect at the next login or when the portal session
+  expires; to cut access at once, delete the user in the portal. The password login stays as emergency access: keep one local admin.
+  Portal 2FA after OIDC: "skip if the provider reports MFA" (default; `amr` claim or a configured `acr`
+  value, optionally only if `auth_time` is recent), "always" or "never".
 - Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`; one `.tar.gz`, mode 0600,
   14 kept by default), admin UI → Backups or `artisan portal:backup`. Backups contain secrets.
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).

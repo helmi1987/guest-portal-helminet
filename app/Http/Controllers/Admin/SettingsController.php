@@ -3,6 +3,8 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Approval\ApprovalSettings;
+use App\Auth\Oidc\OidcClient;
+use App\Auth\Oidc\OidcSettings;
 use App\Auth\TwoFactor;
 use App\Http\Controllers\Controller;
 use App\Models\Channel;
@@ -39,6 +41,10 @@ class SettingsController extends Controller
             'locale' => ApprovalSettings::locale(),
             'telegramOwner' => ApprovalSettings::isTelegramOwner(),
             'require2fa' => TwoFactor::required(),
+            'oidc' => OidcSettings::all(),
+            'oidcHasSecret' => OidcSettings::hasClientSecret(),
+            'oidcSecretBroken' => OidcSettings::clientSecretBroken(),
+            'oidcRedirectUri' => OidcSettings::redirectUri(),
         ]);
     }
 
@@ -63,6 +69,57 @@ class SettingsController extends Controller
         $request->validate(['require_2fa' => ['boolean']]);
         Setting::put(TwoFactor::REQUIRED_SETTING, $request->boolean('require_2fa'));
         Audit::log('settings.security', null, ['require_2fa' => $request->boolean('require_2fa')]);
+
+        return back()->with('status', __('portal.saved'));
+    }
+
+    /**
+     * OIDC login for the admin UI (CONCEPT.md §9). An empty secret field keeps the stored secret; the
+     * secret is never logged or audited.
+     */
+    public function updateOidc(Request $request): RedirectResponse
+    {
+        $data = $request->validate([
+            'oidc_enabled' => ['boolean'],
+            'oidc_label' => ['required', 'string', 'max:50'],
+            'oidc_issuer' => ['nullable', 'required_if_accepted:oidc_enabled', 'url:https', 'max:255'],
+            'oidc_client_id' => ['nullable', 'required_if_accepted:oidc_enabled', 'string', 'max:255'],
+            'oidc_client_secret' => ['nullable', 'string', 'max:500'],
+            'oidc_client_secret_clear' => ['boolean'],
+            'oidc_scopes' => ['required', 'string', 'max:255', 'regex:/(^|\s)openid(\s|$)/'],
+            'oidc_groups_claim' => ['required', 'string', 'max:100', 'regex:/^[A-Za-z0-9_:.\/-]+$/'],
+            'oidc_admin_group' => ['required', 'string', 'max:255'],
+            'oidc_manager_group' => ['required', 'string', 'max:255', 'different:oidc_admin_group'],
+            'oidc_totp_mode' => ['required', Rule::in(OidcSettings::TOTP_MODES)],
+            'oidc_acr' => ['nullable', 'string', 'max:255'],
+            'oidc_max_auth_age' => ['nullable', 'integer', 'between:60,2592000'],
+            'oidc_link_by_email' => ['boolean'],
+        ]);
+        $old = OidcSettings::all();
+        $config = [
+            'enabled' => $request->boolean('oidc_enabled'),
+            'label' => trim($data['oidc_label']),
+            'issuer' => trim((string) ($data['oidc_issuer'] ?? '')),
+            'client_id' => trim((string) ($data['oidc_client_id'] ?? '')),
+            'scopes' => trim((string) preg_replace('/\s+/', ' ', $data['oidc_scopes'])),
+            'groups_claim' => $data['oidc_groups_claim'],
+            'admin_group' => trim($data['oidc_admin_group']),
+            'manager_group' => trim($data['oidc_manager_group']),
+            'totp_mode' => $data['oidc_totp_mode'],
+            'acr' => trim((string) ($data['oidc_acr'] ?? '')),
+            'max_auth_age' => isset($data['oidc_max_auth_age']) ? (int) $data['oidc_max_auth_age'] : null,
+            'link_by_email' => $request->boolean('oidc_link_by_email'),
+        ];
+        $secret = $request->boolean('oidc_client_secret_clear') ? '' : (trim((string) ($data['oidc_client_secret'] ?? '')) ?: null);
+        OidcSettings::save($config, $secret);
+        OidcClient::forgetCache($old['issuer']);
+        OidcClient::forgetCache($config['issuer']);
+        // Audit keys must not look like secrets (Audit strips them), hence "mfa_mode" / "credential_changed".
+        Audit::log('settings.oidc', null, ['enabled' => $config['enabled'], 'issuer' => $config['issuer'],
+            'scopes' => $config['scopes'], 'groups_claim' => $config['groups_claim'], 'admin_group' => $config['admin_group'],
+            'manager_group' => $config['manager_group'], 'mfa_mode' => $config['totp_mode'], 'acr' => $config['acr'],
+            'max_auth_age' => $config['max_auth_age'], 'link_by_email' => $config['link_by_email'],
+            'credential_changed' => $secret !== null]);
 
         return back()->with('status', __('portal.saved'));
     }

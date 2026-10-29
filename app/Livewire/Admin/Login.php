@@ -2,6 +2,7 @@
 
 namespace App\Livewire\Admin;
 
+use App\Auth\Oidc\OidcSettings;
 use App\Auth\TwoFactor;
 use App\Models\User;
 use App\Support\Audit;
@@ -16,14 +17,16 @@ use Livewire\Attributes\Layout;
 use Livewire\Component;
 
 /**
- * Admin login: password, then the TOTP or recovery code when 2FA is enabled (CONCEPT.md §9, §12).
+ * Admin login: password (or OIDC, see OidcController), then the TOTP or recovery code when 2FA is
+ * enabled (CONCEPT.md §9, §12).
  * Between the steps only the user id waits in the session (5 minutes); nothing is logged in yet.
  * No "remember me": every new session needs the full login (a remember cookie would skip 2FA).
  */
 #[Layout('components.layouts.admin')]
 class Login extends Component
 {
-    private const PENDING = 'login.two_factor';
+    /** Pending code step: user id, time and first factor ("oidc" when started by the OIDC callback). */
+    public const PENDING = 'login.two_factor';
 
     private const PENDING_TTL = 300;
 
@@ -111,9 +114,10 @@ class Login extends Component
             throw ValidationException::withMessages(['code' => __('portal.auth.two_factor_failed')]);
         }
         RateLimiter::clear($userKey);
+        $viaOidc = (session()->get(self::PENDING)['method'] ?? null) === 'oidc';
         session()->forget(self::PENDING);
 
-        $this->complete($user, 'two_factor');
+        $this->complete($user, $viaOidc ? 'oidc_two_factor' : 'two_factor');
     }
 
     public function cancel(): void
@@ -124,7 +128,9 @@ class Login extends Component
 
     public function render()
     {
-        return view('livewire.admin.login')->title(__('portal.auth.title'));
+        return view('livewire.admin.login', [
+            'oidcLabel' => OidcSettings::enabled() ? (string) OidcSettings::get('label') : null,
+        ])->title(__('portal.auth.title'));
     }
 
     private function complete(User $user, string $method): void

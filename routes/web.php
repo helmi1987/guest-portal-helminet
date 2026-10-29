@@ -8,6 +8,7 @@ use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\GuestController;
 use App\Http\Controllers\Admin\LogoutController;
 use App\Http\Controllers\Admin\MacWhitelistController;
+use App\Http\Controllers\Admin\OidcController;
 use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SetupController;
@@ -63,6 +64,8 @@ Route::middleware(['zone:admin', 'signed:relative', 'throttle:30,1'])
 Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () {
     Route::middleware('guest')->group(function () {
         Route::get('/login', Login::class)->name('login');
+        Route::get('/oidc/redirect', [OidcController::class, 'redirect'])->name('oidc.redirect')->middleware('throttle:10,1');
+        Route::get('/oidc/callback', [OidcController::class, 'callback'])->name('oidc.callback')->middleware('throttle:20,1');
     });
 
     Route::middleware('auth')->group(function () {
@@ -106,6 +109,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
                 Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('settings.sms');
                 Route::post('/settings/security', [SettingsController::class, 'updateSecurity'])->name('settings.security');
+                Route::post('/settings/oidc', [SettingsController::class, 'updateOidc'])->name('settings.oidc');
                 Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('channels.test')
                     ->middleware('throttle:5,1');
                 Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('channels.create');

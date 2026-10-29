@@ -340,6 +340,37 @@ All login methods produce a **grant**; a code is a grant created in advance.
   user's other sessions and rotate the remember token; failed-login audit rows capped per hour; setting
   `require_2fa` applies to all admin UI users (both roles) and sends users without 2FA to their profile;
   `artisan portal:admin --reset-2fa <email>` and the user page reset it).
+- **OIDC login** (v0.9.0, admin port only; decision 2026-10-29): optional, e.g. Authentik. Settings
+  (admin only, replicated): enabled, button label, issuer URL (https), client ID, client secret
+  (encrypted, masked, never logged/audited), scopes (default `openid profile email groups`), groups
+  claim (default `groups`), group names for admin/manager (default `portal-admin`/`portal-manager`),
+  portal 2FA mode, ACR value, max. auth age (optional), link by email (default on); a secret that
+  cannot be decrypted is logged (without value) and flagged in the settings. Redirect URI `<admin URL>/admin/oidc/callback` (admin URL setting,
+  fallback `APP_URL`), shown in the settings. Flow: discovery (`<issuer>/.well-known/openid-configuration`,
+  cached 1 h, issuer must match; saving the settings clears discovery and JWKS cache), Authorization Code with PKCE (S256), state + nonce + verifier in the
+  session (10 min, single use), token request with `client_secret_basic` (or `_post` if only that is
+  offered); ID token checked with firebase/php-jwt: RS256/ES256 only, key from JWKS (cached 1 h, one
+  refetch per minute on unknown `kid`), `iss`, `aud`/`azp` = client ID, `exp`/`iat` (60 s leeway),
+  `nonce`, `sub`. Userinfo (sub must match) fills email/`email_verified`/groups when missing in the ID token. Non-string
+  query parameters (code, state, error) fail with the generic error. HTTPS only,
+  TLS verified, 10 s timeout, no redirects followed; redirect 10/min, callback 20/min per IP.
+  Users: matched by `oidc_subject` (`<iss> <sub>`); first login links an existing user by email only
+  when linking is enabled and `email_verified` is true (otherwise denied; audited `user.oidc_linked`;
+  a linked user with TOTP always enters the portal code on that linking login, whatever the 2FA mode),
+  else creates the user (email claim with `email_verified` true required; random unusable password,
+  local password login only after an admin sets one). Role from the groups
+  (admin group wins), re-synced on every login (audited `user.role_synced`); a role change ends the user's other sessions (the new one stays); no matching
+  group: denied and the linked user's sessions end;
+  demoting the last admin: denied; soft-deleted users: denied (stay deleted). Portal 2FA after OIDC:
+  `skip_if_idp_mfa` (default: skipped when `amr` contains mfa/otp/hwk/swk/sc/fpt/face/iris/retina/vbm
+  (not sms/tel) or `acr` equals the configured value; with max. auth age set, `auth_time` must be at
+  most that old (60 s leeway), missing `auth_time` counts as no MFA), `always` (code step if the user has TOTP), `never`; the code
+  step is the one of the password login; "require 2FA" still sends users without TOTP to their profile.
+  Success: session regenerated, audited `auth.login` (method `oidc` / `oidc_two_factor`, `idp_mfa`).
+  Errors: generic message, details redacted to the app log, audited `auth.oidc_failed` with a reason
+  code (capped per hour). The password login stays as emergency access (always available). Deactivating a user or
+  removing groups at the provider takes effect at the next OIDC login or when the session expires. Authentik
+  `amr`/`acr` and `email_verified` values **(to verify)**.
 - First-start web setup: first admin (one-time setup token in container log), URLs, TLS source,
   "create federation" or "join federation".
   Until it exists (and later as fallback), `artisan portal:admin` creates an admin or manager
@@ -454,7 +485,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | Table | Key fields |
 |---|---|
 | `instances` R | id, name, federation_url, cert_fingerprint, last_seen_at, clock_skew_ms |
-| `users` R | id, name, email, password, role (admin/manager), totp_secret (enc), totp_confirmed_at, totp_last_step, recovery_codes (hashed) |
+| `users` R | id, name, email, password, role (admin/manager), totp_secret (enc), totp_confirmed_at, totp_last_step, recovery_codes (hashed), oidc_subject (unique, `<iss> <sub>`) |
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
 | `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port, cert_token (enc), last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
@@ -496,7 +527,9 @@ are purged after all peers have acknowledged them.
 - **Secrets:** `APP_KEY`, internal API token, DB credentials in an env file on `/data` (generated
   on first start), never in RouterOS envs or the image. Secrets in DB via Laravel `encrypted`
   casts (local key or federation data key).
-- **Admin:** separate port, TOTP, login throttling, roles, audit log.
+- **Admin:** separate port, TOTP, login throttling, roles, audit log; optional OIDC login (§9): the
+  identity provider decides who gets which role, so its group administration is part of the admin
+  security; a local admin with password stays as emergency access.
 - **Guest login lockout (M2):** limits per MAC, per IP and global (env `PORTAL_LOGIN_*`). The MAC
   comes from the redirect URL and can be spoofed: a guest on the same network could lock out another
   MAC, and an attacker can rotate MACs (then the per-IP and global limits apply). Accepted trade-off
@@ -550,7 +583,8 @@ M6: part A implemented (roles applied to all admin routes, user management, TOTP
 audit log table replacing the M2 log-only grant audit); part B implemented (backups, certificate pull
 from CertWarden/URL, test button for notification channels); part C implemented (guests & sessions
 list, bulk codes with A4 voucher sheet, Wi-Fi join QR, CSV export); released as v0.7.0. Part D: OIDC
-login for the admin UI (v0.7.x). Part E: MAC whitelist (§5, §9), v0.8.0; open: MAC authentication
+login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authentik (`amr`/`acr`,
+`email_verified`, groups mapping). Part E: MAC whitelist (§5, §9), v0.8.0; open: MAC authentication
 (User-Name format, `login-by=mac` before the certificate, reject handling) tested on real RouterOS. Open: first-start web setup, CertWarden pull, backups, voucher QR
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only).
