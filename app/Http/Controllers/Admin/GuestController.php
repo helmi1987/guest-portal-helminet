@@ -7,6 +7,7 @@ use App\Enums\GrantType;
 use App\Http\Controllers\Controller;
 use App\Jobs\DisconnectSession;
 use App\Models\Guest;
+use App\Models\MacWhitelist;
 use App\Models\SessionSummary;
 use App\Models\Site;
 use App\Support\Audit;
@@ -53,9 +54,14 @@ class GuestController extends Controller
             ->latest('started_at')->get()
             ->groupBy(fn (SessionSummary $s) => $s->grant_id.'|'.$s->mac);
 
+        // MAC whitelist entries of the listed devices ("Whitelist" badge, or "allow permanently").
+        $macs = $guests->getCollection()->flatMap(fn (Guest $g) => $g->devices->pluck('mac'))->unique();
+        $whitelisted = MacWhitelist::query()->whereIn('mac', $macs)->orderBy('version')->get()->keyBy('mac');
+
         return view('admin.guests.index', [
             'guests' => $guests,
             'sessions' => $sessions,
+            'whitelisted' => $whitelisted,
             'filters' => $filters,
             'sites' => Site::query()->orderBy('name')->pluck('name', 'id'),
             'localInstance' => $instance->id(),
@@ -93,7 +99,9 @@ class GuestController extends Controller
         }
 
         DisconnectSession::dispatch($session->id);
-        Audit::log('grant.disconnected', $session->grant, ['session' => $session->id, 'site' => $session->site_id]);
+        $session->mac_whitelist_id !== null
+            ? Audit::log('whitelist.disconnected', $session->macWhitelist, ['session' => $session->id, 'site' => $session->site_id])
+            : Audit::log('grant.disconnected', $session->grant, ['session' => $session->id, 'site' => $session->site_id]);
 
         return back()->with('status', __('portal.guests.disconnect_sent'));
     }

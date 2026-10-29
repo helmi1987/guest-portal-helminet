@@ -151,14 +151,17 @@ class MikrotikRos7Driver implements NasDriver
         # profile may fall back to ssl-certificate=none), so both are set together: here if the
         # certificate "{$n}" already exists, otherwise by the certificate script after the import.
         # Until then the RADIUS logins of the portal fail (no HTTPS login on the router).
+        # login-by=mac: MAC authentication for the MAC whitelist of the portal, active from the start.
+        # The router first sends an Access-Request with the MAC as User-Name (default
+        # mac-auth-mode=mac-as-username, to verify); not whitelisted devices get the portal.
         /ip hotspot
         remove [find name="{$n}"]
         /ip hotspot profile
         remove [find name="{$n}"]
         add name={$n} dns-name={$dnsName} hotspot-address={$g['gateway']} use-radius=yes \\
-            radius-accounting=yes radius-interim-update=received nas-port-type=wireless-802.11
+            radius-accounting=yes radius-interim-update=received nas-port-type=wireless-802.11 login-by=mac
         :if ([:len [/certificate find where name="{$n}"]] > 0) do={
-            /ip hotspot profile set [find where name="{$n}"] ssl-certificate={$n} login-by=https
+            /ip hotspot profile set [find where name="{$n}"] ssl-certificate={$n} login-by=https,mac
         }
         /ip hotspot
         add name={$n} interface={$g['interface']} address-pool={$g['pool_name']} profile={$n} disabled=no
@@ -404,7 +407,7 @@ class MikrotikRos7Driver implements NasDriver
         $interval = preg_replace('/[^0-9dhms]/', '', (string) config('portal.router_cert.fetch_interval')) ?: '1d';
         $script = <<<'RSC'
         # Router certificate for login-by=https, fetched from the instance at startup and every __INTERVAL__.
-        # Imported only when its fingerprint changed; sets ssl-certificate of hotspot profile "__NAME__". check-certificate=yes needs a trusted portal certificate.
+        # Imported only when its fingerprint changed; sets ssl-certificate and login-by=https,mac of hotspot profile "__NAME__". check-certificate=yes needs a trusted portal certificate.
         # The download is accepted only from this router's NAS IP (src-address) with its token.
         /system scheduler
         remove [find name="__NAME__-cert"]
@@ -429,7 +432,7 @@ class MikrotikRos7Driver implements NasDriver
                 /certificate import file-name=($name . ".key") passphrase="" name=$newname
                 /file remove [find where name=($name . ".crt")]
                 /file remove [find where name=($name . ".key")]
-                /ip hotspot profile set [find where name=$name] ssl-certificate=$newname login-by=https
+                /ip hotspot profile set [find where name=$name] ssl-certificate=$newname login-by=https,mac
                 /certificate remove [find where name=$name]
                 /certificate set [find where name=$newname] name=$name
                 :log info "__NAME__: router certificate updated"

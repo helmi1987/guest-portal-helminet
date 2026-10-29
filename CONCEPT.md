@@ -140,6 +140,21 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
   `/radius incoming` port 3799. After an extension the current session ends at the old
   Session-Timeout and the guest is re-authenticated automatically via mac-cookie or roaming
   login (§10.4) **(to verify)**.
+- **MAC whitelist** (v0.8.0, decided): devices entered by admin/manager (MAC, required comment, all or
+  selected sites, optional expiry, active flag) get online without the portal via RouterOS MAC
+  authentication (hotspot profile `login-by=https,mac`; before the router certificate exists
+  `login-by=mac`; default `mac-auth-mode=mac-as-username`, empty password **(to verify)**). The router
+  sends an Access-Request with User-Name = MAC first; Laravel accepts only when User-Name is a MAC
+  (strict format; portal token names never are) equal to `Calling-Station-Id`, and an active, not
+  expired entry allows the NAS's site; the password is not checked. Accept without `Session-Timeout`
+  (unlimited) unless the entry expires (then remaining seconds), with `Acct-Interim-Interval`; no
+  `Idle-Timeout` (router user profile applies). Otherwise Access-Reject (logged at debug level) and the
+  normal portal flow follows; rejects use a cached "no valid entry" flag and a 60 s negative cache per
+  site + MAC, both invalidated by any change of an entry or its site links (cache generation).
+  Accounting creates session summaries without grant (`mac_whitelist_id`); an Accounting-Start without
+  a valid entry is still recorded (linked to the newest entry of the MAC, also deleted) and disconnected.
+  Deactivate, delete, site removal or MAC change disconnect open sessions of the entry (after commit);
+  expiry is enforced by `portal:enforce-grants`. User-Name and MAC format sent by RouterOS: **(to verify)**.
 
 ### 5.1 NAS drivers (vendor neutrality)
 
@@ -335,7 +350,7 @@ Roles:
 | Role | UI label (DE) | Permissions |
 |---|---|---|
 | `admin` | Admin | Everything. |
-| `manager` | Verwaltung | Create/print/extend/shorten/revoke codes and grants, approve requests, view sessions and guests (phone numbers masked). No settings, sites, setup, terms, channels, users, audit log, federation. |
+| `manager` | Verwaltung | Create/print/extend/shorten/revoke codes and grants, approve requests, view sessions and guests (phone numbers masked), MAC whitelist. No settings, sites, setup, terms, channels, users, audit log, federation. |
 
 User management (admin only, M6): create/edit/delete users, password min. 12 characters; nobody can
 delete or demote themselves, the last admin cannot be removed.
@@ -347,12 +362,13 @@ Features:
 | Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods. |
 | Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke. |
 | Guests & sessions | Implemented M6 (admin + manager), one page: guests newest first (each login creates a guest row) with name, phone (masked for managers), login method (grant type; without grant: approval request or SMS challenge), site and accepted terms version + time of the latest acceptance, created; its grant (code/status/remaining, extend and revoke via the grant routes) and devices (MAC, online = open session summary of grant + MAC, IP, start/end, traffic from local accounting `bytes_in`/`bytes_out`). An open session without accounting update for `PORTAL_RADIUS_STALE_AFTER` (default 3 x interim interval = 900 s) is shown as "stale" (Stop probably lost; display only, data unchanged). Disconnect: Disconnect-Request job for an open session served by this instance (sessions of other instances: M7); the grant stays valid, audited `grant.disconnected`. Filters: site, method, running grants only, name (LIKE wildcards literal) or exact code; invalid filter values are ignored; 25 per page. Extend/shorten takes whole hours; a revoked grant cannot be extended (422). No new fields. |
+| MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
 | Approvals | Pending requests (approve/deny in UI as well). |
 | Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login. |
 | Retention | Retention period (default 1 year); nightly purge job. |
 | Backup | Implemented M6, per instance: daily `portal:backup` (02:45) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<UTC timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY) and `certs/`; entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. |
-| Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create (bulk: one entry with count)/edit/extend/expiry/revoke/disconnect/CSV export, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
+| Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create (bulk: one entry with count)/edit/extend/expiry/revoke/disconnect/CSV export, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), MAC whitelist changes, settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
 | Federation | Peers, status, lag, join token, Telegram owner. |
 | RouterOS generator | Per site: copy-paste script (hotspot, RADIUS client, `/radius incoming`, walled garden, cert fetch), `login.html` download and upload instructions. |
 | Setup assistant | Per site (implemented v0.6.0): guided steps with copy buttons, commands generated by the NAS driver from saved inputs (sanitized): 1 RouterOS container (optional, inputs local to the instance; Docker host as alternative), 2 guest network (VLAN, bridge, subnet, gateway, DHCP pool, SSID, Wi-Fi mode CAPsMAN v1 / wifi CAPsMAN / local radio; stored in site setting `setup`, also fill the router script), DHCP option 114, firewall isolation, 3 hotspot + DNS names (no captive check hosts in the walled garden), 4 router script, 5 `login.html` via `/tool fetch` (route `/router-login/{nas}/login.html`, router token + NAS IP like the certificate download), 6 status per router (last RADIUS contact, certificate and `login.html` fetched), 7 diagnostics. |
@@ -396,12 +412,15 @@ Features:
   created concurrently on partitioned instances: both stay valid as separate grants; redemption
   picks the unredeemed one allowed at the site; admin UI shows a conflict marker (decided; no
   code-range partitioning).
+- MAC whitelist (M7, to implement): entries for the same MAC created on partitioned instances must be
+  resolved when applying events: the newer version wins, the other is tombstoned (unique MAC among
+  non-deleted rows). Until then lookups take the newest version.
 - Clocks: NTP required on all instances (wall-clock expiry). Heartbeats compare clocks; above a
   configurable skew (e.g. 30 s) the admin UI warns, above a hard limit replication pauses.
 
 | Replicated | Local only |
 |---|---|
-| Grants/codes, site restrictions, revocations, device (MAC) bindings, guests, terms versions + acceptances, users/roles, sites (catalog), shared config (Telegram, Clickatell, Gotify, webhook, languages, retention, SMS duration, country allowlist), audit log | RADIUS tokens, OTP challenges, approval requests, login attempts/rate limits, NAS clients + secrets, raw accounting, TLS/ports/backup settings, local env |
+| Grants/codes, site restrictions, revocations, device (MAC) bindings, MAC whitelist + its site restriction, guests, terms versions + acceptances, users/roles, sites (catalog), shared config (Telegram, Clickatell, Gotify, webhook, languages, retention, SMS duration, country allowlist), audit log | RADIUS tokens, OTP challenges, approval requests, login attempts/rate limits, NAS clients + secrets, raw accounting, TLS/ports/backup settings, local env |
 | Session summaries (grant, MAC, site, serving instance, start, stop) | Accounting details (interim updates, counters) |
 
 ### 10.4 Roaming and remote actions
@@ -411,7 +430,8 @@ Features:
   token (no guest input, "welcome back" page with auto-submit). RADIUS at B verifies
   `Calling-Station-Id` against the replicated binding. Works offline from other peers as long as
   the grant was replicated before.
-- No MAC-only login (`login-by=mac`): roaming guests always pass briefly through the portal (decided).
+- No MAC-only login for grants: roaming guests always pass briefly through the portal (decided).
+  `login-by=mac` serves only the admin-managed MAC whitelist (§5).
 - Disconnects are sent only by the instance serving the session (known from session summaries).
   A revoke/rebind on another instance emits an event; the serving instance disconnects on
   receipt. Partitioned site: revocation applies on reconnect; until then Session-Timeout bounds
@@ -441,7 +461,9 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `grants` R | id, type (code/sms/approval), code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
-| `session_summaries` R | id, grant_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at |
+| `session_summaries` R | id, grant_id (null for whitelist sessions), mac_whitelist_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at |
+| `mac_whitelist` R | id, mac (AA:BB:CC:DD:EE:FF, unique among non-deleted), comment, expires_at, active, created_by |
+| `mac_whitelist_site` R | mac_whitelist_id, site_id (none = all sites) |
 | `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
 | `radius_accounting` | id, session_summary_id, nas_client_id, acct_session_id, username, last_update_at, terminate_cause, bytes_in, bytes_out, disconnect_sent_at |
 | `otp_challenges` | id, guest_id, site_id, mac, phone_e164, code_hash, attempts, sends, last_sent_at, expires_at, verified_at, grant_id; local, with replication columns |
@@ -457,7 +479,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | Laravel defaults | `jobs`, `failed_jobs`, `cache`, `sessions`, `migrations` |
 
 Purge job removes guests, devices, summaries, accounting, attempts, acceptances, OTP challenges,
-sent SMS records and audit entries older than the retention period (active grants kept); tombstones
+sent SMS records, audit entries and deleted MAC whitelist entries/site links older than the retention period (active grants kept); tombstones
 are purged after all peers have acknowledged them.
 
 ## 12. Security
@@ -479,6 +501,10 @@ are purged after all peers have acknowledged them.
   comes from the redirect URL and can be spoofed: a guest on the same network could lock out another
   MAC, and an attacker can rotate MACs (then the per-IP and global limits apply). Accepted trade-off
   for a small user base; limits stay configurable.
+- **MAC whitelist (v0.8.0):** a MAC can be spoofed; a device on the guest network that copies a
+  whitelisted MAC gets the same access (only one of both works reliably). Only trusted devices, a
+  comment is required, optional expiry; the User-Name = `Calling-Station-Id` check prevents using a
+  whitelisted MAC as user name from another device.
 - **Login handoff (M2):** one-time credentials are posted only to `link-login-only` URLs with
   `https` and a host listed in the site's hotspot host names; the post-login target (`dst`) is the
   portal status page (M3); the portal never redirects to `link-orig`.
@@ -524,7 +550,8 @@ M6: part A implemented (roles applied to all admin routes, user management, TOTP
 audit log table replacing the M2 log-only grant audit); part B implemented (backups, certificate pull
 from CertWarden/URL, test button for notification channels); part C implemented (guests & sessions
 list, bulk codes with A4 voucher sheet, Wi-Fi join QR, CSV export); released as v0.7.0. Part D: OIDC
-login for the admin UI (v0.7.x). Open: first-start web setup, CertWarden pull, backups, voucher QR
+login for the admin UI (v0.7.x). Part E: MAC whitelist (§5, §9), v0.8.0; open: MAC authentication
+(User-Name format, `login-by=mac` before the certificate, reject handling) tested on real RouterOS. Open: first-start web setup, CertWarden pull, backups, voucher QR
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only).
 

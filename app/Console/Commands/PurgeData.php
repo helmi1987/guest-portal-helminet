@@ -8,6 +8,8 @@ use App\Models\Device;
 use App\Models\Grant;
 use App\Models\Guest;
 use App\Models\LoginAttempt;
+use App\Models\MacWhitelist;
+use App\Models\MacWhitelistSite;
 use App\Models\OtpChallenge;
 use App\Models\RadiusToken;
 use App\Models\SessionSummary;
@@ -48,6 +50,10 @@ class PurgeData extends Command
         // Ended grants (cascade: devices, site links, summaries).
         Grant::withTrashed()->where(fn ($q) => $q->where('revoked_at', '<', $cutoff)->orWhere('expires_at', '<', $cutoff))
             ->forceDelete();
+
+        // Deleted MAC whitelist entries and removed site links (tombstones; entries cascade to links).
+        MacWhitelist::onlyTrashed()->where('deleted_at', '<', $cutoff)->forceDelete();
+        MacWhitelistSite::onlyTrashed()->where('deleted_at', '<', $cutoff)->forceDelete();
 
         // Guests without remaining devices or tokens.
         Guest::withTrashed()->where('created_at', '<', $cutoff)

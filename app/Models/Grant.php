@@ -5,6 +5,7 @@ namespace App\Models;
 use App\Enums\ExpiryMode;
 use App\Enums\GrantStatus;
 use App\Enums\GrantType;
+use App\Models\Concerns\HasSiteLinks;
 use App\Models\Concerns\Replicated;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
@@ -19,7 +20,7 @@ use Illuminate\Support\Carbon;
     'expires_at', 'first_login_at', 'revoked_at', 'max_extensions', 'extensions_used', 'rate_limit', 'created_by'])]
 class Grant extends Model
 {
-    use Replicated;
+    use HasSiteLinks, Replicated;
 
     protected function casts(): array
     {
@@ -50,34 +51,6 @@ class Grant extends Model
     public function sessions(): HasMany
     {
         return $this->hasMany(SessionSummary::class);
-    }
-
-    /** @return list<string> site ids; empty = all sites */
-    public function siteIds(): array
-    {
-        return $this->siteLinks->pluck('site_id')->all();
-    }
-
-    public function allowsSite(string $siteId): bool
-    {
-        $ids = $this->siteIds();
-
-        return $ids === [] || in_array($siteId, $ids, true);
-    }
-
-    /** Replace the site restriction; removed links become tombstones. */
-    public function syncSites(array $siteIds): void
-    {
-        $siteIds = array_values(array_unique($siteIds));
-        foreach ($this->siteLinks as $link) {
-            if (! in_array($link->site_id, $siteIds, true)) {
-                $link->delete();
-            }
-        }
-        foreach (array_diff($siteIds, $this->siteLinks->pluck('site_id')->all()) as $siteId) {
-            $this->siteLinks()->create(['site_id' => $siteId]);
-        }
-        $this->unsetRelation('siteLinks');
     }
 
     public function activeDevice(): ?Device

@@ -16,7 +16,7 @@ use Illuminate\Support\Str;
 final class Audit
 {
     /** Action groups shown as filter in the admin UI. */
-    public const GROUPS = ['auth', 'two_factor', 'user', 'grant', 'approval', 'settings', 'channel', 'site', 'router', 'terms', 'backup', 'certificate'];
+    public const GROUPS = ['auth', 'two_factor', 'user', 'grant', 'whitelist', 'approval', 'settings', 'channel', 'site', 'router', 'terms', 'backup', 'certificate'];
 
     private const SECRET_KEYS = '/pass|secret|token|totp|recovery|api_key|^code$|key$/i';
 

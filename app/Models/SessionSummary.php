@@ -8,7 +8,10 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['grant_id', 'site_id', 'serving_instance_id', 'mac', 'ip', 'started_at', 'stopped_at'])]
+/**
+ * RADIUS session: of a grant, or of a MAC whitelist entry (grant_id null, CONCEPT.md §5).
+ */
+#[Fillable(['grant_id', 'mac_whitelist_id', 'site_id', 'serving_instance_id', 'mac', 'ip', 'started_at', 'stopped_at'])]
 class SessionSummary extends Model
 {
     use Replicated;
@@ -21,6 +24,11 @@ class SessionSummary extends Model
     public function grant(): BelongsTo
     {
         return $this->belongsTo(Grant::class);
+    }
+
+    public function macWhitelist(): BelongsTo
+    {
+        return $this->belongsTo(MacWhitelist::class)->withTrashed();
     }
 
     public function site(): BelongsTo

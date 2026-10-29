@@ -329,14 +329,14 @@ Guests must resolve the hotspot name to the router's guest address:
 
 ### 6.3 Hotspot: setup wizard or manual
 - **Manual (recommended, reproducible):** paste the script generated in **Admin -> Sites -> (site) -> RouterOS script**. It creates the RADIUS client, `/radius
-  incoming`, hotspot profile and hotspot server `guest-portal` (`use-radius=yes`, `login-by=https`), walled garden and the certificate
+  incoming`, hotspot profile and hotspot server `guest-portal` (`use-radius=yes`, `login-by=https,mac`; `mac` for the MAC whitelist), walled garden and the certificate
   script/scheduler (6.1). Fill its `<PLACEHOLDERS>` from the worksheet: `<HOTSPOT_GATEWAY_IP>` = 10.30.0.1,
   `<GUEST_INTERFACE>` = `vlan30-guest`, `<GUEST_POOL>` = `guest-pool`.
   All entries use the name or comment `guest-portal`; the script removes them first, so it can be re-run (re-running
   recreates the hotspot and logs out connected guests). Do not rename the profile: the certificate script sets
   `ssl-certificate` on the profile named `guest-portal`.
 - **Wizard:** `/ip hotspot setup` asks for interface, address, pool, certificate, SMTP, DNS and a local user. Use it only if you then align the result with the
-  generated script (set `use-radius=yes`, `login-by=https`, remove the local test user, no `trial`). The wizard also adds firewall/NAT rules of its own (not
+  generated script (set `use-radius=yes`, `login-by=https,mac`, remove the local test user, no `trial`). The wizard also adds firewall/NAT rules of its own (not
   described in the docs **(to verify)**); check `/ip firewall filter print` and `nat print` for duplicates **(to verify)**.
 
 ### 6.4 Upload the custom login page

@@ -11,4 +11,14 @@ final class Mac
 
         return strlen($hex) === 12 ? implode(':', str_split($hex, 2)) : null;
     }
+
+    /**
+     * Strict variant for values that must be a MAC and nothing else (e.g. a RADIUS User-Name):
+     * AA:BB:CC:DD:EE:FF, AA-BB-CC-DD-EE-FF or AABBCCDDEEFF (any case); null otherwise.
+     */
+    public static function strict(?string $value): ?string
+    {
+        return preg_match('/^[0-9A-Fa-f]{2}([:-]?)[0-9A-Fa-f]{2}(\1[0-9A-Fa-f]{2}){4}\z/', (string) $value) === 1
+            ? self::normalize($value) : null;
+    }
 }

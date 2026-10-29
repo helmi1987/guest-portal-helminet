@@ -10,12 +10,13 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (v0.7.0: admin extras, M6 parts A-C). Code login, SMS one-time password
+**Status:** early development (v0.8.0: admin extras, M6 parts A-C and E). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor
 login, audit log, backups, certificate pull from CertWarden or a URL, test buttons, guests & sessions list,
-bulk codes with printable A4 voucher sheet (Wi-Fi join QR) and CSV export; OIDC login (M6 part D) and
+bulk codes with printable A4 voucher sheet (Wi-Fi join QR) and CSV export, MAC whitelist (trusted devices
+online without the portal via RouterOS MAC authentication); OIDC login (M6 part D) and
 federation follow (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
@@ -49,6 +50,9 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
 - Vouchers: admin UI → Codes → create 1-100 codes at once; the print view is an A4 sheet (10 cards)
   with the code, duration and a Wi-Fi join QR for the guest SSID entered in the setup assistant
   (shown when the code's sites share one SSID); admins can export the codes as CSV.
+- MAC whitelist: admin UI → MAC whitelist (or "allow this device permanently" in the guest list).
+  Needs `login-by=https,mac` on the hotspot profile (set by the generated router script). MAC
+  addresses can be spoofed: whitelist only trusted devices.
 - Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`; one `.tar.gz`, mode 0600,
   14 kept by default), admin UI → Backups or `artisan portal:backup`. Backups contain secrets.
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).

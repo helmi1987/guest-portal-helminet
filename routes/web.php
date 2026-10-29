@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\CertificateController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\GuestController;
 use App\Http\Controllers\Admin\LogoutController;
+use App\Http\Controllers\Admin\MacWhitelistController;
 use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SetupController;
@@ -81,7 +82,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
         });
 
         Route::middleware('two_factor')->group(function () {
-            // Admin + manager (CONCEPT.md §9): codes/grants, approvals, guests and sessions.
+            // Admin + manager (CONCEPT.md §9): codes/grants, approvals, guests and sessions, MAC whitelist.
             Route::middleware('role:admin,manager')->name('admin.')->group(function () {
                 Route::view('/', 'admin.dashboard')->name('dashboard');
                 Route::get('/grants/print', [GrantController::class, 'print'])->name('grants.print');
@@ -94,6 +95,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/guests', [GuestController::class, 'index'])->name('guests.index');
                 Route::post('/sessions/{session}/disconnect', [GuestController::class, 'disconnect'])->name('sessions.disconnect')
                     ->middleware('throttle:30,1');
+                Route::resource('whitelist', MacWhitelistController::class)->except(['show']);
+                Route::post('/whitelist/{whitelist}/toggle', [MacWhitelistController::class, 'toggle'])->name('whitelist.toggle');
             });
 
             // Admin only: code CSV export, settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates.

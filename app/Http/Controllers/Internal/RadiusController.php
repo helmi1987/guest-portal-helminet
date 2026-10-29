@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Internal;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\DisconnectSession;
 use App\Models\Grant;
+use App\Models\MacWhitelist;
 use App\Models\NasClient;
 use App\Models\RadiusAccounting;
 use App\Models\RadiusToken;
@@ -31,6 +33,11 @@ class RadiusController extends Controller
         $username = (string) $this->attr($request, 'User-Name');
         $password = (string) $this->attr($request, 'User-Password');
         $mac = Mac::normalize($this->attr($request, 'Calling-Station-Id'));
+
+        // RouterOS MAC authentication (login-by=mac): User-Name is a MAC. Portal tokens never are.
+        if (($userMac = Mac::strict($username)) !== null) {
+            return $this->authorizeWhitelist($request, $nas, $userMac, $mac);
+        }
 
         $reason = null;
         $authorize = fn () => DB::transaction(function () use ($nas, $username, $password, $mac, $request, $grants, &$reason) {
@@ -80,6 +87,36 @@ class RadiusController extends Controller
         return response()->json($reply);
     }
 
+    /**
+     * MAC whitelist (CONCEPT.md §5): accepted only when User-Name equals the Calling-Station-Id the
+     * router reports and a valid entry allows the NAS's site. The password is not checked
+     * (mac-auth-mode=mac-as-username sends none). No Session-Timeout unless the entry expires.
+     */
+    private function authorizeWhitelist(Request $request, ?NasClient $nas, string $userMac, ?string $mac): JsonResponse
+    {
+        $reason = match (true) {
+            $nas === null => 'unknown NAS',
+            $nas->nas_identifier && $nas->nas_identifier !== $this->attr($request, 'NAS-Identifier') => 'NAS-Identifier mismatch',
+            $mac === null || $mac !== $userMac => 'User-Name is not the Calling-Station-Id',
+            default => null,
+        };
+        $entry = $reason === null ? MacWhitelist::findValidCached($mac, $nas->site_id) : null;
+
+        if ($entry === null) {
+            // Every unknown device triggers a MAC authentication first: debug level only.
+            Log::debug('RADIUS MAC reject', ['reason' => $reason ?? 'not whitelisted', 'nas' => $nas?->nas_ip, 'mac' => $userMac]);
+
+            return response()->json(['reply:Reply-Message' => 'Access denied'], 401);
+        }
+
+        $reply = ['reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval')];
+        if (($remaining = $entry->remainingSeconds()) !== null) {
+            $reply['reply:Session-Timeout'] = max(1, $remaining);
+        }
+
+        return response()->json($reply);
+    }
+
     public function accounting(Request $request): Response
     {
         $nas = $this->nas($request);
@@ -118,7 +155,7 @@ class RadiusController extends Controller
         $username = (string) $this->attr($request, 'User-Name');
         $token = RadiusToken::query()->where('username', $username)->whereNotNull('used_at')->first();
         if ($token === null) {
-            return null;
+            return $this->startWhitelistSession($request, $nas, $sessionId, $username);
         }
 
         $summary = SessionSummary::create([
@@ -129,6 +166,42 @@ class RadiusController extends Controller
             'ip' => $this->attr($request, 'Framed-IP-Address'),
             'started_at' => now(),
         ]);
+
+        return new RadiusAccounting([
+            'session_summary_id' => $summary->id,
+            'nas_client_id' => $nas->id,
+            'acct_session_id' => $sessionId,
+            'username' => $username,
+        ]);
+    }
+
+    /**
+     * Session of a MAC whitelist entry: User-Name is the MAC and equals Calling-Station-Id; no grant.
+     * Without a valid entry (deactivated, deleted or expired since the Accept) the session is still
+     * recorded, linked to the newest entry of the MAC if any, and disconnected after commit.
+     */
+    private function startWhitelistSession(Request $request, NasClient $nas, string $sessionId, string $username): ?RadiusAccounting
+    {
+        $mac = Mac::strict($username);
+        if ($mac === null || $mac !== Mac::normalize($this->attr($request, 'Calling-Station-Id'))) {
+            return null;
+        }
+        $entry = MacWhitelist::findValid($mac, $nas->site_id);
+        $valid = $entry !== null;
+        $entry ??= MacWhitelist::withTrashed()->where('mac', $mac)->orderByDesc('version')->first();
+
+        $summary = SessionSummary::create([
+            'mac_whitelist_id' => $entry?->id,
+            'site_id' => $nas->site_id,
+            'serving_instance_id' => app(LocalInstance::class)->id(),
+            'mac' => $mac,
+            'ip' => $this->attr($request, 'Framed-IP-Address'),
+            'started_at' => now(),
+        ]);
+        if (! $valid) {
+            Log::warning('RADIUS whitelist session without valid entry, disconnecting', ['nas' => $nas->nas_ip, 'mac' => $mac]);
+            DisconnectSession::dispatch($summary->id)->afterCommit();
+        }
 
         return new RadiusAccounting([
             'session_summary_id' => $summary->id,

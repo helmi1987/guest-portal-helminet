@@ -82,6 +82,11 @@
                                         <span @class(['font-semibold text-green-700' => $online, 'text-slate-500' => ! $online])>{{ $online ? __('portal.grants.online') : __('portal.guests.offline') }}</span>
                                     @endif
                                     @if ($device->unbound_at) <span class="text-slate-500">({{ __('portal.grants.unbound_at') }} {{ $device->unbound_at->format('Y-m-d H:i') }})</span>@endif
+                                    @if ($entry = $whitelisted[$device->mac] ?? null)
+                                        <a href="{{ route('admin.whitelist.edit', $entry) }}" class="rounded bg-sky-100 px-1 text-sky-800 underline">{{ __('portal.whitelist.badge') }}@unless ($entry->isValid()) ({{ __('portal.whitelist.not_valid') }})@endunless</a>
+                                    @else
+                                        <a href="{{ route('admin.whitelist.create', ['device' => $device->id]) }}" class="underline">{{ __('portal.whitelist.allow_device') }}</a>
+                                    @endif
                                     @if ($session)
                                         <div>IP {{ $session->ip ?? '–' }} · {{ __('portal.grants.started_at') }} {{ $session->started_at->format('Y-m-d H:i') }}@if ($session->stopped_at) · {{ __('portal.grants.stopped_at') }} {{ $session->stopped_at->format('Y-m-d H:i') }}@endif</div>
                                         @if ($session->accounting_sum_bytes_in !== null)
