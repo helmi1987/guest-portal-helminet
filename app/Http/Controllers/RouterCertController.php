@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\NasClient;
+use App\Http\Controllers\Concerns\AuthorizesRouter;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
@@ -13,19 +13,11 @@ use Symfony\Component\HttpFoundation\Response;
  */
 class RouterCertController extends Controller
 {
-    public function __invoke(Request $request, NasClient $nas, string $file): Response
+    use AuthorizesRouter;
+
+    public function __invoke(Request $request, string $nas, string $file): Response
     {
-        // Router token and, by default, the router's own NAS IP as source (generated fetch uses src-address).
-        $token = (string) $request->header('X-Portal-Token');
-        $reason = match (true) {
-            $token === '' || ! hash_equals($nas->certToken(), $token) => 'invalid token',
-            config('portal.router_cert.check_source_ip') && $request->ip() !== $nas->nas_ip => 'source IP is not the NAS IP',
-            default => null,
-        };
-        if ($reason !== null) {
-            Log::warning('Router certificate download denied', ['nas' => $nas->id, 'ip' => $request->ip(), 'reason' => $reason]);
-            abort(403);
-        }
+        $nas = $this->authorizeRouter($request, $nas, 'Router certificate download');
 
         $paths = config('portal.router_cert');
         $cert = is_readable($paths['cert']) ? (string) file_get_contents($paths['cert']) : '';
@@ -35,6 +27,9 @@ class RouterCertController extends Controller
         }
 
         $headers = ['Content-Type' => 'application/x-pem-file', 'Cache-Control' => 'no-store'];
+        if ($file === 'router.crt') {
+            $nas->markSeen('cert_fetched_at');
+        }
         if ($file === 'router.key') {
             Log::info('Router certificate key downloaded', ['nas' => $nas->id, 'ip' => $request->ip()]);
         }

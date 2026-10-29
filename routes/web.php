@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\ApprovalController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\LogoutController;
 use App\Http\Controllers\Admin\SettingsController;
+use App\Http\Controllers\Admin\SetupController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\TermsController;
 use App\Http\Controllers\ApprovalLinkController;
@@ -88,6 +89,9 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
             Route::name('admin.')->group(function () {
                 Route::resource('sites', SiteController::class)->except(['show']);
                 Route::get('/sites/{site}/login.html', [SiteController::class, 'loginPage'])->name('sites.login-page');
+                Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
+                Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
+                Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');
                 Route::scopeBindings()->prefix('/sites/{site}/routers')->name('sites.routers.')->group(function () {
                     Route::post('/', [SiteController::class, 'storeRouter'])->name('store');
                     Route::delete('/{router}', [SiteController::class, 'destroyRouter'])->name('destroy');

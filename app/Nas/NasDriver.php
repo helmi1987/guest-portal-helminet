@@ -36,4 +36,23 @@ interface NasDriver
 
     /** Router configuration script for one router of a site. */
     public function configScript(Site $site, NasClient $nas): string;
+
+    /**
+     * Inputs of the setup assistant (CONCEPT.md §9) as validation rules: "network" (stored per site in
+     * the site setting "setup") and "container" (instance-local).
+     *
+     * @return array{network: array<string, array>, container: array<string, array>}
+     */
+    public function setupFields(): array;
+
+    /**
+     * Ready-to-copy, sanitized command blocks of the setup assistant, by step and block id:
+     * container, network, hotspot, diagnostics.
+     *
+     * @return array<string, array<string, string>>
+     */
+    public function setupCommands(Site $site, array $container): array;
+
+    /** Command that makes the router download its login page (route router-login). */
+    public function loginPageFetch(Site $site, NasClient $nas): string;
 }

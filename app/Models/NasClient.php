@@ -18,7 +18,8 @@ class NasClient extends Model
 {
     protected function casts(): array
     {
-        return ['radius_secret' => 'encrypted', 'cert_token' => 'encrypted', 'coa_port' => 'integer'];
+        return ['radius_secret' => 'encrypted', 'cert_token' => 'encrypted', 'coa_port' => 'integer',
+            'last_seen_at' => 'datetime', 'cert_fetched_at' => 'datetime', 'login_page_fetched_at' => 'datetime'];
     }
 
     protected static function booted(): void
@@ -47,6 +48,21 @@ class NasClient extends Model
         }
 
         return $this->cert_token;
+    }
+
+    /**
+     * Record a status timestamp (setup assistant) without model events: saving would rewrite the
+     * FreeRADIUS clients file. RADIUS contact is written at most once per minute.
+     */
+    public function markSeen(string $column = 'last_seen_at'): void
+    {
+        if (! in_array($column, ['last_seen_at', 'cert_fetched_at', 'login_page_fetched_at'], true)
+            || ($column === 'last_seen_at' && $this->last_seen_at?->gt(now()->subMinute()))) {
+            return;
+        }
+        $this->{$column} = now();
+        static::query()->whereKey($this->id)->toBase()->update([$column => $this->{$column}]);
+        $this->syncOriginalAttribute($column);
     }
 
     /** Client name in the FreeRADIUS clients file; passed back by FreeRADIUS to identify the NAS. */

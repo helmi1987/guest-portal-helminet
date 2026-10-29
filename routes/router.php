@@ -1,9 +1,17 @@
 <?php
 
+use App\Http\Controllers\CaptivePortalApiController;
 use App\Http\Controllers\RouterCertController;
+use App\Http\Controllers\RouterLoginPageController;
 use Illuminate\Support\Facades\Route;
 
-// Router certificate download for the routers' scheduler (guest port). Stateless: no session,
-// cookies or CSRF (see bootstrap/app.php); authenticated by router token + source IP.
+// Stateless guest-port routes: no session, cookies or CSRF (see bootstrap/app.php).
+
+// Router downloads for the routers' scheduler / terminal; authenticated by router token + source IP.
+// {nas} is resolved by the controllers (unknown id -> 403 like a wrong token, no 404 oracle).
 Route::get('/router-cert/{nas}/{file}', RouterCertController::class)
     ->whereIn('file', ['fingerprint', 'router.crt', 'router.key'])->name('router-cert');
+Route::get('/router-login/{nas}/login.html', RouterLoginPageController::class)->name('router-login');
+
+// Captive Portal API (RFC 8908) for DHCP option 114 (RFC 8910), per site.
+Route::get('/captive/{slug}', CaptivePortalApiController::class)->name('captive-api');

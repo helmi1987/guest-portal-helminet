@@ -143,7 +143,11 @@ class RadiusController extends Controller
     {
         $short = (string) $this->attr($request, 'FreeRADIUS-Client-Shortname');
 
-        return preg_match('/^nas-(\d+)$/', $short, $m) ? NasClient::with('site')->find((int) $m[1]) : null;
+        $nas = preg_match('/^nas-(\d+)$/', $short, $m) ? NasClient::with('site')->find((int) $m[1]) : null;
+        // FreeRADIUS has checked source IP and secret: record the contact (setup assistant status).
+        $nas?->markSeen();
+
+        return $nas;
     }
 
     private function attr(Request $request, string $name): ?string

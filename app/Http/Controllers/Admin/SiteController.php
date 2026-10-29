@@ -107,7 +107,7 @@ class SiteController extends Controller
             'radius_address' => ['nullable', 'ip'],
             'portal_address' => ['nullable', 'ip'],
             'portal_url' => ['nullable', 'url:https,http'],
-            'hotspot_hosts' => ['nullable', 'string', 'max:500', 'regex:/^[A-Za-z0-9.\-, ]*$/'],
+            'hotspot_hosts' => ['nullable', 'string', 'max:500', 'regex:/^([A-Za-z0-9.\-]+(\s*,\s*[A-Za-z0-9.\-]+)*)?$/D'],
         ]);
 
         return [

@@ -10,7 +10,7 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (milestone M5: SMS login). Code login, SMS one-time password
+**Status:** early development (milestone M5: SMS login; v0.6.0: setup assistant). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate; admin extras and federation follow (see CONCEPT.md §14).
@@ -29,14 +29,17 @@ docker exec -it guest-portal artisan portal:admin   # create the first admin
 ```
 
 - Guest portal: `https://<host>/`, admin UI: `https://<host>:8443/admin`.
-- Router setup: admin UI → Sites → add site and router → "Router configuration" (RouterOS script)
-  and `login.html` download.
+- Router setup: admin UI → Sites → add site and router → "Set up" (setup assistant: guided steps
+  with ready-to-copy RouterOS commands for container, guest network, hotspot, RADIUS/certificate,
+  `login.html` fetch, status per router and diagnostics), or "Router configuration" (RouterOS
+  script) and `login.html` download.
 - `/data` holds the database, generated secrets (`.env`), certificates and backups.
   Certificates (PEM, full chain + key) go to `/data/certs`: `portal.crt` + `portal.key` for the guest
   and admin ports (otherwise a self-signed one is generated; legacy: `fullchain.pem` + `privkey.pem`
   mounted at `/certs`), `router.crt` + `router.key` (e.g. a wildcard) for the routers' HTTPS login,
   downloaded by each router's scheduler. Changed files are picked up within ~10 s (nginx reload).
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).
+  Docker host (Compose, e.g. Unraid): [docs/docker-host.md](docs/docker-host.md).
   RouterOS container: [docs/routeros-container.md](docs/routeros-container.md).
   Guest network (VLAN, Wi-Fi, firewall, hotspot, RADIUS, certificates):
   [docs/guest-network-setup.md](docs/guest-network-setup.md).
