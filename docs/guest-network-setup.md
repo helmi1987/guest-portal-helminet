@@ -450,7 +450,7 @@ add chain=forward action=drop out-interface=containers comment="to container: no
 come first. Memory: reserve about 512 MB for the container.
 
 ### 7.3 Option 2: Docker host (e.g. a NAS)
-- Run the image with the compose example from the repository. Publish `443/tcp`, `8443/tcp`, `1812/udp`, `1813/udp`; mount `/data` (certificates in `/data/certs`).
+- Run the image as in [docker-host.md](docker-host.md) (compose file, network mode). Publish `443/tcp`, `8443/tcp`, `1812/udp`, `1813/udp`; mount `/data` (certificates in `/data/certs`).
 - Give the host a fixed LAN IP (the portal IP). Docker's published UDP ports keep the sender's source IP with iptables DNAT; verify with `tcpdump` or the
   portal's RADIUS log. Do not use a userland proxy or a reverse proxy in front of UDP **(to verify on your Docker setup)**.
 - Outgoing Disconnect from the container is masqueraded by Docker to the host IP, which is the address your routers have in `/radius`. Good: this is the
