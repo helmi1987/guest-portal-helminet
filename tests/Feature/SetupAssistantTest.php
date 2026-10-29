@@ -294,27 +294,90 @@ class SetupAssistantTest extends TestCase
     {
         $script = $this->site->driver()->configScript($this->site, $this->nas);
         foreach ([
-            ':local tmp "guest-portal-import"',
-            ':local sc [:tostr [/ip hotspot profile get $prof ssl-certificate]]',
-            ':foreach c in=[/certificate find where name=$sc] do={ :set cur [$norm [/certificate get $c fingerprint]] }',
-            '/certificate import file-name=($name . ".crt") passphrase="" name=$tmp',
-            ':if ([$norm [/certificate get $c fingerprint]] = $fp) do={ :set leaf $c }',
-            '/certificate find where name~("^" . $tmp) && private-key',
-            '/ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac',
-            '/certificate remove [find where !(name~("^" . $tmp)) && (name=$name || name~("^" . $name . "-ca-[0-9]+\\$")',
-            '/certificate remove [find where name!=$sc && (name~("^" . $name . "-ca-[0-9]+\\$")',
-            '/certificate set $c name=($name . "-ca-" . $i)',
-            ':onerror err in={',
+            ':local gpTmp "guest-portal-import"',
+            ':local gpProfs [/ip hotspot profile find where name=$gpName]',
+            ':local gpSc [:tostr [/ip hotspot profile get $gpProf ssl-certificate]]',
+            ':foreach c in=[/certificate find where name=$gpSc] do={ :set gpCur [$gpNorm [/certificate get $c fingerprint]] }',
+            '/certificate import file-name=($gpName . ".crt") passphrase="" name=$gpTmp',
+            ':if ([$gpNorm [/certificate get $c fingerprint]] = $gpFp) do={ :set gpLeaf $c }',
+            '/certificate find where name~("^" . $gpTmp) && private-key',
+            '/ip hotspot profile set $gpProf ssl-certificate=[/certificate get $gpLeaf name] login-by=https,mac',
+            ':if ([$gpRemove $gpName $gpTmp "pre"] < 0) do={ :error',
+            ':if ([$gpRemove $gpName $gpTmp "post"] < 0) do={ :error',
+            ':foreach gc in=[/certificate find] do={',
+            ':foreach gc in=$gdel do={ /certificate remove $gc }',
+            ':if ([:len $gdel] > 10) do={',
+            ':foreach gu in=$gused do={ :if ($gu = $gn) do={ :set gwant false } }',
+            '/certificate set $c name=($gpName . "-ca-" . $gpIdx)',
+            ':onerror gpErr in={',
             'router certificate update failed at step',
         ] as $line) {
             $this->assertStringContainsString($line, $script);
         }
-        // No name-based comparison any more (chain imports create several certificates).
-        $this->assertStringNotContainsString('find where name=$name] do={ :set cur', $script);
+        // Removal order: temporary/CA/legacy before the import, previous leaf after the profile switch.
+        $this->assertLessThan(strpos($script, '/certificate import'), strpos($script, '"pre"] < 0'));
+        $this->assertLessThan(strpos($script, '"post"] < 0'), strpos($script, 'ssl-certificate=[/certificate get $gpLeaf name]'));
         $this->assertStringNotContainsString('name=guest-portal-new ', $script);
-        $this->assertStringNotContainsString('name~("^" . $name) ', $script);
         $this->assertStringContainsString('paste this into the terminal instead of saving it as a /system', $script);
         $this->assertStringContainsString('logins of the portal CANNOT work yet', $script);
+    }
+
+    public function test_certificate_script_never_removes_by_find_filter(): void
+    {
+        $script = $this->site->driver()->configScript($this->site, $this->nas);
+        $this->assertStringNotContainsString('/certificate remove [find', $script);
+        $this->assertStringNotContainsString('certificate remove [find', $script);
+        // Every certificate removal in the certificate script takes a single id from the checked list.
+        preg_match_all('/\/certificate remove ([^\n]*)/', $script, $m);
+        $this->assertNotEmpty($m[1]);
+        foreach ($m[1] as $arg) {
+            $this->assertSame('$gc }', trim($arg), $arg);
+        }
+    }
+
+    /**
+     * RouterOS gotcha: inside "find where", a local with the same name as a property is not
+     * substituted ("name=$name" compares the property with itself and matches every item).
+     */
+    public function test_generated_script_locals_never_shadow_find_where_properties(): void
+    {
+        $this->site->update(['settings' => array_merge($this->site->settings ?? [], ['setup' => [
+            'vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+            'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2',
+        ]])]);
+        $site = $this->site->fresh();
+        $driver = $site->driver();
+        $scripts = ['config' => $driver->configScript($site, $this->nas), 'login_fetch' => $driver->loginPageFetch($site, $this->nas)];
+        $container = ['veth_address' => '172.17.0.2/24', 'veth_gateway' => '172.17.0.1', 'bridge' => 'containers', 'disk' => 'usb1'];
+        $commands = $driver->setupCommands($site, $container);
+        array_walk_recursive($commands, function ($text, $key) use (&$scripts) {
+            if (is_string($text)) {
+                $scripts['setup:'.$key] = $text;
+            }
+        });
+        $this->assertGreaterThan(10, count($scripts));
+
+        $base = ['name', 'comment', 'address', 'interface', 'disabled', 'type', 'list', 'value'];
+        $checkedLocals = 0;
+        foreach ($scripts as $label => $text) {
+            // Property names used in find clauses of this script ("find where a=..", "find a=..", "a~..", "a!=..")
+            $props = $base;
+            preg_match_all('/find(?: where)? ([^\]\n]*)/', $text, $finds);
+            foreach ($finds[1] as $clause) {
+                preg_match_all('/([a-z][a-z0-9-]*)\s*(?:!=|=|~)/', $clause, $p);
+                $props = array_merge($props, $p[1]);
+            }
+            $props = array_unique($props);
+            // Script variables: :local X, :global X, :foreach X in=, :for X from=, :onerror X in=
+            preg_match_all('/:(?:local|global|foreach|for|onerror)\s+([A-Za-z][A-Za-z0-9-]*)/', $text, $vars);
+            foreach ($vars[1] as $var) {
+                $checkedLocals++;
+                $this->assertNotContains($var, $props, "$label: variable \"$var\" shadows a property used in find where");
+            }
+        }
+        $this->assertGreaterThan(20, $checkedLocals);
+        $this->assertStringContainsString(':local gpName "guest-portal"', $scripts['config']);
+        $this->assertStringNotContainsString(':local name ', $scripts['config']);
     }
 
     public function test_generated_scripts_never_use_comment_on_certificates(): void

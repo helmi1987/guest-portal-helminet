@@ -323,6 +323,16 @@ that downloads the certificate from the instance with a per-router token, import
   Behind a reverse proxy (`TRUSTED_PROXIES` set) the IP check is off by default (`PORTAL_ROUTER_CERT_CHECK_IP`).
 - The portal certificate must be publicly trusted: the fetch uses `check-certificate=yes`.
 
+> **Critical fix in v0.12.5:** v0.12.5 fixes a critical bug in the router certificate script of
+> v0.12.1-v0.12.4 that could delete all certificates on the router (e.g. CAPsMAN). The script of v0.12.0
+> and earlier had the same bug (`:local name` with `/certificate remove [find where name=$name]`).
+> Cause: inside `find where`, a local named like a property is not substituted, so `name=$name`
+> matches every item. Disable or replace the scheduler `guest-portal-cert` on every router
+> (`/system scheduler disable [find where name="guest-portal-cert"]`) and run the router script of
+> v0.12.5 again (it replaces the script and the scheduler).
+> The same bug made `/ip hotspot profile find where name=$name` match every profile, so the first
+> hotspot profile may have received `ssl-certificate`/`login-by`: check `/ip hotspot profile print`.
+
 How the certificate script identifies certificates (the chain PEM creates one certificate per PEM
 block: leaf + intermediate/root CAs):
 - The current certificate is the one set as `ssl-certificate` on the profile `guest-portal` (renaming it
@@ -336,6 +346,14 @@ block: leaf + intermediate/root CAs):
   new leaf, the previous `guest-portal` leaf is removed, the leaf is renamed to `guest-portal` and the
   CAs to `guest-portal-ca-<n>`. Certificates with other names are never touched (a previous certificate
   renamed by you stays; remove it manually).
+- Removal (v0.12.5): no `find` filter and no computed expression is passed to `/certificate remove`.
+  The script walks all certificates, checks each name with explicit string comparisons (exactly
+  `guest-portal`, `guest-portal-ca-` followed by digits only, `guest-portal-new`, prefix
+  `guest-portal-new_`, prefix `guest-portal-import`) and removes matching ones by id. Certificates
+  referenced as `ssl-certificate` by any hotspot profile are never removed. If more than 10
+  certificates would be removed, nothing is removed and an error is logged.
+- Script locals are prefixed `gp` (`gpName`, `gpTmp`, ...): inside `find where`, a local named like a
+  property (e.g. `name`) is not substituted, so `name=$name` matches every item.
 - Errors are logged with the failing step (`:onerror`, RouterOS >= 7.13 **(to verify)**):
   `/log print where message~"guest-portal"`.
 - **Secrets in the log:** RouterOS writes the full source of a script added or changed via `/system script`

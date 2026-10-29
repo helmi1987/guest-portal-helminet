@@ -7,10 +7,20 @@ multi-arch container image that runs either as a RouterOS container or on any re
 One instance can serve several sites, or each site runs its own instance and instances form a
 federation so access grants are valid at every site.
 
+> **Critical fix in v0.12.5:** v0.12.5 fixes a critical bug in the router certificate script of
+> v0.12.1-v0.12.4 that could delete all certificates on the router (e.g. CAPsMAN). The script of v0.12.0
+> and earlier had the same bug (`:local name` with `/certificate remove [find where name=$name]`).
+> Cause: inside `find where`, a local named like a property is not substituted, so `name=$name`
+> matches every item. Disable or replace the scheduler `guest-portal-cert` on every router
+> (`/system scheduler disable [find where name="guest-portal-cert"]`) and run the router script of
+> v0.12.5 again (it replaces the script and the scheduler).
+> The same bug made `/ip hotspot profile find where name=$name` match every profile, so the first
+> hotspot profile may have received `ssl-certificate`/`login-by`: check `/ip hotspot profile print`.
+
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (M7 federation in progress; v0.12.4: "Regenerate secret and token" also rotates the router download token; v0.12.3: router certificate script without certificate comments, portal name pinned as CNAME (no IPv6 leak), portal IP validation; v0.12.2: styled error pages, separate route throttle counters; v0.12.1: setup fixes (bridge, host names, router certificate script, CertWarden keys, uninstall); v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
+**Status:** early development (M7 federation in progress; v0.12.5: critical fix of the router certificate script (see below); v0.12.4: "Regenerate secret and token" also rotates the router download token; v0.12.3: router certificate script without certificate comments, portal name pinned as CNAME (no IPv6 leak), portal IP validation; v0.12.2: styled error pages, separate route throttle counters; v0.12.1: setup fixes (bridge, host names, router certificate script, CertWarden keys, uninstall); v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor

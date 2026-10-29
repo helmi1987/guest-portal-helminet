@@ -77,7 +77,7 @@ class GuestPortalTest extends TestCase
         $this->assertStringContainsString("https://portal.example.com/router-cert/{$nas->id}", $script);
         $this->assertStringContainsString('X-Portal-Token: '.$nas->cert_token, $script);
         $this->assertStringContainsString('port=3799', $script);
-        $this->assertStringContainsString(':local src "10.0.0.1"', $script);
+        $this->assertStringContainsString(':local gpSrc "10.0.0.1"', $script);
         $this->assertStringContainsString('remove [find name="guest-portal-cert"]', $script);
 
         $url = "/router-cert/{$nas->id}";

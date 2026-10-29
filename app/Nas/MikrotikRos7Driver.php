@@ -554,6 +554,11 @@ class MikrotikRos7Driver implements NasDriver
      * name only: leaf "guest-portal", CAs "guest-portal-ca-<n>", temporary import prefix
      * "guest-portal-import" and the legacy names "guest-portal-new" / "guest-portal-new_*". No other
      * certificate is ever removed.
+     *
+     * Script locals use the prefix "gp": in RouterOS "find where", a local named like a property (e.g.
+     * "name") is not substituted, so "name=$name" matches every item (v0.12.1-v0.12.4 removed all
+     * certificates this way). Certificates are removed only by id after explicit string checks on each
+     * name, never certificates referenced by a hotspot profile, and never more than 10 per run.
      */
     private function certScript(string $base, string $token, string $sourceIp): string
     {
@@ -566,7 +571,7 @@ class MikrotikRos7Driver implements NasDriver
         # Imported certificates (leaf + chain CAs) get the temporary name "__NAME__-import*"; the leaf is renamed
         # to "__NAME__", the CA certificates to "__NAME__-ca-<n>". RouterOS certificates have no comment, so
         # only certificates with these names (plus the legacy names "__NAME__-new", "__NAME__-new_*") are
-        # ever removed; the certificate in use on the profile is kept until the new one is set.
+        # ever removed; certificates referenced by a hotspot profile are kept; more than 10 aborts the run.
         # Fingerprints are compared lowercase without ":" (instance: sha256 lowercase hex; RouterOS
         # "fingerprint" property: format to verify, normalised here).
         # Errors are logged with the failing step: /log print where message~"__NAME__"
@@ -576,90 +581,142 @@ class MikrotikRos7Driver implements NasDriver
         /system script
         remove [find name="__NAME__-cert"]
         add name=__NAME__-cert dont-require-permissions=no policy=read,write,policy,test source={
-        :local base "__BASE__"
-        :local hdr "X-Portal-Token: __TOKEN__"
-        :local src "__SRC__"
-        :local name "__NAME__"
-        :local tmp "__NAME__-import"
-        :local step "start"
+        # Local names start with "gp": inside "find where" a local with the same name as a property
+        # (e.g. "name") is not substituted, so "name=$name" would match every item. Never use such names.
+        :local gpBase "__BASE__"
+        :local gpHdr "X-Portal-Token: __TOKEN__"
+        :local gpSrc "__SRC__"
+        :local gpName "__NAME__"
+        :local gpTmp "__NAME__-import"
+        :local gpStep "start"
         # Lowercase hex without ":", spaces or line breaks
-        :local norm do={
-            :local s [:tostr $1]
-            :local r ""
-            :local up "ABCDEF"
-            :local lo "abcdef"
-            :if ([:len $s] > 0) do={
-                :for i from=0 to=([:len $s] - 1) do={
-                    :local ch [:pick $s $i]
-                    :local p [:find $up $ch]
-                    :if ([:typeof $p] = "num") do={ :set ch [:pick $lo $p] }
-                    :if ([:typeof [:find "0123456789abcdef" $ch]] = "num") do={ :set r ($r . $ch) }
+        :local gpNorm do={
+            :local gs [:tostr $1]
+            :local gr ""
+            :local gup "ABCDEF"
+            :local glo "abcdef"
+            :if ([:len $gs] > 0) do={
+                :for gi from=0 to=([:len $gs] - 1) do={
+                    :local gch [:pick $gs $gi]
+                    :local gpos [:find $gup $gch]
+                    :if ([:typeof $gpos] = "num") do={ :set gch [:pick $glo $gpos] }
+                    :if ([:typeof [:find "0123456789abcdef" $gch]] = "num") do={ :set gr ($gr . $gch) }
                 }
             }
-            :return $r
+            :return $gr
         }
-        :onerror err in={
-            :set step "hotspot profile"
-            :local profs [/ip hotspot profile find where name=$name]
-            :if ([:len $profs] = 0) do={ :error ("hotspot profile " . $name . " not found") }
-            :local prof [:pick $profs 0]
-            :set step "fetch fingerprint"
-            :local fp [$norm ([/tool fetch url=($base . "/fingerprint") http-header-field=$hdr src-address=$src check-certificate=yes output=user as-value]->"data")]
-            :if ([:len $fp] != 64) do={ :error "unexpected fingerprint from the instance" }
-            :set step "current certificate"
-            # Certificate currently set on the profile (by reference, whatever its name is)
-            :local sc [:tostr [/ip hotspot profile get $prof ssl-certificate]]
-            :local cur ""
-            :if ($sc != "none" && [:len $sc] > 0) do={
-                :foreach c in=[/certificate find where name=$sc] do={ :set cur [$norm [/certificate get $c fingerprint]] }
+        # Removes certificates of this script only, by explicit string checks on each name (no find
+        # filter, no computed expression passed to /certificate remove). $1 = base name, $2 = temporary
+        # import prefix, $3 = "pre" (temporary names, CAs, legacy names) or "post" (previous leaf, CAs,
+        # legacy names; never temporary names). Owned names: $1, $1-ca-<digits>, $1-new, $1-new_*, $2*.
+        # A certificate referenced by any hotspot profile is never removed. Returns the number removed,
+        # or -1 (nothing removed) when more than 10 certificates would be removed.
+        :local gpRemove do={
+            :local gb [:tostr $1]
+            :local gt [:tostr $2]
+            :local gmode [:tostr $3]
+            :local gca ($gb . "-ca-")
+            :local gnew ($gb . "-new_")
+            :local gused [:toarray ""]
+            :foreach gp in=[/ip hotspot profile find] do={
+                :set gused ($gused , [:tostr [/ip hotspot profile get $gp ssl-certificate]])
             }
-            :if ($fp != $cur) do={
-                :set step "download"
-                /tool fetch url=($base . "/router.crt") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".crt")
-                /tool fetch url=($base . "/router.key") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".key")
+            :local gdel [:toarray ""]
+            :foreach gc in=[/certificate find] do={
+                :local gn [:tostr [/certificate get $gc name]]
+                :local gkind ""
+                :if ([:len $gn] > 0) do={
+                    :if ([:len $gn] >= [:len $gt] && [:pick $gn 0 [:len $gt]] = $gt) do={
+                        :set gkind "tmp"
+                    } else={
+                        :if ($gn = $gb) do={ :set gkind "leaf" }
+                        :if ($gn = ($gb . "-new")) do={ :set gkind "legacy" }
+                        :if ([:len $gn] >= [:len $gnew] && [:pick $gn 0 [:len $gnew]] = $gnew) do={ :set gkind "legacy" }
+                        :if ([:len $gn] > [:len $gca] && [:pick $gn 0 [:len $gca]] = $gca) do={
+                            :local gdig [:pick $gn [:len $gca] [:len $gn]]
+                            :local gok true
+                            :for gk from=0 to=([:len $gdig] - 1) do={
+                                :if ([:typeof [:find "0123456789" [:pick $gdig $gk]]] != "num") do={ :set gok false }
+                            }
+                            :if ($gok) do={ :set gkind "ca" }
+                        }
+                    }
+                }
+                :local gwant false
+                :if ($gmode = "pre" && ($gkind = "tmp" || $gkind = "ca" || $gkind = "legacy")) do={ :set gwant true }
+                :if ($gmode = "post" && ($gkind = "leaf" || $gkind = "ca" || $gkind = "legacy")) do={ :set gwant true }
+                :if ($gwant) do={
+                    :foreach gu in=$gused do={ :if ($gu = $gn) do={ :set gwant false } }
+                }
+                :if ($gwant) do={ :set gdel ($gdel , $gc) }
+            }
+            :if ([:len $gdel] > 10) do={
+                :log error ($gb . ": refusing to remove " . [:len $gdel] . " certificates (safety limit 10)")
+                :return -1
+            }
+            :foreach gc in=$gdel do={ /certificate remove $gc }
+            :return [:len $gdel]
+        }
+        :onerror gpErr in={
+            :set gpStep "hotspot profile"
+            :local gpProfs [/ip hotspot profile find where name=$gpName]
+            :if ([:len $gpProfs] != 1) do={ :error ("hotspot profile " . $gpName . " not found or not unique") }
+            :local gpProf [:pick $gpProfs 0]
+            :set gpStep "fetch fingerprint"
+            :local gpFp [$gpNorm ([/tool fetch url=($gpBase . "/fingerprint") http-header-field=$gpHdr src-address=$gpSrc check-certificate=yes output=user as-value]->"data")]
+            :if ([:len $gpFp] != 64) do={ :error "unexpected fingerprint from the instance" }
+            :set gpStep "current certificate"
+            # Certificate currently set on the profile (by reference, whatever its name is)
+            :local gpSc [:tostr [/ip hotspot profile get $gpProf ssl-certificate]]
+            :local gpCur ""
+            :if ($gpSc != "none" && [:len $gpSc] > 0) do={
+                :foreach c in=[/certificate find where name=$gpSc] do={ :set gpCur [$gpNorm [/certificate get $c fingerprint]] }
+            }
+            :if ($gpFp != $gpCur) do={
+                :set gpStep "download"
+                /tool fetch url=($gpBase . "/router.crt") http-header-field=$gpHdr src-address=$gpSrc check-certificate=yes dst-path=($gpName . ".crt")
+                /tool fetch url=($gpBase . "/router.key") http-header-field=$gpHdr src-address=$gpSrc check-certificate=yes dst-path=($gpName . ".key")
                 :delay 2s
-                :set step "cleanup before import"
-                # Leftovers of an aborted run (temporary import names)
-                /certificate remove [find where name~("^" . $tmp)]
-                # Previous CA certificates of this script ("-ca-<n>") and legacy names of older versions,
-                # never the certificate in use; the chain is imported again below. Other names are never touched.
-                /certificate remove [find where name!=$sc && (name~("^" . $name . "-ca-[0-9]+\$") || name=($name . "-new") || name~("^" . $name . "-new_"))]
-                :set step "import certificate chain"
-                /certificate import file-name=($name . ".crt") passphrase="" name=$tmp
-                :set step "import private key"
+                :set gpStep "cleanup before import"
+                # Leftovers of an aborted run (temporary import names), previous CA certificates of this
+                # script ("-ca-<n>") and legacy names; never the certificate in use. Other names are never touched.
+                :if ([$gpRemove $gpName $gpTmp "pre"] < 0) do={ :error "too many certificates to remove, aborted" }
+                :set gpStep "import certificate chain"
+                /certificate import file-name=($gpName . ".crt") passphrase="" name=$gpTmp
+                :set gpStep "import private key"
                 # name= as in earlier versions; whether the key import renames the matched certificate: to verify
-                /certificate import file-name=($name . ".key") passphrase="" name=$tmp
-                /file remove [find where name=($name . ".crt")]
-                /file remove [find where name=($name . ".key")]
-                :set step "find imported leaf"
-                :local leaf ""
-                :foreach c in=[/certificate find where name~("^" . $tmp)] do={
-                    :if ([$norm [/certificate get $c fingerprint]] = $fp) do={ :set leaf $c }
+                /certificate import file-name=($gpName . ".key") passphrase="" name=$gpTmp
+                /file remove [find where name=($gpName . ".crt")]
+                /file remove [find where name=($gpName . ".key")]
+                :set gpStep "find imported leaf"
+                :local gpLeaf ""
+                :foreach c in=[/certificate find where name~("^" . $gpTmp)] do={
+                    :if ([$gpNorm [/certificate get $c fingerprint]] = $gpFp) do={ :set gpLeaf $c }
                 }
-                :if ([:typeof $leaf] != "id") do={
+                :if ([:typeof $gpLeaf] != "id") do={
                     # Fallback: the imported certificate that received the private key (to verify)
-                    :foreach c in=[/certificate find where name~("^" . $tmp) && private-key] do={ :set leaf $c }
+                    :foreach c in=[/certificate find where name~("^" . $gpTmp) && private-key] do={ :set gpLeaf $c }
                 }
-                :if ([:typeof $leaf] != "id") do={ :error "imported leaf certificate not found" }
-                :if (![/certificate get $leaf private-key]) do={ :error "private key not matched to the leaf certificate" }
-                :set step "set hotspot profile"
-                /ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac
-                :set step "remove previous certificate"
-                # Previous leaf/CAs by name (the new ones still have the temporary name); a previous
-                # certificate renamed by the user is not removed (remove it manually)
-                /certificate remove [find where !(name~("^" . $tmp)) && (name=$name || name~("^" . $name . "-ca-[0-9]+\$") || name=($name . "-new") || name~("^" . $name . "-new_"))]
-                :set step "rename"
-                :onerror e in={ /certificate set $leaf name=$name } do={ :log warning ($name . ": leaf not renamed: " . $e) }
-                :local i 1
-                :foreach c in=[/certificate find where name~("^" . $tmp)] do={
-                    :onerror e in={ /certificate set $c name=($name . "-ca-" . $i) } do={ :log warning ($name . ": CA not renamed: " . $e) }
-                    :set i ($i + 1)
+                :if ([:typeof $gpLeaf] != "id") do={ :error "imported leaf certificate not found" }
+                :if (![/certificate get $gpLeaf private-key]) do={ :error "private key not matched to the leaf certificate" }
+                :set gpStep "set hotspot profile"
+                /ip hotspot profile set $gpProf ssl-certificate=[/certificate get $gpLeaf name] login-by=https,mac
+                :set gpStep "remove previous certificate"
+                # Previous leaf/CAs by name (the new ones still have the temporary name and are in use);
+                # a previous certificate renamed by the user is not removed (remove it manually)
+                :if ([$gpRemove $gpName $gpTmp "post"] < 0) do={ :error "too many certificates to remove, aborted" }
+                :set gpStep "rename"
+                :onerror gpE in={ /certificate set $gpLeaf name=$gpName } do={ :log warning ($gpName . ": leaf not renamed: " . $gpE) }
+                :local gpIdx 1
+                :foreach c in=[/certificate find where name~("^" . $gpTmp)] do={
+                    :onerror gpE in={ /certificate set $c name=($gpName . "-ca-" . $gpIdx) } do={ :log warning ($gpName . ": CA not renamed: " . $gpE) }
+                    :set gpIdx ($gpIdx + 1)
                 }
                 # Set again by name in case the profile keeps the name instead of a reference (to verify)
-                /ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac
-                :log info ($name . ": router certificate updated")
+                /ip hotspot profile set $gpProf ssl-certificate=[/certificate get $gpLeaf name] login-by=https,mac
+                :log info ($gpName . ": router certificate updated")
             }
-        } do={ :log warning ($name . ": router certificate update failed at step '" . $step . "': " . $err) }
+        } do={ :log warning ($gpName . ": router certificate update failed at step '" . $gpStep . "': " . $gpErr) }
         }
         /system scheduler
         add name=__NAME__-cert interval=__INTERVAL__ start-time=startup on-event=__NAME__-cert policy=read,write,policy,test
