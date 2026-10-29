@@ -16,6 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Wi-Fi ospiti',
+        'limited_mode' => 'Modalità limitata: il collegamento con la sede centrale è interrotto. Nuovi accessi solo via SMS (o con il codice sede).',
         'heading' => 'Benvenuti nel Wi-Fi ospiti',
         'intro' => 'Accedi qui per navigare in Internet.',
         'code_intro' => 'Inserisci il tuo nome e il codice di accesso a 6 cifre.',
@@ -50,6 +51,7 @@ return [
         'sms_change' => 'Usa un altro numero',
         'errors' => [
             'invalid_code' => 'Questo codice non è valido o non vale qui.',
+            'limited_mode' => 'Modalità limitata: accedi via SMS.',
             'terms_changed' => 'Le condizioni d\'uso sono cambiate. Leggi e accetta la versione attuale.',
             'invalid_otp' => 'Questo codice è errato. Tentativi rimasti: :tries.',
             'phone_invalid' => 'Inserisci un numero di cellulare valido.',
@@ -110,6 +112,8 @@ return [
     ],
     'sites' => [
         'title' => 'Sedi',
+        'home_instance' => 'Istanza di riferimento',
+        'home_instance_help' => 'L\'istanza il cui RADIUS serve i router di questa sede (le credenziali monouso sono accettate solo lì).',
         'create' => 'Nuova sede',
         'delete' => 'Elimina sede',
         'name' => 'Nome',
@@ -320,6 +324,9 @@ return [
     ],
     'guests' => [
         'title' => 'Ospiti e sessioni',
+        'served_by' => 'Servita da :name',
+        'remote_unreachable' => 'Non è stato possibile caricare le sessioni di :names (istanza non raggiungibile).',
+        'remote_unreachable_disconnect' => 'Disconnessione non riuscita: l\'istanza :name non è raggiungibile. Riprova più tardi; la sessione termina al più tardi allo scadere del tempo.',
         'search' => 'Nome o codice',
         'site' => 'Sede',
         'method' => 'Metodo di accesso',

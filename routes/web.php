@@ -101,6 +101,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/guests', [GuestController::class, 'index'])->name('guests.index');
                 Route::post('/sessions/{session}/disconnect', [GuestController::class, 'disconnect'])->name('sessions.disconnect')
                     ->middleware('throttle:30,1');
+                Route::post('/instances/{instance}/sessions/{session}/disconnect', [GuestController::class, 'disconnectRemote'])
+                    ->name('sessions.disconnect-remote')->middleware('throttle:30,1');
                 Route::resource('whitelist', MacWhitelistController::class)->except(['show']);
                 Route::post('/whitelist/{whitelist}/toggle', [MacWhitelistController::class, 'toggle'])->name('whitelist.toggle');
                 Route::get('/site-codes', [SiteCodeController::class, 'index'])->name('site-codes.index');

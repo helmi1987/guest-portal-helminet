@@ -22,6 +22,10 @@
         <button class="btn">{{ __('portal.audit.filter') }}</button>
     </form>
 
+    @if ($unreachable !== [])
+        <p class="mb-4 rounded bg-amber-100 px-4 py-2 text-sm text-amber-800">{{ __('portal.guests.remote_unreachable', ['names' => implode(', ', $unreachable)]) }}</p>
+    @endif
+
     <div class="card overflow-x-auto">
         <table class="data-table">
             <thead><tr><th>{{ __('portal.grants.guest') }}</th><th>{{ __('portal.guests.method') }} / {{ __('portal.guests.site') }}</th>
@@ -92,8 +96,15 @@
                                         @if ($session->accounting_sum_bytes_in !== null)
                                             <div>↓ {{ \App\Support\Bytes::format($session->accounting_sum_bytes_out) }} · ↑ {{ \App\Support\Bytes::format($session->accounting_sum_bytes_in) }}</div>
                                         @endif
-                                        @if ($open && $session->serving_instance_id === $localInstance)
+                                        @if ($session->serving_instance_id !== $localInstance && $session->serving_instance_id)
+                                            <div class="text-slate-500">{{ __('portal.guests.served_by', ['name' => $instanceNames[$session->serving_instance_id] ?? $session->serving_instance_id]) }}</div>
+                                        @endif
+                                        @if ($open && $session->serving_instance_id === $localInstance && ! $session->remote)
                                             <form method="POST" action="{{ route('admin.sessions.disconnect', $session) }}" class="mt-1" onsubmit="return confirm(@js(__('portal.confirm')))">
+                                                @csrf <button class="btn-light text-xs">{{ __('portal.guests.disconnect') }}</button>
+                                            </form>
+                                        @elseif ($open && $session->remote)
+                                            <form method="POST" action="{{ route('admin.sessions.disconnect-remote', [$session->serving_instance_id, $session->id]) }}" class="mt-1" onsubmit="return confirm(@js(__('portal.confirm')))">
                                                 @csrf <button class="btn-light text-xs">{{ __('portal.guests.disconnect') }}</button>
                                             </form>
                                         @endif

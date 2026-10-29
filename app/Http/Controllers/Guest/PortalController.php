@@ -7,6 +7,7 @@ use App\Branding\BrandingSettings;
 use App\Enums\ApprovalStatus;
 use App\Enums\GrantStatus;
 use App\Enums\GrantType;
+use App\Federation\Topology;
 use App\Http\Controllers\Controller;
 use App\Models\ApprovalRequest;
 use App\Models\Channel;
@@ -70,7 +71,9 @@ class PortalController extends Controller
             'site' => $site,
             'terms' => TermsVersion::current(app()->getLocale()),
             'routerFailed' => $this->previousHandoffFailed($request),
-            'approvalEnabled' => Channel::query()->activeNotification()->exists(),
+            // Limited mode (hub unreachable, CONCEPT.md §10.1): no push approval for new logins.
+            'limitedMode' => $limited = app(Topology::class)->limitedMode(),
+            'approvalEnabled' => ! $limited && Channel::query()->activeNotification()->exists(),
             'smsEnabled' => OtpService::enabled(),
             'prefillCode' => $request->session()->get('portal_code'),
         ]);
@@ -123,6 +126,11 @@ class PortalController extends Controller
             }
             throw ValidationException::withMessages(['code' => __('portal.guest.errors.invalid_code')]);
         }
+        if ($grant instanceof Grant && ! $grant->isAllowedWhileOffline() && $grant->activeDevice()?->mac !== $mac
+            && app(Topology::class)->limitedMode()) {
+            // Hub unreachable: new logins only by SMS or site code; a device already bound to the code keeps working.
+            throw ValidationException::withMessages(['code' => __('portal.guest.errors.limited_mode')]);
+        }
         if ($grant instanceof SiteCode) {
             // Each device gets its own grant; the single-device rule of normal codes does not apply.
             $grant = $siteCodes->grantForDevice($grant, $site, $mac, trim($data['first_name']).' '.trim($data['last_name']));
@@ -168,6 +176,9 @@ class PortalController extends Controller
         [$site, $context] = $this->current($request);
         if ($site === null || ! $context->isComplete() || ! Channel::query()->activeNotification()->exists()) {
             return redirect()->route('guest.portal');
+        }
+        if (app(Topology::class)->limitedMode()) {
+            throw ValidationException::withMessages(['approval' => __('portal.guest.errors.limited_mode')]);
         }
         $terms = TermsVersion::current(app()->getLocale());
         if (($data['terms_version'] ?? null) !== $terms?->id) {

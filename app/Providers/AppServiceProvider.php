@@ -6,6 +6,7 @@ use App\Database\SQLiteConnection;
 use App\Federation\ApplyHooks;
 use App\Federation\DataKey;
 use App\Federation\Outbox;
+use App\Federation\SessionHooks;
 use App\Http\Middleware\EnsureZone;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
@@ -25,6 +26,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(DataKey::class);
         $this->app->singleton(Outbox::class);
         $this->app->singleton(ApplyHooks::class);
+        // Disconnects of local sessions after replicated changes (CONCEPT.md §10.4).
+        $this->app->afterResolving(ApplyHooks::class, fn (ApplyHooks $hooks) => (new SessionHooks)->register($hooks));
     }
 
     public function boot(): void

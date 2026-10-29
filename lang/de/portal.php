@@ -16,6 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Gäste-WLAN',
+        'limited_mode' => 'Eingeschränkter Betrieb: Die Verbindung zur Zentrale ist unterbrochen. Neue Anmeldungen nur per SMS (oder mit dem Standort-Code).',
         'heading' => 'Willkommen im Gäste-WLAN',
         'intro' => 'Melde dich hier an, um ins Internet zu gelangen.',
         'code_intro' => 'Gib deinen Namen und den 6-stelligen Zugangscode ein.',
@@ -50,6 +51,7 @@ return [
         'sms_change' => 'Andere Nummer verwenden',
         'errors' => [
             'invalid_code' => 'Dieser Code ist ungültig oder hier nicht gültig.',
+            'limited_mode' => 'Eingeschränkter Betrieb: Bitte per SMS anmelden.',
             'terms_changed' => 'Die Nutzungsbedingungen wurden geändert. Bitte lies und akzeptiere die aktuelle Version.',
             'invalid_otp' => 'Dieser Code ist falsch. Verbleibende Versuche: :tries.',
             'phone_invalid' => 'Bitte gib eine gültige Handynummer ein.',
@@ -110,6 +112,8 @@ return [
     ],
     'sites' => [
         'title' => 'Standorte',
+        'home_instance' => 'Heim-Instanz',
+        'home_instance_help' => 'Die Instanz, deren RADIUS die Router dieses Standorts bedient (einmalige Anmeldedaten werden nur dort angenommen).',
         'create' => 'Neuer Standort',
         'delete' => 'Standort löschen',
         'name' => 'Name',
@@ -320,6 +324,9 @@ return [
     ],
     'guests' => [
         'title' => 'Gäste & Sitzungen',
+        'served_by' => 'Bedient von :name',
+        'remote_unreachable' => 'Sitzungen von :names konnten nicht geladen werden (Instanz nicht erreichbar).',
+        'remote_unreachable_disconnect' => 'Trennen fehlgeschlagen: Instanz :name ist nicht erreichbar. Später erneut versuchen; die Sitzung endet spätestens mit Ablauf ihrer Zeit.',
         'search' => 'Name oder Code',
         'site' => 'Standort',
         'method' => 'Anmeldeart',

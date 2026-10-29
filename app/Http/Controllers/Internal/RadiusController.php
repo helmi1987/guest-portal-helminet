@@ -2,14 +2,17 @@
 
 namespace App\Http\Controllers\Internal;
 
+use App\Enums\GrantStatus;
 use App\Http\Controllers\Controller;
 use App\Jobs\DisconnectSession;
+use App\Models\Device;
 use App\Models\Grant;
 use App\Models\MacWhitelist;
 use App\Models\NasClient;
 use App\Models\RadiusAccounting;
 use App\Models\RadiusToken;
 use App\Models\SessionSummary;
+use App\Models\TermsAcceptance;
 use App\Services\GrantManager;
 use App\Support\LocalInstance;
 use App\Support\Mac;
@@ -54,6 +57,8 @@ class RadiusController extends Controller
                     ! hash_equals($token->password_hash, RadiusToken::hashPassword($password)) => 'wrong password',
                     $mac === null || $mac !== $token->mac => 'MAC mismatch',
                     $token->site_id !== $nas->site_id => 'site mismatch',
+                    // One-time credentials are local: only the site's home instance accepts them (CONCEPT.md §10.4).
+                    ! $nas->site->isServedHere() => 'site served by another instance',
                     default => null,
                 };
                 if ($reason !== null) {
@@ -91,9 +96,11 @@ class RadiusController extends Controller
     }
 
     /**
-     * MAC whitelist (CONCEPT.md §5): accepted only when User-Name equals the Calling-Station-Id the
-     * router reports and a valid entry allows the NAS's site. The password is not checked
-     * (mac-auth-mode=mac-as-username sends none). No Session-Timeout unless the entry expires.
+     * MAC authentication (CONCEPT.md §5, §10.4): accepted only when User-Name equals the
+     * Calling-Station-Id the router reports, and either a valid MAC whitelist entry allows the NAS's
+     * site (no Session-Timeout unless the entry expires) or the MAC is a roaming device: bound to a
+     * running grant that allows this site, logged in at another site (Session-Timeout = remaining
+     * time). The password is not checked (mac-auth-mode=mac-as-username sends none).
      */
     private function authorizeWhitelist(Request $request, ?NasClient $nas, string $userMac, ?string $mac): JsonResponse
     {
@@ -104,6 +111,15 @@ class RadiusController extends Controller
             default => null,
         };
         $entry = $reason === null ? MacWhitelist::findValidCached($mac, $nas->site_id) : null;
+        $roaming = $reason === null && $entry === null ? $this->roamingGrant($mac, $nas) : null;
+        if ($roaming !== null) {
+            Log::info('RADIUS roaming device accepted', ['grant' => $roaming->id, 'nas' => $nas->nas_ip, 'mac' => $mac]);
+
+            return response()->json(array_merge([
+                'reply:Session-Timeout' => max(1, $roaming->remainingSeconds()),
+                'reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval'),
+            ], $nas->site->driver()->replyAttributes($roaming)));
+        }
 
         if ($entry === null) {
             // Every unknown device triggers a MAC authentication first: debug level only.
@@ -118,6 +134,28 @@ class RadiusController extends Controller
         }
 
         return response()->json($reply);
+    }
+
+    /**
+     * Roaming (CONCEPT.md §10.4): running grant (logged in, time left, not revoked) whose active
+     * device is this MAC, allowed at the NAS's site and logged in (terms accepted) at another site.
+     * At its own site the device logs in through the portal as before.
+     */
+    private function roamingGrant(string $mac, NasClient $nas): ?Grant
+    {
+        $grantIds = Device::query()->where('mac', $mac)->whereNull('unbound_at')->pluck('grant_id');
+        foreach (Grant::query()->with('siteLinks')->whereIn('id', $grantIds)->withStatus(GrantStatus::Active)->get() as $grant) {
+            if (! $grant->allowsSite($nas->site_id) || $grant->activeDevice()?->mac !== $mac) {
+                continue;
+            }
+            $loginSite = TermsAcceptance::query()->where('grant_id', $grant->id)->where('mac', $mac)
+                ->latest('accepted_at')->value('site_id');
+            if ($loginSite !== null && $loginSite !== $nas->site_id) {
+                return $grant;
+            }
+        }
+
+        return null;
     }
 
     public function accounting(Request $request): Response
@@ -179,7 +217,8 @@ class RadiusController extends Controller
     }
 
     /**
-     * Session of a MAC whitelist entry: User-Name is the MAC and equals Calling-Station-Id; no grant.
+     * Session of a MAC authentication: User-Name is the MAC and equals Calling-Station-Id. A MAC
+     * whitelist entry (no grant), else a roaming device (session of its grant).
      * Without a valid entry (deactivated, deleted or expired since the Accept) the session is still
      * recorded, linked to the newest entry of the MAC if any, and disconnected after commit.
      */
@@ -190,6 +229,20 @@ class RadiusController extends Controller
             return null;
         }
         $entry = MacWhitelist::findValid($mac, $nas->site_id);
+        if ($entry === null && ($grant = $this->roamingGrant($mac, $nas)) !== null) {
+            // Roaming device: a session of its grant (enforced and disconnected like any grant session).
+            $summary = SessionSummary::create([
+                'grant_id' => $grant->id,
+                'site_id' => $nas->site_id,
+                'serving_instance_id' => app(LocalInstance::class)->id(),
+                'mac' => $mac,
+                'ip' => $this->attr($request, 'Framed-IP-Address'),
+                'started_at' => now(),
+            ]);
+
+            return new RadiusAccounting(['session_summary_id' => $summary->id, 'nas_client_id' => $nas->id,
+                'acct_session_id' => $sessionId, 'username' => $username]);
+        }
         $valid = $entry !== null;
         $entry ??= MacWhitelist::withTrashed()->where('mac', $mac)->orderByDesc('version')->first();
 

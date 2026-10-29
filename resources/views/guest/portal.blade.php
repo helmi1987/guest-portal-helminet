@@ -47,6 +47,10 @@
                 <input type="checkbox" name="terms" value="1" required class="gp-checkbox mt-0.5 size-5 shrink-0 accent-(--gp-accent)"> {{ __('portal.guest.terms') }}
             </label>
 
+            @if ($limitedMode ?? false)
+                {{-- Federation limited mode: the connection to the hub is interrupted. --}}
+                <p class="gp-notice gp-limited-mode rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">{{ __('portal.guest.limited_mode') }}</p>
+            @endif
             @if ($errors->any())
                 <ul class="gp-error rounded border border-red-200 bg-red-50 p-3 text-sm text-red-700" role="alert">
                     @foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach

@@ -5,14 +5,15 @@ namespace App\Models;
 use App\Models\Concerns\Replicated;
 use App\Nas\NasDriver;
 use App\Nas\NasDrivers;
+use App\Support\LocalInstance;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
- * A hotspot location (replicated). Routers are local-only NasClient rows.
+ * A hotspot location (replicated). Routers are local-only NasClient rows of the site's home instance.
  */
-#[Fillable(['slug', 'name', 'driver', 'settings'])]
+#[Fillable(['slug', 'name', 'driver', 'settings', 'home_instance_id'])]
 class Site extends Model
 {
     use Replicated;
@@ -31,6 +32,15 @@ class Site extends Model
     public function routers(): HasMany
     {
         return $this->nasClients();
+    }
+
+    /**
+     * The instance serving this site's routers (RADIUS, one-time credentials, CONCEPT.md §10.4).
+     * Sites without one (before M7) belong to the instance they are on.
+     */
+    public function isServedHere(): bool
+    {
+        return $this->home_instance_id === null || $this->home_instance_id === app(LocalInstance::class)->id();
     }
 
     public function setting(string $key, mixed $default = null): mixed

@@ -3,10 +3,12 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Models\Instance;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Nas\NasDrivers;
 use App\Support\Audit;
+use App\Support\LocalInstance;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -25,7 +27,8 @@ class SiteController extends Controller
 
     public function create(): View
     {
-        return view('admin.sites.form', ['site' => new Site(['driver' => 'mikrotik_ros7'])]);
+        return view('admin.sites.form', ['site' => new Site(['driver' => 'mikrotik_ros7', 'home_instance_id' => app(LocalInstance::class)->id()]),
+            'instances' => Instance::query()->orderBy('name')->pluck('name', 'id')]);
     }
 
     public function store(Request $request): RedirectResponse
@@ -38,7 +41,8 @@ class SiteController extends Controller
 
     public function edit(Site $site): View
     {
-        return view('admin.sites.form', ['site' => $site->load('nasClients')]);
+        return view('admin.sites.form', ['site' => $site->load('nasClients'),
+            'instances' => Instance::query()->orderBy('name')->pluck('name', 'id')]);
     }
 
     public function update(Request $request, Site $site): RedirectResponse
@@ -115,12 +119,15 @@ class SiteController extends Controller
             'portal_address' => ['nullable', 'ip'],
             'portal_url' => ['nullable', 'url:https,http'],
             'hotspot_hosts' => ['nullable', 'string', 'max:500', 'regex:/^([A-Za-z0-9.\-]+(\s*,\s*[A-Za-z0-9.\-]+)*)?$/D'],
+            'home_instance_id' => ['nullable', Rule::exists('instances', 'id')->whereNull('deleted_at')],
         ]);
 
         return [
             'name' => $data['name'],
             'slug' => $data['slug'],
             'driver' => $data['driver'],
+            // Home instance: serves the site's routers; default this instance (CONCEPT.md §10.4).
+            'home_instance_id' => $data['home_instance_id'] ?? $site?->home_instance_id ?? app(LocalInstance::class)->id(),
             'settings' => array_merge($site?->settings ?? [], [
                 'radius_address' => $data['radius_address'] ?? null,
                 'portal_address' => $data['portal_address'] ?? null,

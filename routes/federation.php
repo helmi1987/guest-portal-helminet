@@ -9,6 +9,9 @@ Route::middleware('federation.peer')->group(function () {
     Route::get('/status', [FederationApiController::class, 'status'])->name('federation.status');
     Route::get('/events', [FederationApiController::class, 'events'])->name('federation.events');
     Route::post('/events', [FederationApiController::class, 'receive'])->name('federation.receive');
+    Route::get('/sessions', [FederationApiController::class, 'sessions'])->name('federation.sessions');
+    Route::post('/sessions/{session}/disconnect', [FederationApiController::class, 'disconnect'])->name('federation.sessions.disconnect')
+        ->where('session', '[0-9A-Za-z]{26}');
 });
 
 // Pairing: the joining instance is not registered yet; the one-time join token authorizes, its

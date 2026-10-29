@@ -16,6 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Guest Wi-Fi',
+        'limited_mode' => 'Limited mode: the connection to the head office is interrupted. New logins only by SMS (or with the site code).',
         'heading' => 'Welcome to the guest Wi-Fi',
         'intro' => 'Log in here to get internet access.',
         'code_intro' => 'Enter your name and the 6-digit access code.',
@@ -50,6 +51,7 @@ return [
         'sms_change' => 'Use another number',
         'errors' => [
             'invalid_code' => 'This code is invalid or not valid here.',
+            'limited_mode' => 'Limited mode: please use SMS login.',
             'terms_changed' => 'The terms of use have changed. Please read and accept the current version.',
             'invalid_otp' => 'This code is wrong. Tries left: :tries.',
             'phone_invalid' => 'Please enter a valid mobile number.',
@@ -110,6 +112,8 @@ return [
     ],
     'sites' => [
         'title' => 'Sites',
+        'home_instance' => 'Home instance',
+        'home_instance_help' => 'The instance whose RADIUS serves the routers of this site (one-time login credentials are accepted only there).',
         'create' => 'New site',
         'delete' => 'Delete site',
         'name' => 'Name',
@@ -320,6 +324,9 @@ return [
     ],
     'guests' => [
         'title' => 'Guests & sessions',
+        'served_by' => 'Served by :name',
+        'remote_unreachable' => 'Sessions served by :names could not be loaded (instance unreachable).',
+        'remote_unreachable_disconnect' => 'Disconnect failed: instance :name is unreachable. Try again later; the session ends at the latest when its time is over.',
         'search' => 'Name or code',
         'site' => 'Site',
         'method' => 'Login method',

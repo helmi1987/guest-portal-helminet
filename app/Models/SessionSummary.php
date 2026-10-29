@@ -40,4 +40,19 @@ class SessionSummary extends Model
     {
         return $this->hasMany(RadiusAccounting::class);
     }
+
+    /**
+     * Access of this session is over: MAC whitelist entry no longer valid for MAC and site, or grant
+     * deleted, ended (expired, revoked) or bound to another device.
+     */
+    public function accessEnded(): bool
+    {
+        if ($this->mac_whitelist_id !== null) {
+            return ! ($this->macWhitelist?->isValidFor($this->mac, $this->site_id) ?? false);
+        }
+        $grant = $this->relationLoaded('grant') ? $this->grant : $this->grant()->withTrashed()->first();
+
+        return $grant === null || $grant->trashed() || ! $grant->isUsable()
+            || $grant->activeDevice()?->mac !== $this->mac;
+    }
 }

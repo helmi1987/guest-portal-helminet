@@ -150,7 +150,7 @@ and the HTML structure around them are **not** stable; do not target them.
 | `gp-card-title` | Card heading (`h1`) |
 | `gp-intro` | Introductory text below the heading |
 | `gp-hint` | Secondary/help text |
-| `gp-notice` | Warning box (previous router login failed) |
+| `gp-notice` | Warning box (previous router login failed; `gp-limited-mode`: federation limited mode, SMS login only) |
 | `gp-error` | Validation error list |
 | `gp-success` | Success message (SMS resent; heading "You are online") |
 | `gp-remaining` | Remaining time line on the status page |

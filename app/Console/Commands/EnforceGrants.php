@@ -38,9 +38,7 @@ class EnforceGrants extends Command
                 continue;
             }
 
-            $ended = $session->mac_whitelist_id !== null
-                ? ! ($session->macWhitelist?->isValidFor($session->mac, $session->site_id) ?? false)
-                : $this->grantEnded($session);
+            $ended = $session->accessEnded();
             $recentlySent = $acct->contains(fn (RadiusAccounting $a) => $a->disconnect_sent_at?->gt(now()->subMinutes(5)));
 
             if ($ended && ! $recentlySent) {
@@ -52,13 +50,5 @@ class EnforceGrants extends Command
         $this->line("Disconnect requested for $disconnected session(s).");
 
         return self::SUCCESS;
-    }
-
-    private function grantEnded(SessionSummary $session): bool
-    {
-        $grant = $session->grant;
-
-        return $grant === null || $grant->trashed() || ! $grant->isUsable()
-            || $grant->activeDevice()?->mac !== $session->mac;
     }
 }

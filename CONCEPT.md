@@ -435,8 +435,9 @@ Features:
 
 ## 10. Federation (multi-instance)
 
-Decisions 2026-10-29 (M7). Implementation status: parts A-F (change log, data key, apply engine,
-federation listener with mTLS, pairing and admin page, sync) implemented; hooks and the rest follow (§14).
+Decisions 2026-10-29 (M7). Implementation status: parts A-G (change log, data key, apply engine,
+federation listener with mTLS, pairing and admin page, sync, session hooks/roaming/limited mode)
+implemented; Telegram forwarding, branding files, purge, restore resync follow (§14).
 
 ### 10.1 Model
 
@@ -575,6 +576,21 @@ federation listener with mTLS, pairing and admin page, sync) implemented; hooks 
   for a session of another instance calls `/federation/sessions/{id}/disconnect` at its serving instance
   (synchronous). Partitioned site: revocation applies on reconnect; until then Session-Timeout bounds
   access (known limit).
+- Implemented (part G): apply hooks on grants, devices, site codes, MAC whitelist and its site links
+  (also changes by conflict rules) disconnect the open local sessions whose access ended (same check as
+  `portal:enforce-grants`; a deactivated site code does not end running device grants, as locally) and
+  renew the MAC whitelist RADIUS cache. Session summaries stay local (decision 2026-10-29): the guest list
+  asks the other instances live (`GET /federation/sessions?grant_ids[]=`, a non-hub instance asks the hub
+  with `relay=1`, the hub adds its other peers; unreachable instances are named); the disconnect button
+  for a foreign session calls `POST /federation/sessions/{id}/disconnect` with the serving instance, the
+  hub forwards to its direct peer; unreachable: error message. Sites have a home instance (site form,
+  default the creating instance; empty = the instance it is on); one-time credentials are accepted only
+  there. Roaming: MAC authentication accepts a MAC that is the active device of a running grant allowed at
+  the NAS's site when the device logged in (terms acceptance) at another site (assumption: at its own site
+  it keeps using the portal, so an admin disconnect there is not undone at once); Session-Timeout = remaining
+  time, the accounting session belongs to the grant. Limited mode (§10.1): the portal hides push approval
+  and shows a notice; normal codes are rejected ("Limited mode: please use SMS login") unless the device is
+  already bound to the code; SMS and site-code grants are allowed (`Grant::isAllowedWhileOffline()`).
 
 ### 10.5 Notifications and Telegram ownership
 
@@ -605,7 +621,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
-| `session_summaries` | id, grant_id (null for whitelist sessions), mac_whitelist_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at; local since the M7 decision (replication columns kept, §15) |
+| `session_summaries` | id, grant_id (null for whitelist sessions; roaming sessions carry their grant), mac_whitelist_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at; local (M7 decision, replication columns kept; other instances query them live, §10.4) |
 | `mac_whitelist` R | id, mac (AA:BB:CC:DD:EE:FF, unique among non-deleted), comment, expires_at, active, created_by |
 | `mac_whitelist_site` R | mac_whitelist_id, site_id (none = all sites) |
 | `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
@@ -707,7 +723,8 @@ scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants h
 (revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
 M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
 (apply engine with conflict rules), D (federation listener, mTLS pin, peer client), E (pairing, federation
-page) and F (signed events, push/pull/relay, heartbeat, skew and protocol pause) implemented; G-L open.
+page), F (signed events, push/pull/relay, heartbeat, skew and protocol pause) and G (apply hooks, remote
+sessions and disconnect, home instance, roaming, limited mode) implemented; H-L open.
 
 | # | Content | Acceptance criteria |
 |---|---|---|
@@ -722,6 +739,5 @@ page) and F (signed events, push/pull/relay, heartbeat, skew and protocol pause)
 
 ## 15. Open questions
 
-- Session summaries are local (M7 decision 1), but the admin view and the remote disconnect button for
-  sessions of other instances (§10.4) need them replicated (or fetched from the serving instance).
-  Decide before part G.
+- (Resolved 2026-10-31: session summaries stay local; the admin view fetches sessions of other
+  instances live from the serving instance, §10.4.)

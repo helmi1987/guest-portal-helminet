@@ -51,12 +51,12 @@ class Grant extends Model
     }
 
     /**
-     * Hook for the federation "HQ unreachable -> SMS login only" rule (M7): logins with a site code
-     * stay allowed while the instance is cut off, other codes do not. No offline logic yet.
+     * Federation limited mode (hub unreachable, CONCEPT.md §10.1): new logins with SMS and site-code
+     * grants stay allowed, normal codes and approvals do not.
      */
     public function isAllowedWhileOffline(): bool
     {
-        return $this->type === GrantType::SiteCode;
+        return in_array($this->type, [GrantType::SiteCode, GrantType::Sms], true);
     }
 
     public function devices(): HasMany

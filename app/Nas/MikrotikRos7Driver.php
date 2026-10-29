@@ -151,9 +151,10 @@ class MikrotikRos7Driver implements NasDriver
         # profile may fall back to ssl-certificate=none), so both are set together: here if the
         # certificate "{$n}" already exists, otherwise by the certificate script after the import.
         # Until then the RADIUS logins of the portal fail (no HTTPS login on the router).
-        # login-by=mac: MAC authentication for the MAC whitelist of the portal, active from the start.
-        # The router first sends an Access-Request with the MAC as User-Name (default
-        # mac-auth-mode=mac-as-username, to verify); not whitelisted devices get the portal.
+        # login-by=mac: MAC authentication for the MAC whitelist of the portal and for roaming devices
+        # (federation: a device logged in at another site with a code valid here), active from the
+        # start. The router first sends an Access-Request with the MAC as User-Name (default
+        # mac-auth-mode=mac-as-username, to verify); other devices get the portal.
         /ip hotspot
         remove [find name="{$n}"]
         /ip hotspot profile

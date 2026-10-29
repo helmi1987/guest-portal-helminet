@@ -16,6 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Wi-Fi invités',
+        'limited_mode' => 'Mode limité : la liaison avec le siège est interrompue. Nouvelles connexions uniquement par SMS (ou avec le code du site).',
         'heading' => 'Bienvenue sur le Wi-Fi invités',
         'intro' => 'Connectez-vous ici pour accéder à Internet.',
         'code_intro' => 'Saisissez votre nom et le code d\'accès à 6 chiffres.',
@@ -50,6 +51,7 @@ return [
         'sms_change' => 'Utiliser un autre numéro',
         'errors' => [
             'invalid_code' => 'Ce code est invalide ou non valable ici.',
+            'limited_mode' => 'Mode limité : veuillez vous connecter par SMS.',
             'terms_changed' => 'Les conditions d\'utilisation ont changé. Veuillez lire et accepter la version actuelle.',
             'invalid_otp' => 'Ce code est incorrect. Essais restants : :tries.',
             'phone_invalid' => 'Veuillez saisir un numéro de mobile valide.',
@@ -110,6 +112,8 @@ return [
     ],
     'sites' => [
         'title' => 'Sites',
+        'home_instance' => 'Instance de rattachement',
+        'home_instance_help' => 'L\'instance dont le RADIUS sert les routeurs de ce site (les identifiants à usage unique ne sont acceptés que là).',
         'create' => 'Nouveau site',
         'delete' => 'Supprimer le site',
         'name' => 'Nom',
@@ -320,6 +324,9 @@ return [
     ],
     'guests' => [
         'title' => 'Invités et sessions',
+        'served_by' => 'Servie par :name',
+        'remote_unreachable' => 'Les sessions de :names n\'ont pas pu être chargées (instance injoignable).',
+        'remote_unreachable_disconnect' => 'Échec de la déconnexion : l\'instance :name est injoignable. Réessayez plus tard ; la session se termine au plus tard à l\'expiration de son temps.',
         'search' => 'Nom ou code',
         'site' => 'Site',
         'method' => 'Mode de connexion',
