@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Branding\Branding;
 use App\Branding\BrandingAssets;
 use App\Branding\BrandingSettings;
 use App\Models\AuditLog;
@@ -184,7 +185,11 @@ class BrandingTest extends TestCase
         $this->assertStringContainsString('--gp-accent: #fde047;', $body);
         $this->assertStringContainsString('--gp-accent-contrast: #000000;', $body);
         $this->assertStringContainsString('--gp-bg: #aabbcc;', $body);
-        $this->assertStringNotContainsString('--gp-text', $body);
+        $this->assertStringNotContainsString('--gp-text:', $body);
+        // A custom background derives the card, input and border colours from background and text.
+        $this->assertStringContainsString('--gp-surface: color-mix(in srgb, var(--gp-bg) 92%, var(--gp-text));', $body);
+        $this->assertStringContainsString('--gp-input-bg: var(--gp-bg);', $body);
+        $this->assertStringContainsString('--gp-border: color-mix(', $body);
         $this->assertStringContainsString('.gp-title { display: none; }', $body);
         $this->assertStringContainsString('no-cache', $this->onZone('guest')->get('/branding/theme/global.css?v=old')->headers->get('Cache-Control'));
 
@@ -316,6 +321,15 @@ class BrandingTest extends TestCase
         $this->assertSame([], BrandingSettings::siteOverrides($this->site->fresh()));
         $this->assertMatchesRegularExpression('/<body class="[^"]*\bgp-theme-light\b/', $this->enterPortal()->getContent());
         $this->save('/admin/sites/'.$this->site->id.'/branding', ['override' => ['scheme' => '1']])->assertSessionHasErrors('scheme');
+        // Only an accent colour: the scheme defaults of surface, inputs and borders stay.
+        $accentOnly = new Branding(['logo' => null, 'favicon' => null, 'accent' => '#123456', 'background' => null, 'text' => null, 'css' => '']);
+        $this->assertStringNotContainsString('--gp-surface', $accentOnly->css());
+
+        // Without the override checkbox the scheme select is ignored, even with an invalid value.
+        $this->save('/admin/sites/'.$this->site->id.'/branding', ['override' => ['scheme' => '0'], 'scheme' => 'blue'])
+            ->assertSessionHasNoErrors();
+        $this->save('/admin/sites/'.$this->site->id.'/branding', ['override' => ['scheme' => '1'], 'scheme' => 'blue'])
+            ->assertSessionHasErrors('scheme');
     }
 
     public function test_manager_cannot_change_scheme(): void

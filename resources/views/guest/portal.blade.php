@@ -31,7 +31,7 @@
             </label>
 
             @if ($terms)
-                <details class="gp-terms rounded border border-(--gp-divider) bg-black/[.02] text-sm">
+                <details class="gp-terms rounded border border-(--gp-divider) bg-[color-mix(in_srgb,var(--gp-text)_3%,transparent)] text-sm">
                     <summary class="cursor-pointer px-3 py-2 font-medium">
                         {{ __('portal.guest.terms_show') }}
                         <span class="opacity-70">({{ __('portal.guest.terms_version', ['version' => $terms->number]) }})</span>

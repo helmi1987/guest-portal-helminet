@@ -80,6 +80,7 @@ Hex values (`#1d4ed8` or `#14f`); empty = default of the scheme. The settings pa
 | (CSS only) | `--gp-header-text` | `var(--gp-accent-contrast)` / `var(--gp-text)` | Admin top bar text |
 | (CSS only) | `--gp-danger` | red-700 / `#b91c1c` | Delete buttons |
 | (CSS only) | `--gp-card-shadow` | shadow / thin outline | Card shadow |
+| (derived, v0.11.1) | `--gp-surface`, `--gp-input-bg`, `--gp-input-text`, `--gp-border`, `--gp-divider` | see above | With a custom background or text colour: derived from `--gp-bg` / `--gp-text` via `color-mix()` (surface 92 % bg + 8 % text, border 60 % / 40 %, input = bg / text, divider 15 % text), so cards stay readable in both schemes; custom CSS still overrides them |
 
 The colour variables are written to the theme stylesheet only when set; otherwise the defaults of the
 built-in stylesheet apply, so the look without branding is unchanged.

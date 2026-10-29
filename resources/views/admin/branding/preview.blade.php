@@ -1,8 +1,10 @@
 {{-- Live preview of colour scheme and colours (and saved custom CSS via the gp-* classes); updated by the script below. --}}
 <div class="md:col-span-2">
     <span class="text-sm">{{ __('portal.branding.preview') }}</span>
+    {{-- The light preview gets a fixed light border (border-slate-300 is remapped on dark pages). --}}
     <div data-gp-preview data-gp-defaults="{{ json_encode(\App\Branding\Branding::DEFAULTS) }}"
-         class="mt-1 rounded border border-slate-300 bg-(--gp-bg) p-4 text-(--gp-text)">
+         data-gp-derived="{{ json_encode(\App\Branding\Branding::DERIVED) }}"
+         class="mt-1 rounded border border-slate-300 bg-(--gp-bg) p-4 text-(--gp-text) data-[gp-scheme=light]:border-[#cbd5e1]">
         <div class="gp-header mb-3 flex items-center gap-2">
             <x-branding.logo :branding="$resolved" />
             <span class="gp-title font-semibold opacity-80">{{ __('portal.guest.title') }}</span>
@@ -19,10 +21,12 @@
     <script>
         // Sets the colour scheme ([data-gp-scheme-input]) and the --gp-* variables ([data-gp-var]) on the
         // preview. Not overridden (data-gp-toggle off) or invalid values fall back to data-gp-fallback,
-        // then to the scheme default. Contrast colour as in App\Branding\Branding.
+        // then to the scheme default. Contrast colour and derived variables (custom background or text
+        // colour) as in App\Branding\Branding.
         document.querySelectorAll('[data-gp-preview]').forEach(function (preview) {
             var form = preview.closest('form');
             var defaults = JSON.parse(preview.dataset.gpDefaults);
+            var derived = JSON.parse(preview.dataset.gpDerived);
             var page = document.documentElement.classList.contains('gp-theme-light') ? 'light' : 'dark';
             function expand(hex) {
                 hex = hex.replace('#', '');
@@ -49,14 +53,27 @@
                 } else {
                     preview.setAttribute('data-gp-scheme', scheme);
                 }
+                var custom = false;
                 form.querySelectorAll('[data-gp-var]').forEach(function (input) {
                     var value = input.value.trim();
                     if (!overridden(input) || !/^#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(value)) {
-                        value = input.dataset.gpFallback || defaults[scheme][input.dataset.gpKey];
+                        value = input.dataset.gpFallback || '';
                     }
+                    // A set (not default) background or text colour derives surface, inputs and borders.
+                    if (value !== '' && input.dataset.gpKey !== 'accent') {
+                        custom = true;
+                    }
+                    value = value || defaults[scheme][input.dataset.gpKey];
                     preview.style.setProperty(input.dataset.gpVar, value);
                     if (input.dataset.gpVar === '--gp-accent') {
                         preview.style.setProperty('--gp-accent-contrast', contrast(value));
+                    }
+                });
+                Object.keys(derived).forEach(function (name) {
+                    if (custom) {
+                        preview.style.setProperty(name, derived[name]);
+                    } else {
+                        preview.style.removeProperty(name);
                     }
                 });
             }

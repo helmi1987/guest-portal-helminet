@@ -51,7 +51,8 @@ class BrandingController extends Controller
 
     public function updateSite(Request $request, Site $site): RedirectResponse
     {
-        $this->validateInput($request);
+        // The scheme select only counts (and is only validated) when its override checkbox is on.
+        $this->validateInput($request, $request->boolean('override.scheme'));
         $old = BrandingSettings::siteOverrides($site);
         $override = fn (string $key) => $request->boolean("override.$key");
         $new = [];
@@ -90,7 +91,7 @@ class BrandingController extends Controller
         return back()->with('status', __('portal.saved'));
     }
 
-    private function validateInput(Request $request): void
+    private function validateInput(Request $request, bool $scheme = true): void
     {
         $request->validate([
             'logo' => ['nullable', 'file', 'max:'.intdiv((int) config('portal.branding.logo_max_bytes'), 1024)],
@@ -99,7 +100,7 @@ class BrandingController extends Controller
             'favicon_remove' => ['boolean'],
             'override' => ['array'],
             'override.*' => ['boolean'],
-            'scheme' => ['nullable', Rule::in(BrandingSettings::SCHEMES)],
+            'scheme' => $scheme ? ['nullable', Rule::in(BrandingSettings::SCHEMES)] : ['exclude'],
             ...collect(BrandingSettings::COLORS)->mapWithKeys(fn ($key) => [$key => ['nullable', 'string',
                 'regex:/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/']])->all(),
             'css' => ['nullable', 'string', function (string $attribute, mixed $value, \Closure $fail) {

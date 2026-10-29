@@ -18,6 +18,18 @@ final class Branding
     ];
 
     /**
+     * Variables derived from --gp-bg and --gp-text when a custom background or text colour is set, so
+     * cards, inputs and borders follow the custom colours in both schemes (also used by the settings preview).
+     */
+    public const DERIVED = [
+        '--gp-surface' => 'color-mix(in srgb, var(--gp-bg) 92%, var(--gp-text))',
+        '--gp-input-bg' => 'var(--gp-bg)',
+        '--gp-input-text' => 'var(--gp-text)',
+        '--gp-border' => 'color-mix(in srgb, var(--gp-bg) 60%, var(--gp-text))',
+        '--gp-divider' => 'color-mix(in srgb, var(--gp-text) 15%, transparent)',
+    ];
+
+    /**
      * @param  array{logo: ?array, favicon: ?array, accent: ?string, background: ?string, text: ?string, css: string, scheme?: string}  $values
      * @param  bool  $siteTheme  the site overrides colours or CSS (own stylesheet), else the global one is used
      */
@@ -67,6 +79,11 @@ final class Branding
         }
         if ($text = $this->values['text']) {
             $vars[] = "--gp-text: $text;";
+        }
+        if ($background || $text) {
+            foreach (self::DERIVED as $name => $value) {
+                $vars[] = "$name: $value;";
+            }
         }
         $css = $vars === [] ? '' : ":root {\n    ".implode("\n    ", $vars)."\n}\n";
         $custom = trim($this->values['css']);
