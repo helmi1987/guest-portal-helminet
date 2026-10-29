@@ -229,9 +229,14 @@ CoovaChilli) are future/community work.
   hotspot profile `ssl-certificate` **(RouterOS script syntax to verify)**. Decision 2026-10-29
   (v0.12.1, chain import creates several certificates): compare with the certificate referenced by the
   profile (not by name, renaming is harmless); fingerprints normalised (lowercase hex, no colons);
-  imported certificates get `comment=guest-portal`, leaf = fingerprint match (fallback private key),
-  CAs renamed `guest-portal-ca-<n>`; only certificates with that comment are removed; errors logged with
-  the failing step (`:onerror`).
+  imported certificates get the temporary name `guest-portal-import*`, leaf = fingerprint match
+  (fallback private key), CAs renamed `guest-portal-ca-<n>`; errors logged with the failing step
+  (`:onerror`). Decision 2026-10-29 (v0.12.3): RouterOS certificates have no comment property, so
+  certificates are identified by name only (`guest-portal`, `^guest-portal-ca-[0-9]+$`,
+  `guest-portal-import*`, legacy `guest-portal-new`, `guest-portal-new_*`); nothing else is removed.
+  Portal name pinned on the router as CNAME to `guest-portal-v4.internal` (static A): a static A entry
+  alone lets AAAA queries go upstream, a public AAAA then breaks `/tool fetch src-address=<IPv4>`.
+  Site setting `portal_address` must be IPv4, not the guest gateway, not inside the guest subnet.
 
 ## 7. Guest login
 

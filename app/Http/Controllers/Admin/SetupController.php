@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\LocalSetting;
 use App\Models\Site;
 use App\Support\Audit;
+use App\Support\PortalAddress;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -29,6 +30,7 @@ class SetupController extends Controller
         return view('admin.sites.setup', [
             'site' => $site,
             'setup' => (array) $site->setting('setup', []),
+            'portalAddressProblem' => PortalAddress::problem($site->setting('portal_address'), (array) $site->setting('setup', [])),
             'container' => (array) LocalSetting::get(self::CONTAINER_KEY, []),
             'commands' => $driver->setupCommands($site, (array) LocalSetting::get(self::CONTAINER_KEY, [])),
             'fetch' => $site->nasClients->mapWithKeys(fn ($nas) => [$nas->id => $driver->loginPageFetch($site, $nas)]),

@@ -251,7 +251,8 @@ class SetupAssistantTest extends TestCase
             ->assertSee('/interface bridge vlan add bridge=bridge1 tagged=bridge1,<TRUNK_PORT_TO_CAP> vlan-ids=30')
             ->assertDontSee('/interface bridge set bridge1 vlan-filtering=yes', false)
             ->assertSee('add name=hotspot-a.guest.example.com address=10.30.0.1', false)
-            ->assertSee('add name=portal.example.com address=10.0.0.10', false)
+            ->assertSee('add name=guest-portal-v4.internal address=10.0.0.10', false)
+            ->assertSee('add name=portal.example.com type=CNAME cname=guest-portal-v4.internal', false)
             ->assertSee('/ip hotspot profile print where name=guest-portal', false)
             ->assertSee('/certificate print where name~"guest-portal"')
             ->assertSee('/file print where name~"login.html"')
@@ -265,8 +266,7 @@ class SetupAssistantTest extends TestCase
             '/ip hotspot remove [find where name="guest-portal"]', '/ip hotspot profile remove [find where name="guest-portal"]',
             '/ip hotspot walled-garden remove [find where comment="guest-portal"]', '/ip hotspot walled-garden ip remove [find where comment="guest-portal"]',
             '/radius remove [find where comment="guest-portal"]', '# /radius incoming set accept=no',
-            '/certificate remove [find where comment="guest-portal"]',
-            '/certificate remove [find where name="guest-portal" || name~"^guest-portal-ca-" || name~"^guest-portal-import" || name="guest-portal-new" || name~"^guest-portal-new_"]',
+            '/certificate remove [find where name="guest-portal" || name~"^guest-portal-ca-[0-9]+\\$" || name~"^guest-portal-import" || name="guest-portal-new" || name~"^guest-portal-new_"]',
             '/ip dns static remove [find where comment="guest-portal"]', '/ip dhcp-server network find where address="10.30.0.0/24"',
             '/ip dhcp-server network set $i dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal" && comment="guest-portal"]',
             '/ip firewall filter remove [find where comment~"^guest-portal"]', '/ip firewall address-list remove [find where comment~"^guest-portal"]'] as $line) {
@@ -298,11 +298,11 @@ class SetupAssistantTest extends TestCase
             ':local sc [:tostr [/ip hotspot profile get $prof ssl-certificate]]',
             ':foreach c in=[/certificate find where name=$sc] do={ :set cur [$norm [/certificate get $c fingerprint]] }',
             '/certificate import file-name=($name . ".crt") passphrase="" name=$tmp',
-            '/certificate set [find where name~("^" . $tmp)] comment=$name',
             ':if ([$norm [/certificate get $c fingerprint]] = $fp) do={ :set leaf $c }',
             '/certificate find where name~("^" . $tmp) && private-key',
             '/ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac',
-            '/certificate remove [find where comment=$name && !(name~("^" . $tmp))]',
+            '/certificate remove [find where !(name~("^" . $tmp)) && (name=$name || name~("^" . $name . "-ca-[0-9]+\\$")',
+            '/certificate remove [find where name!=$sc && (name~("^" . $name . "-ca-[0-9]+\\$")',
             '/certificate set $c name=($name . "-ca-" . $i)',
             ':onerror err in={',
             'router certificate update failed at step',
@@ -313,7 +313,68 @@ class SetupAssistantTest extends TestCase
         $this->assertStringNotContainsString('find where name=$name] do={ :set cur', $script);
         $this->assertStringNotContainsString('name=guest-portal-new ', $script);
         $this->assertStringNotContainsString('name~("^" . $name) ', $script);
-        $this->assertStringContainsString('(name=$name || name~("^" . $name . "-ca-") || name=($name . "-new") || name~("^" . $name . "-new_")) && comment=""', $script);
+        $this->assertStringContainsString('paste this into the terminal instead of saving it as a /system', $script);
         $this->assertStringContainsString('logins of the portal CANNOT work yet', $script);
+    }
+
+    public function test_generated_scripts_never_use_comment_on_certificates(): void
+    {
+        $script = $this->site->driver()->configScript($this->site, $this->nas);
+        $uninstall = $this->site->driver()->setupCommands($this->site, [])['uninstall']['uninstall'];
+        foreach ([$script, $uninstall] as $text) {
+            $lines = array_filter(explode("\n", $text), fn ($l) => str_contains($l, '/certificate') && ! str_starts_with(ltrim($l), '#'));
+            $this->assertNotEmpty($lines);
+            foreach ($lines as $line) {
+                $this->assertStringNotContainsString('comment', $line, $line);
+            }
+        }
+        // RouterOS certificates have no comment: no certificate statement inside the cert script uses it.
+        $this->assertDoesNotMatchRegularExpression('/^\s*(\/certificate|:foreach c in=\[\/certificate)[^\n]*comment/m', $script);
+    }
+
+    public function test_dns_block_pins_portal_host_as_cname_to_internal_a_record(): void
+    {
+        $this->site->update(['settings' => array_merge($this->site->settings, ['portal_address' => '10.0.0.20',
+            'setup' => ['subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1']])]);
+        $dns = $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['hotspot']['dns'];
+
+        $this->assertStringContainsString("remove [find comment=\"guest-portal\"]\nadd name=hotspot-a.guest.example.com address=10.30.0.1 comment=\"guest-portal\"", $dns);
+        $this->assertStringContainsString('add name=guest-portal-v4.internal address=10.0.0.20 comment="guest-portal"', $dns);
+        $this->assertStringContainsString('add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment="guest-portal"', $dns);
+        $this->assertStringNotContainsString('add name=portal.example.com address=', $dns);
+        $this->assertStringNotContainsString('type=NXDOMAIN', preg_replace('/^#.*$/m', '', $dns));
+        $this->assertLessThan(strpos($dns, 'add name=guest-portal-v4.internal'), strpos($dns, 'remove [find comment="guest-portal"]'));
+    }
+
+    public function test_portal_address_must_be_ipv4_outside_the_guest_network(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1']])]);
+        $base = ['name' => 'Site A', 'slug' => 'site-a', 'driver' => 'mikrotik_ros7', 'radius_address' => '10.0.0.10'];
+        $put = fn (string $ip) => $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['portal_address' => $ip]);
+
+        foreach (['10.30.0.1' => 'portal.sites.portal_address_is_gateway', '10.30.0.99' => 'portal.sites.portal_address_in_guest_subnet'] as $ip => $key) {
+            $put($ip)->assertSessionHasErrors(['portal_address' => __($key, ['ip' => $ip, 'subnet' => '10.30.0.0/24'])]);
+        }
+        $put('fd00::1')->assertSessionHasErrors('portal_address');
+        $put('not-an-ip')->assertSessionHasErrors('portal_address');
+        $this->assertNull($this->site->fresh()->setting('portal_address'));
+
+        $put('10.0.0.20')->assertSessionHasNoErrors();
+        $this->assertSame('10.0.0.20', $this->site->fresh()->setting('portal_address'));
+        $put('')->assertSessionHasNoErrors();
+
+        // German message and label
+        $this->onZone('admin')->actingAs($admin)->withSession(['locale' => 'de'])->put("/admin/sites/{$this->site->id}", $base + ['portal_address' => '10.30.0.1'])
+            ->assertSessionHasErrors(['portal_address' => 'Die Portal-IP 10.30.0.1 ist das Gast-Gateway (der Router selbst). Bitte die IP-Adresse der Portal-Instanz angeben, wie der Router sie erreicht (z. B. IP des Docker-Hosts bzw. Containers), oder leer lassen.']);
+
+        // A stored value violating the rule (e.g. saved before v0.12.3) shows a warning in the assistant.
+        $this->site->update(['settings' => array_merge($this->site->fresh()->settings, ['portal_address' => '10.30.0.1'])]);
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
+            ->assertSee(__('portal.setup.hotspot.portal_address_warning'))
+            ->assertSee(__('portal.sites.portal_address_is_gateway', ['ip' => '10.30.0.1']));
+        $this->site->update(['settings' => array_merge($this->site->fresh()->settings, ['portal_address' => '10.0.0.20'])]);
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
+            ->assertDontSee(__('portal.setup.hotspot.portal_address_warning'));
     }
 }

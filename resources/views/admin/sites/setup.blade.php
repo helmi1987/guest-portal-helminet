@@ -96,6 +96,10 @@
             <li><code>{{ $hotspotHost }}</code> &rarr; <code>{{ $setup['gateway'] ?? '<HOTSPOT_GATEWAY_IP>' }}</code> ({{ __('portal.setup.hotspot.dns_hotspot') }})</li>
             <li><code>{{ $portalHostName }}</code> &rarr; <code>{{ $site->setting('portal_address') ?: ($site->setting('radius_address') ?: '<INSTANCE_IP>') }}</code> ({{ __('portal.setup.hotspot.dns_portal') }})</li>
         </ul>
+        @if ($portalAddressProblem)
+            <p class="mb-3 text-sm font-semibold text-amber-800">{{ __('portal.setup.hotspot.portal_address_warning') }} {{ $portalAddressProblem }}
+                <a href="{{ route('admin.sites.edit', $site) }}" class="underline">{{ __('portal.sites.portal_address') }}</a></p>
+        @endif
         <x-admin.code :title="__('portal.setup.blocks.dns')" :code="$commands['hotspot']['dns']" />
         <x-admin.code :title="__('portal.setup.blocks.hotspot')" :code="$commands['hotspot']['hotspot']" />
         <p class="text-sm text-amber-800">{{ __('portal.setup.hotspot.captive_hosts') }}</p>

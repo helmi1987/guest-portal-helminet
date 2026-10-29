@@ -109,6 +109,10 @@ class MikrotikRos7Driver implements NasDriver
         # Generated script. Replace remaining <PLACEHOLDERS> with your values before running it
         # (values saved in the setup assistant of the site are filled in).
         # Contains the RADIUS secret and the certificate download token: handle it like a password.
+        # RouterOS writes the full source of a script added or changed via /system script (incl. secret
+        # and token) to the system log: paste this into the terminal instead of saving it as a /system
+        # script, or clear the log afterwards. The certificate script below is itself a /system script
+        # holding the token, so check the log after running this too (/log print where message~"{$n}").
         # Idempotent: re-running replaces the entries named/commented "{$n}" (hotspot profile "{$n}").
         # Re-running recreates the hotspot, which logs out connected guests.
 
@@ -376,10 +380,22 @@ class MikrotikRos7Driver implements NasDriver
                 # guest gateway; the portal name is the portal instance. They must never be the same.
                 #   {$dnsName} -> {$g['gateway']} (router, guest gateway)
                 #   {$portalHost} -> {$portalIp} (portal instance)
+                # Portal name as CNAME to an internal name with a static A record: a plain static A entry
+                # covers only A queries, AAAA queries still go upstream. With a public (wildcard) AAAA record
+                # for the portal name the router's own /tool fetch (src-address=IPv4) then picks IPv6 and fails
+                # ("Address family not supported by protocol"). With the CNAME the router answers AAAA with
+                # "no appropriate record" and IPv4 is used. (A static type=NXDOMAIN entry would block A too.)
+                # The hotspot name keeps a plain A entry: it is the router itself, the router never fetches it,
+                # and guests use IPv4 on the guest network (if the guest network gets IPv6 and the hotspot name
+                # has a public AAAA, use the same CNAME pattern for it).
                 /ip dns static
                 remove [find comment="{$n}"]
                 add name={$dnsName} address={$g['gateway']} comment="{$n}"
-                add name={$portalHost} address={$portalIp} comment="{$n}"
+                add name={$n}-v4.internal address={$portalIp} comment="{$n}"
+                add name={$portalHost} type=CNAME cname={$n}-v4.internal comment="{$n}"
+                # Check: IPv4 address, and "no appropriate record" for IPv6
+                # :put [:resolve {$portalHost}]
+                # :put [:resolve domain-name={$portalHost} type=ipv6]
                 RSC,
                 'hotspot' => rtrim($this->hotspotSection($site, $dnsName)),
             ],
@@ -421,10 +437,11 @@ class MikrotikRos7Driver implements NasDriver
                 /radius remove [find where comment="{$n}"]
                 # /radius incoming has no comment: only if nothing else uses Disconnect/CoA on this router:
                 # /radius incoming set accept=no
-                # Certificates imported by the certificate script (comment) and of older versions (names)
-                /certificate remove [find where comment="{$n}"]
-                /certificate remove [find where name="{$n}" || name~"^{$n}-ca-" || name~"^{$n}-import" || name="{$n}-new" || name~"^{$n}-new_"]
+                # Certificates of the certificate script and of older versions, by name only (RouterOS
+                # certificates have no comment): leaf, CAs "-ca-<n>", temporary import and legacy names
+                /certificate remove [find where name="{$n}" || name~"^{$n}-ca-[0-9]+\\$" || name~"^{$n}-import" || name="{$n}-new" || name~"^{$n}-new_"]
                 /file remove [find where name="{$n}.crt" || name="{$n}.key"]
+                # Static DNS entries of the assistant (hotspot name, portal CNAME and its internal A record)
                 /ip dns static remove [find where comment="{$n}"]
                 # DHCP option 114 of the guest network: the reference is cleared only if it is the network's
                 # only option; otherwise a hint is printed (remove captive-portal from dhcp-option manually).
@@ -533,8 +550,10 @@ class MikrotikRos7Driver implements NasDriver
      * CA certificates) with generated names, so nothing relies on names. The current certificate is the
      * one referenced by the profile's ssl-certificate (renaming by the user does not matter), the new
      * leaf is the imported certificate whose fingerprint matches /fingerprint (fallback: the one with a
-     * private key). All certificates imported by this script carry comment "guest-portal"; only those
-     * are removed later.
+     * private key). RouterOS certificates have no comment property, so certificates are identified by
+     * name only: leaf "guest-portal", CAs "guest-portal-ca-<n>", temporary import prefix
+     * "guest-portal-import" and the legacy names "guest-portal-new" / "guest-portal-new_*". No other
+     * certificate is ever removed.
      */
     private function certScript(string $base, string $token, string $sourceIp): string
     {
@@ -544,8 +563,10 @@ class MikrotikRos7Driver implements NasDriver
         # Imported only when its fingerprint differs from the certificate set on hotspot profile "__NAME__";
         # then sets ssl-certificate and login-by=https,mac. check-certificate=yes needs a trusted portal certificate.
         # The download is accepted only from this router's IP (src-address) with its token.
-        # Imported certificates (leaf + chain CAs) get comment="__NAME__"; the leaf is renamed to "__NAME__",
-        # the CA certificates to "__NAME__-ca-<n>". Only certificates with this comment are ever removed.
+        # Imported certificates (leaf + chain CAs) get the temporary name "__NAME__-import*"; the leaf is renamed
+        # to "__NAME__", the CA certificates to "__NAME__-ca-<n>". RouterOS certificates have no comment, so
+        # only certificates with these names (plus the legacy names "__NAME__-new", "__NAME__-new_*") are
+        # ever removed; the certificate in use on the profile is kept until the new one is set.
         # Fingerprints are compared lowercase without ":" (instance: sha256 lowercase hex; RouterOS
         # "fingerprint" property: format to verify, normalised here).
         # Errors are logged with the failing step: /log print where message~"__NAME__"
@@ -598,13 +619,11 @@ class MikrotikRos7Driver implements NasDriver
                 /tool fetch url=($base . "/router.key") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".key")
                 :delay 2s
                 :set step "cleanup before import"
-                # Leftovers of an aborted run; exact legacy names of older script versions (guest-portal,
-                # guest-portal-new, guest-portal-new_*, guest-portal-ca-*) without comment get the comment
+                # Leftovers of an aborted run (temporary import names)
                 /certificate remove [find where name~("^" . $tmp)]
-                /certificate set [find where (name=$name || name~("^" . $name . "-ca-") || name=($name . "-new") || name~("^" . $name . "-new_")) && comment=""] comment=$name
-                # Previous CA certificates of this script (all except the certificate in use); the chain
-                # is imported again below. Certificates without this comment are never touched.
-                /certificate remove [find where comment=$name && name!=$sc]
+                # Previous CA certificates of this script ("-ca-<n>") and legacy names of older versions,
+                # never the certificate in use; the chain is imported again below. Other names are never touched.
+                /certificate remove [find where name!=$sc && (name~("^" . $name . "-ca-[0-9]+\$") || name=($name . "-new") || name~("^" . $name . "-new_"))]
                 :set step "import certificate chain"
                 /certificate import file-name=($name . ".crt") passphrase="" name=$tmp
                 :set step "import private key"
@@ -613,7 +632,6 @@ class MikrotikRos7Driver implements NasDriver
                 /file remove [find where name=($name . ".crt")]
                 /file remove [find where name=($name . ".key")]
                 :set step "find imported leaf"
-                /certificate set [find where name~("^" . $tmp)] comment=$name
                 :local leaf ""
                 :foreach c in=[/certificate find where name~("^" . $tmp)] do={
                     :if ([$norm [/certificate get $c fingerprint]] = $fp) do={ :set leaf $c }
@@ -627,7 +645,9 @@ class MikrotikRos7Driver implements NasDriver
                 :set step "set hotspot profile"
                 /ip hotspot profile set $prof ssl-certificate=[/certificate get $leaf name] login-by=https,mac
                 :set step "remove previous certificate"
-                /certificate remove [find where comment=$name && !(name~("^" . $tmp))]
+                # Previous leaf/CAs by name (the new ones still have the temporary name); a previous
+                # certificate renamed by the user is not removed (remove it manually)
+                /certificate remove [find where !(name~("^" . $tmp)) && (name=$name || name~("^" . $name . "-ca-[0-9]+\$") || name=($name . "-new") || name~("^" . $name . "-new_"))]
                 :set step "rename"
                 :onerror e in={ /certificate set $leaf name=$name } do={ :log warning ($name . ": leaf not renamed: " . $e) }
                 :local i 1

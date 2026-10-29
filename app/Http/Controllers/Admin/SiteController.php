@@ -10,6 +10,7 @@ use App\Nas\NasDrivers;
 use App\Radius\ClientsFile;
 use App\Support\Audit;
 use App\Support\LocalInstance;
+use App\Support\PortalAddress;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -142,7 +143,7 @@ class SiteController extends Controller
             'slug' => ['required', 'alpha_dash:ascii', 'max:64', Rule::unique('sites', 'slug')->ignore($site?->id)],
             'driver' => ['required', Rule::in(array_keys(NasDrivers::DRIVERS))],
             'radius_address' => ['nullable', 'ip'],
-            'portal_address' => ['nullable', 'ip'],
+            'portal_address' => ['nullable', 'ipv4'],
             'portal_url' => ['nullable', 'url:https,http'],
             'hotspot_hosts' => ['nullable', 'string', 'max:500', 'regex:/^([A-Za-z0-9.\-]+(\s*,\s*[A-Za-z0-9.\-]+)*)?$/D'],
             'home_instance_id' => ['nullable', Rule::exists('instances', 'id')->whereNull('deleted_at')],
@@ -160,6 +161,12 @@ class SiteController extends Controller
             if (in_array($hotspot, $portalHosts, true)) {
                 throw ValidationException::withMessages(['hotspot_hosts' => __('portal.sites.hotspot_is_portal', ['host' => $hotspot])]);
             }
+        }
+
+        // Portal IP as reachable from the router: never the guest gateway or inside the guest subnet.
+        $problem = PortalAddress::problem($data['portal_address'] ?? null, (array) ($site?->setting('setup', []) ?? []));
+        if ($problem !== null) {
+            throw ValidationException::withMessages(['portal_address' => $problem]);
         }
 
         return [

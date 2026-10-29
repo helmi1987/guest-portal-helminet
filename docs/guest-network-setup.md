@@ -328,14 +328,21 @@ block: leaf + intermediate/root CAs):
 - The current certificate is the one set as `ssl-certificate` on the profile `guest-portal` (renaming it
   does not matter); its fingerprint is compared with `/router-cert/<id>/fingerprint` (lowercase hex
   SHA-256 without colons; both sides are normalised, RouterOS format **(to verify)**).
-- Imported certificates get the temporary name `guest-portal-import*` and `comment="guest-portal"`;
-  the leaf is the one whose fingerprint matches (fallback: the one with the private key). The profile
-  is switched to it, previous certificates with that comment are removed, then the leaf is renamed to
-  `guest-portal` and the CAs to `guest-portal-ca-<n>`. Certificates without the comment are never
-  touched; certificates of older script versions with the exact names `guest-portal`, `guest-portal-new`,
-  `guest-portal-new_*` or `guest-portal-ca-*` get the comment once.
+- RouterOS certificates have no `comment` property, so certificates are identified by name only.
+  Imported certificates get the temporary name `guest-portal-import*`; the leaf is the one whose
+  fingerprint matches (fallback: the one with the private key). Before the import, previous CAs
+  (`guest-portal-ca-<n>`, regex `^guest-portal-ca-[0-9]+$`) and legacy names (`guest-portal-new`,
+  `guest-portal-new_*`) are removed, except the certificate in use. The profile is then switched to the
+  new leaf, the previous `guest-portal` leaf is removed, the leaf is renamed to `guest-portal` and the
+  CAs to `guest-portal-ca-<n>`. Certificates with other names are never touched (a previous certificate
+  renamed by you stays; remove it manually).
 - Errors are logged with the failing step (`:onerror`, RouterOS >= 7.13 **(to verify)**):
   `/log print where message~"guest-portal"`.
+- **Secrets in the log:** RouterOS writes the full source of a script added or changed via `/system script`
+  (including the RADIUS secret and the download token) to the system log. Paste the generated script
+  into the terminal instead of saving it as a `/system script`, or clear the log afterwards. The
+  certificate script is itself a `/system script` holding the token, so check the log after running the
+  generated script.
 
 Manual import (troubleshooting only):
 ```
@@ -351,6 +358,8 @@ host). Guests must resolve the hotspot name to the router's guest address:
 ```
 /ip dns static add name=hotspot-a.guest.example.com address=10.30.0.1 comment="hotspot host"
 ```
+The hotspot name keeps a plain A entry: it is the router itself and the router never fetches it. If the
+guest network gets IPv6 and the hotspot name has a public AAAA record, use the CNAME pattern of 8.1 for it too.
 
 ### 6.3 Hotspot: setup wizard or manual
 - **Manual (recommended, reproducible):** paste the script generated in **Admin -> Sites -> (site) -> RouterOS script**. It creates the RADIUS client, `/radius
@@ -509,10 +518,23 @@ Verify (from a site router):
 | `hotspot-a.guest.example.com` | 10.30.0.1 (router in VLAN) | Router static DNS; public record optional |
 
 Many upstream/ISP resolvers drop answers with private addresses ("DNS rebinding protection"), so
-pin both names on each router:
+pin both names on each router. Pin the portal name as CNAME to an internal name with a static A record
+(the setup assistant generates this):
 ```
-/ip dns static add name=portal.example.com address=<PORTAL_IP> comment="portal"
+/ip dns static add name=guest-portal-v4.internal address=<PORTAL_IP> comment=guest-portal
+/ip dns static add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment=guest-portal
+:put [:resolve portal.example.com]                          # IPv4 address
+:put [:resolve domain-name=portal.example.com type=ipv6]    # "no appropriate record"
 ```
+Why: a plain static A entry covers only A queries; AAAA queries still go upstream. If public DNS has an
+AAAA record (e.g. a wildcard `*.example.com`), the router's `/tool fetch ... src-address=<IPv4>` picks
+IPv6 and fails with "Address family not supported by protocol" (certificate script, login.html fetch).
+With the CNAME the router answers AAAA with "no appropriate record". A static `type=NXDOMAIN` entry is
+not an alternative: it blocks the A record too.
+
+`<PORTAL_IP>` (site setting "Portal IP") is the portal instance as reachable from the router, e.g. the
+Docker host or container IP; usually empty (= instance IP for RADIUS). Never the guest gateway or an
+address inside the guest subnet (the admin UI rejects both).
 The walled garden entry `dst-host=portal.example.com` (generated) lets guests resolve and reach it
 before login; the IP-based walled garden entry covers the destination IP.
 
@@ -586,9 +608,11 @@ Findings from a first real setup; the setup assistant shows the same checklist.
 2. **Portal name resolves to the router.** The hotspot host name was set equal to the portal host name,
    so the static DNS entry pointed the portal name at the router. Use two names (e.g.
    `hotspot-a.guest.example.com` for the router, `portal.example.com` for the portal); the admin UI now
-   rejects equal names.
+   rejects equal names. The same happens when the site setting "Portal IP" is the guest gateway: it must
+   be the portal instance as reachable from the router (usually empty = instance IP for RADIUS); the
+   admin UI rejects the guest gateway and addresses inside the guest subnet.
    ```
-   /ip dns static print where comment="guest-portal"       # hotspot name -> guest gateway, portal name -> portal IP
+   /ip dns static print where comment="guest-portal"       # hotspot name -> guest gateway, portal name -> CNAME -> portal IP
    ```
 3. **Code and SMS logins fail, MAC whitelist works.** Until the router certificate is imported the
    hotspot profile has only `login-by=mac`. Order: (1) portal certificate, (2) router certificate pulled
@@ -602,12 +626,14 @@ Findings from a first real setup; the setup assistant shows the same checklist.
 4. **Certificate re-imported on every run / rename fails.** Older script versions imported the chain
    with `name=guest-portal-new`, which creates several certificates (leaf and CAs) and broke the rename
    and the name-based fingerprint check. Paste the current router script again; it compares the
-   certificate referenced by the profile and cleans up by comment (section 6.1).
+   certificate referenced by the profile and cleans up by name (section 6.1).
    ```
    /system script run guest-portal-cert
    /log print where message~"guest-portal"
-   /certificate print detail where comment="guest-portal"
+   /certificate print detail where name~"guest-portal"
    ```
+   v0.12.2 failed at step `cleanup before import` with `bad parameter comment`: RouterOS certificates
+   have no comment. Paste the router script of v0.12.3 or later again.
 5. **CertWarden pull: HTTP 404 / 401.** The server URL must be the server address only
    (`https://certs.example.com`), not the UI URL (`.../certwarden` or `.../certwarden/app`, removed on
    save); the admin UI shows the resulting download URL. Enter the certificate API key and the private
