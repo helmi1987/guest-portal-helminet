@@ -435,8 +435,8 @@ Features:
 
 ## 10. Federation (multi-instance)
 
-Decisions 2026-10-29 (M7). Implementation status: parts A-E (change log, data key, apply engine,
-federation listener with mTLS, pairing and admin page) implemented; sync and hooks follow (§14).
+Decisions 2026-10-29 (M7). Implementation status: parts A-F (change log, data key, apply engine,
+federation listener with mTLS, pairing and admin page, sync) implemented; hooks and the rest follow (§14).
 
 ### 10.1 Model
 
@@ -490,6 +490,19 @@ federation listener with mTLS, pairing and admin page) implemented; sync and hoo
   (`GET /federation/events?origin=&after=&limit=500`); heartbeat `GET /federation/status` (time,
   protocol, cursors). Further endpoints: `GET /federation/snapshot`, `GET /federation/branding/{hash}.{ext}`,
   `POST /federation/sessions/{id}/disconnect`, `POST /federation/approvals/{id}/decide`.
+  Implemented (part F): every local event carries an Ed25519 signature over all its fields (payload as
+  the exact stored JSON string, which travels and is relayed unchanged); received events are verified
+  with the origin's key before the apply engine (unsigned or invalid: origin paused; key unknown: wait;
+  an unknown origin may introduce its key only with its own instance row; removed origins rejected).
+  Push: queue job after commit of a local write (and on the hub after applying relayed events), sends
+  what the peer lacks according to its acknowledged cursors. Pull: `portal:federation:sync` every 30 s
+  (heartbeat, pull, push). Star: the hub pulls each instance's own origin and pushes every origin; the
+  other instances pull every origin from the hub and push their own. Heartbeat answers time, protocol,
+  highest sequence per origin, applied cursors (stored as the peer's acks in `federation_peers`) and the
+  data key ring (rotated keys spread with the heartbeats; an unknown current key is adopted). Skew above
+  30 s: warning (log, UI), above 5 min or a higher protocol: transport with that peer paused (no push, no
+  pull, its requests answered 409) until resumed on the federation page. Hub unreachable = no successful
+  heartbeat for `portal.federation.hub_unreachable_after` (120 s).
 - Federation data key (implemented part B): replicated secrets use the cast `federated`
   (`fdk1:<key id>:<ciphertext>`, AES-256-GCM): TOTP secrets, channel config, OIDC client secret. The key
   ring lives in `local_settings` (each key encrypted with the local `APP_KEY`), the first key is created by a migration; reading accepts every known
@@ -693,8 +706,8 @@ login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authe
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
 M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
-(apply engine with conflict rules), D (federation listener, mTLS pin, peer client) and E (pairing, federation
-page) implemented; F-L open.
+(apply engine with conflict rules), D (federation listener, mTLS pin, peer client), E (pairing, federation
+page) and F (signed events, push/pull/relay, heartbeat, skew and protocol pause) implemented; G-L open.
 
 | # | Content | Acceptance criteria |
 |---|---|---|

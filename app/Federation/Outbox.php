@@ -2,6 +2,7 @@
 
 namespace App\Federation;
 
+use App\Jobs\PushEvents;
 use App\Support\LocalInstance;
 use Illuminate\Support\Facades\DB;
 
@@ -14,7 +15,9 @@ class Outbox
 {
     public const TABLE = 'federation_events';
 
-    public function __construct(private LocalInstance $instance) {}
+    private bool $pushScheduled = false;
+
+    public function __construct(private LocalInstance $instance, private SigningKey $signer) {}
 
     /** Record the current state of a row (also a tombstone) as a local event. */
     public function record(string $table, string $id): void
@@ -25,18 +28,38 @@ class Outbox
         }
         $row = (array) $row;
         $origin = $this->instance->id();
+        $seq = $this->nextSeq($origin);
+        $version = (string) $row['version'];
+        $payload = self::encode($row);
+        $proto = Federation::FEDERATION_PROTOCOL;
 
         DB::table(self::TABLE)->insert([
             'origin' => $origin,
-            'seq' => $this->nextSeq($origin),
+            'seq' => $seq,
             'table' => $table,
             'record_id' => $id,
-            'version' => (string) $row['version'],
-            'payload' => self::encode($row),
-            'proto' => Federation::FEDERATION_PROTOCOL,
-            'sig' => null,
+            'version' => $version,
+            'payload' => $payload,
+            'proto' => $proto,
+            // Ed25519 signature of the origin: relayed events cannot be forged (CONCEPT.md §10.2).
+            'sig' => $this->signer->sign(EventCodec::message($origin, $seq, $table, $id, $version, $proto, $payload)),
             'created_at' => now(),
         ]);
+        $this->schedulePush();
+    }
+
+    /** Push to the peers once per transaction, after commit (queue job; pull every 30 s is the fallback). */
+    private function schedulePush(): void
+    {
+        if ($this->pushScheduled) {
+            return;
+        }
+        $this->pushScheduled = true;
+        DB::afterCommit(function () {
+            $this->pushScheduled = false;
+            PushEvents::dispatchIfFederated();
+        });
+        DB::afterRollBack(fn () => $this->pushScheduled = false);
     }
 
     public static function encode(array $payload): string

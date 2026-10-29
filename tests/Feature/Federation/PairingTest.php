@@ -18,11 +18,9 @@ use App\Models\Site;
 use App\Models\User;
 use App\Support\LocalInstance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Illuminate\Http\Client\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -31,7 +29,7 @@ use Tests\TestCase;
  */
 class PairingTest extends TestCase
 {
-    use FederationPeers, RefreshDatabase, SimulatesInstances;
+    use FederatedHttp, FederationPeers, RefreshDatabase, SimulatesInstances;
 
     private string $hubPin;
 
@@ -43,35 +41,7 @@ class PairingTest extends TestCase
         $this->hubPin = $this->giveCertificate('hub');
         $this->giveCertificate('new');
         $this->giveCertificate('third');
-        foreach (['hub', 'new', 'third'] as $name) {
-            $this->on($name, fn () => app(LocalInstance::class)->refreshIdentity()
-                ->update(['name' => ucfirst($name), 'federation_url' => "https://$name.example.com:9443"]));
-        }
-        // Calls to the hub's federation port are handled by the simulated hub, with the caller's certificate.
-        Http::fake(['hub.example.com:9443/*' => function (Request $request) {
-            $caller = $this->callerOf($request);
-
-            return $this->on('hub', function () use ($request, $caller) {
-                $response = $this->withServerVariables(['PORTAL_ZONE' => 'federation', 'PORTAL_CLIENT_CERT' => rawurlencode($this->certificateOf($caller))])
-                    ->call($request->method(), parse_url($request->url(), PHP_URL_PATH), $request->method() === 'GET' ? $request->data() : [], [], [],
-                        ['CONTENT_TYPE' => 'application/json', 'HTTP_ACCEPT' => 'application/json'],
-                        $request->method() === 'GET' ? null : $request->body());
-                $this->serverVariables = [];
-
-                return Http::response($response->getContent(), $response->getStatusCode(), ['Content-Type' => 'application/json']);
-            });
-        }]);
-    }
-
-    private function callerOf(Request $request): string
-    {
-        $id = $request->header('X-Federation-Instance')[0];
-        foreach (['hub', 'new', 'third'] as $name) {
-            if ($this->idOf($name) === $id) {
-                return $name;
-            }
-        }
-        $this->fail('unknown caller');
+        $this->routeFederation(['hub', 'new', 'third']);
     }
 
     private function token(): string

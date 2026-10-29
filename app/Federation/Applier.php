@@ -213,6 +213,13 @@ class Applier
         return $written;
     }
 
+    /** Pause an origin (e.g. invalid event signature) until an admin resumes it. */
+    public function pauseOrigin(string $origin, string $reason): void
+    {
+        DB::transaction(fn () => $this->pause($origin, $reason, new ApplyResult($origin)));
+        Log::error('Federation apply paused', ['origin' => $origin, 'reason' => $reason]);
+    }
+
     public function unpause(string $origin): void
     {
         DB::table('peer_cursors')->where('origin', $origin)->update(['paused_at' => null, 'pause_reason' => null,
