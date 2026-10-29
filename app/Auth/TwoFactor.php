@@ -2,6 +2,7 @@
 
 namespace App\Auth;
 
+use App\Federation\Outbox;
 use App\Models\Setting;
 use App\Models\User;
 use App\Support\Hlc;
@@ -9,6 +10,7 @@ use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use PragmaRX\Google2FA\Google2FA;
@@ -90,10 +92,18 @@ class TwoFactor
             return false;
         }
 
-        // Atomic: of two concurrent uses of the same step only one wins.
-        $claimed = User::query()->whereKey($user->getKey())
-            ->where(fn ($q) => $q->whereNull('totp_last_step')->orWhere('totp_last_step', '<', $step))
-            ->update(['totp_last_step' => $step, 'version' => app(Hlc::class)->now()]);
+        // Atomic: of two concurrent uses of the same step only one wins. The conditional update
+        // bypasses the model, so the outbox event is recorded explicitly in the same transaction.
+        $claimed = DB::transaction(function () use ($user, $step) {
+            $claimed = User::query()->whereKey($user->getKey())
+                ->where(fn ($q) => $q->whereNull('totp_last_step')->orWhere('totp_last_step', '<', $step))
+                ->update(['totp_last_step' => $step, 'version' => app(Hlc::class)->now()]);
+            if ($claimed === 1) {
+                app(Outbox::class)->record($user->getTable(), $user->getKey());
+            }
+
+            return $claimed;
+        });
         if ($claimed !== 1) {
             return false;
         }
@@ -116,8 +126,15 @@ class TwoFactor
                 unset($hashes[$i]);
                 $remaining = array_values($hashes);
                 // Atomic: only succeeds while the list is still the one the code was found in.
-                $claimed = User::query()->whereKey($user->getKey())->where('recovery_codes', $raw)
-                    ->update(['recovery_codes' => json_encode($remaining), 'version' => app(Hlc::class)->now()]);
+                $claimed = DB::transaction(function () use ($user, $raw, $remaining) {
+                    $claimed = User::query()->whereKey($user->getKey())->where('recovery_codes', $raw)
+                        ->update(['recovery_codes' => json_encode($remaining), 'version' => app(Hlc::class)->now()]);
+                    if ($claimed === 1) {
+                        app(Outbox::class)->record($user->getTable(), $user->getKey());
+                    }
+
+                    return $claimed;
+                });
                 if ($claimed !== 1) {
                     return false;
                 }

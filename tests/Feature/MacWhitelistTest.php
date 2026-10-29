@@ -175,6 +175,8 @@ class MacWhitelistTest extends TestCase
 
     public function test_reject_path_is_cached_until_the_whitelist_changes(): void
     {
+        // Raw inserts (bypassing model events and the cache flush) on purpose.
+        $this->withoutFederationWriteGuard();
         $raw = fn (string $mac) => DB::table('mac_whitelist')->insert(['id' => (string) Str::ulid(), 'mac' => $mac,
             'comment' => 'raw', 'active' => true, 'created_at' => now(), 'updated_at' => now()]);
 

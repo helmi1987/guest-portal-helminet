@@ -82,6 +82,8 @@ class AuditLogTest extends TestCase
         $this->onZone('admin')->get('/admin/audit?user='.$admin->id)->assertOk()->assertSee(__('portal.audit.page', ['page' => 1, 'pages' => 2]));
         $this->onZone('admin')->get('/admin/audit?group=nope')->assertSessionHasErrors('group');
 
+        // Backdating raw (test setup only, no outbox event).
+        $this->withoutFederationWriteGuard();
         AuditLog::query()->where('action', 'grant.revoked')->update(['created_at' => now()->subDays(400)]);
         $this->artisan('portal:purge')->assertSuccessful();
         $this->assertSame(0, AuditLog::where('action', 'grant.revoked')->count());

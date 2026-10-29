@@ -129,6 +129,12 @@ return [
     // Default retention period (days); overridable by the replicated setting "retention_days".
     'retention_days' => 365,
 
+    // Federation (CONCEPT.md §10).
+    'federation' => [
+        // Remote HLC versions further ahead of the local clock than this are rejected (clock skew).
+        'max_future_ms' => (int) env('PORTAL_FEDERATION_MAX_FUTURE_MS', 300000),
+    ],
+
     'version' => trim((string) @file_get_contents(base_path('VERSION'))) ?: 'dev',
 
 ];
