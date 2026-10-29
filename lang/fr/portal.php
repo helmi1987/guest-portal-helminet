@@ -138,6 +138,10 @@ return [
         'regenerate_secret' => 'Nouveau secret',
         'secret_regenerated' => 'Nouveau secret RADIUS généré. Mettez à jour la configuration du routeur.',
         'cert_help' => 'Le script ajoute un planificateur qui télécharge le certificat du routeur depuis cette instance (fichiers router.crt et router.key dans /data/certs) et le définit dans le profil hotspot.',
+        'served_elsewhere' => 'Les routeurs de ce site sont servis par l\'instance :name. Cette copie sert à la restauration.',
+        'take_over' => 'Reprendre ce site',
+        'take_over_confirm' => 'Servir désormais les routeurs de ce site depuis cette instance ? À utiliser seulement si l\'autre instance ne les sert plus (p. ex. remplacée).',
+        'taken_over' => 'Cette instance sert maintenant les routeurs de ce site.',
     ],
     'setup' => [
         'title' => 'Assistant de configuration',
@@ -614,6 +618,10 @@ return [
             'certwarden' => 'CertWarden',
             'url' => 'URL (bundle PEM)',
         ],
+        'copy_from' => 'Reprendre la source d\'une autre instance',
+        'copy' => 'Reprendre',
+        'copied' => 'Source reprise (y compris la clé API).',
+        'copy_missing' => 'Cette instance n\'a pas de source pour ce certificat.',
     ],
     'sms' => [
         'text' => 'Votre code Wi-Fi invité : :code (valable :minutes min).',
@@ -780,5 +788,7 @@ return [
         'promoted' => 'Cette instance est maintenant le hub. Créez un jeton d\'adhésion pour chaque autre instance et réassociez-les.',
         'replaced_as_hub' => 'Cette instance a été remplacée comme hub et retirée de la fédération. Elle ne réplique plus. Réassociez-la au nouveau hub comme instance normale :',
         'removed_here' => 'Cette instance a été retirée de la fédération et ne réplique plus.',
+        'checklist_radius' => 'Secrets RADIUS des routeurs (régénérer sur la page du site et saisir sur chaque routeur)',
+        'checklist_certificates' => 'Clés API des sources de certificats (CertWarden / jeton URL)',
     ],
 ];

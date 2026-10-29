@@ -138,6 +138,10 @@ return [
         'regenerate_secret' => 'New secret',
         'secret_regenerated' => 'New RADIUS secret generated. Update the router configuration.',
         'cert_help' => 'The script adds a scheduler that downloads the router certificate from this instance (files router.crt and router.key in /data/certs) and sets it on the hotspot profile.',
+        'served_elsewhere' => 'The routers of this site are served by instance :name. This copy is kept for recovery.',
+        'take_over' => 'Take over this site',
+        'take_over_confirm' => 'Serve the routers of this site from this instance from now on? Use it only when the other instance no longer serves them (e.g. replaced).',
+        'taken_over' => 'This instance now serves the routers of this site.',
     ],
     'setup' => [
         'title' => 'Setup assistant',
@@ -614,6 +618,10 @@ return [
             'certwarden' => 'CertWarden',
             'url' => 'URL (PEM bundle)',
         ],
+        'copy_from' => 'Take over the source of another instance',
+        'copy' => 'Take over',
+        'copied' => 'Source taken over (including the API key).',
+        'copy_missing' => 'That instance has no source for this certificate.',
     ],
     'sms' => [
         'text' => 'Your guest Wi-Fi code: :code (valid for :minutes min).',
@@ -780,5 +788,7 @@ return [
         'promoted' => 'This instance is now the hub. Create a join token for each other instance and re-pair them.',
         'replaced_as_hub' => 'This instance was replaced as hub and removed from the federation. It no longer replicates. Re-pair it with the new hub as a normal instance:',
         'removed_here' => 'This instance was removed from the federation and no longer replicates.',
+        'checklist_radius' => 'RADIUS secrets of the routers (regenerate on the site page and enter on each router)',
+        'checklist_certificates' => 'API keys of the certificate sources (CertWarden / URL token)',
     ],
 ];

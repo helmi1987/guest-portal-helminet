@@ -577,7 +577,7 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
 
 | Replicated | Local only |
 |---|---|
-| Instances (incl. `admin_url`), grants/codes incl. duration/expiry/sites, site codes, devices (MAC bindings), MAC whitelist + its site restriction, guests, terms versions + acceptances, users/roles incl. TOTP (secret with the data key, last step, hashed recovery codes), sites, channels, settings (global, incl. branding references), audit log | Session summaries and accounting, NAS clients + RADIUS secrets, RADIUS tokens, OTP challenges, approval requests, login attempts, SMS log, local settings (incl. data key ring), certificate sources, backup settings, Telegram offset, Laravel sessions, branding files |
+| Instances (incl. `admin_url`), grants/codes incl. duration/expiry/sites, site codes, devices (MAC bindings), MAC whitelist + its site restriction, guests, terms versions + acceptances, users/roles incl. TOTP (secret with the data key, last step, hashed recovery codes), sites, NAS clients incl. RADIUS secret and certificate token (data key; decision 2026-10-31, for recovery), certificate sources per instance incl. API key (data key), channels, settings (global, incl. branding references), audit log | Session summaries and accounting, NAS status (last contact, downloads: `Federation::LOCAL_COLUMNS`), RADIUS tokens, OTP challenges, approval requests, login attempts, SMS log, local settings (incl. data key ring, certificate pull status), backup settings, Telegram offset, Laravel sessions, branding files |
 
 ### 10.4 Roaming and remote actions
 
@@ -601,7 +601,12 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
   queries for 30 s. A push gives every origin a fair share of a batch and leaves out origins the peer does
   not take, so one stuck origin does not block the others. Sites have a home instance (site form,
   default the creating instance; empty = the instance it is on); one-time credentials are accepted only
-  there. Roaming: MAC authentication accepts a MAC that is the active device of a running grant allowed at
+  there. Routers (`nas_clients`, ULID keys since 2026-10-31, `legacy_id` keeps the old number for the
+  download URLs of deployed router scripts) replicate for recovery, but only the home instance serves
+  them: FreeRADIUS clients file, RADIUS requests, router downloads and disconnects. A replacement takes a
+  site over on the site page ("Take over this site", audited, clients file written at once); the
+  certificates page takes over the certificate source of another instance (each instance pulls only with
+  its own record, `certificate_sources`, id derived from instance and target). Roaming: MAC authentication accepts a MAC that is the active device of a running grant allowed at
   the NAS's site when the device logged in (terms acceptance) at another site (assumption: at its own site
   it keeps using the portal, so an admin disconnect there is not undone at once); Session-Timeout = remaining
   time (none without expiry), the accounting session belongs to the grant; after an admin disconnect of
@@ -620,8 +625,9 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
 
 ### 10.6 Security of the federation
 
-- A compromised peer can read all replicated data including the data key, but not the RADIUS secrets of
-  other sites; event signatures prevent it from forging events of other origins.
+- A compromised peer can read all replicated data including the data key, since 2026-10-31 also the
+  RADIUS secrets of all routers and the certificate source API keys (replicated for recovery; removing a
+  peer lists them for renewal); event signatures prevent it from forging events of other origins.
 - Membership authority (implemented): the trust anchors of an instance row (signing key, certificate pin,
   federation and admin URL) change only by events of that instance; new instance rows (registrations) and
   removals/restores only by the hub (without a configured hub an instance may only introduce its own row,
@@ -640,7 +646,8 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `instances` R | id, name, federation_url, admin_url, cert_fingerprint (pin), signing_public_key (Ed25519); last_seen_at, clock_skew_ms unused (heartbeat state is local: `federation_peers`) |
 | `users` R | id, name, email, password, role (admin/manager), totp_secret (`federated`), totp_confirmed_at, totp_last_step, recovery_codes (hashed), oidc_subject (unique, `<iss> <sub>`) |
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
-| `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port, cert_token (enc), last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at |
+| `nas_clients` R | id (ULID), legacy_id, site_id, name, nas_ip (unique per serving instance), nas_identifier, radius_secret (`federated`), coa_port, cert_token (`federated`); local status not replicated: last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at |
+| `certificate_sources` R | id (from instance + target), instance_id, target (portal/router), type, url, name, ca_pem, api_key (`federated`) |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
 | `grants` R | id, type (code/sms/approval/site_code), site_code_id, code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
 | `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |

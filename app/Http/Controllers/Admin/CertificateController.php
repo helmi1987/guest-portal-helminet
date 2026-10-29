@@ -29,6 +29,7 @@ class CertificateController extends Controller
                 'info' => CertificateInfo::fromFile(CertificateSources::paths($target)['cert']),
                 'source' => CertificateSources::get($target),
                 'status' => CertificateSources::status($target),
+                'others' => CertificateSources::others($target),
             ];
         }
 
@@ -36,6 +37,19 @@ class CertificateController extends Controller
             'targets' => $targets,
             'portalHost' => CertificateSources::portalHost(),
         ]);
+    }
+
+    /** Take over the certificate source of another instance (replacement instance). */
+    public function copy(Request $request, string $target): RedirectResponse
+    {
+        abort_unless(in_array($target, CertificateSources::TARGETS, true), 404);
+        $instance = (string) $request->validate(['instance' => ['required', 'string', 'size:26']])['instance'];
+        if (! CertificateSources::copyFrom($instance, $target)) {
+            return back()->withErrors(['instance' => __('portal.certificates.copy_missing')]);
+        }
+        Audit::log('certificate.source_copied', null, ['target' => $target, 'from' => $instance]);
+
+        return back()->with('status', __('portal.certificates.copied'));
     }
 
     public function update(Request $request, string $target): RedirectResponse

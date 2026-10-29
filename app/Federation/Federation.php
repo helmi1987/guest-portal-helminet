@@ -25,8 +25,12 @@ final class Federation
         'instances' => [],
         'users' => [],
         'sites' => [],
+        // Routers: replicated for recovery; only the home instance of the site serves them.
+        'nas_clients' => ['site_id' => 'sites'],
         'guests' => [],
         'settings' => [],
+        // Certificate source per instance and target; each instance runs only its own.
+        'certificate_sources' => [],
         'channels' => [],
         'terms_versions' => [],
         'site_codes' => ['site_id' => 'sites'],
@@ -39,6 +43,20 @@ final class Federation
         'mac_whitelist_site' => ['mac_whitelist_id' => 'mac_whitelist', 'site_id' => 'sites'],
         'audit_logs' => [],
     ];
+
+    /**
+     * Columns of replicated tables that stay local (status of the serving instance): left out of event
+     * payloads, never overwritten by remote events.
+     */
+    public const LOCAL_COLUMNS = [
+        'nas_clients' => ['last_seen_at', 'cert_fetched_at', 'login_page_fetched_at'],
+    ];
+
+    /** @return list<string> */
+    public static function localColumns(string $table): array
+    {
+        return self::LOCAL_COLUMNS[$table] ?? [];
+    }
 
     public static function isReplicated(string $table): bool
     {

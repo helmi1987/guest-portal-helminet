@@ -3,7 +3,9 @@
 namespace App\Federation;
 
 use App\Auth\Oidc\OidcSettings;
+use App\Models\CertificateSource;
 use App\Models\Channel;
+use App\Models\NasClient;
 use App\Models\User;
 
 /**
@@ -17,6 +19,8 @@ class FederatedSecrets
     public const FIELDS = [
         User::class => ['totp_secret'],
         Channel::class => ['config'],
+        NasClient::class => ['radius_secret', 'cert_token'],
+        CertificateSource::class => ['api_key'],
     ];
 
     public function __construct(private DataKey $keys) {}

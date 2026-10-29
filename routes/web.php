@@ -138,6 +138,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::resource('sites', SiteController::class)->except(['show']);
                 Route::get('/sites/{site}/login.html', [SiteController::class, 'loginPage'])->name('sites.login-page');
                 Route::post('/sites/{site}/branding', [BrandingController::class, 'updateSite'])->name('sites.branding');
+                Route::post('/sites/{site}/take-over', [SiteController::class, 'takeOver'])->name('sites.take-over');
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');
@@ -162,6 +163,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
 
                 Route::get('/certificates', [CertificateController::class, 'index'])->name('certificates.index');
                 Route::put('/certificates/{target}', [CertificateController::class, 'update'])->name('certificates.update')
+                    ->whereIn('target', ['portal', 'router']);
+                Route::post('/certificates/{target}/copy', [CertificateController::class, 'copy'])->name('certificates.copy')
                     ->whereIn('target', ['portal', 'router']);
                 Route::post('/certificates/{target}/pull', [CertificateController::class, 'pull'])->name('certificates.pull')
                     ->whereIn('target', ['portal', 'router'])->middleware('throttle:5,1');

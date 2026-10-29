@@ -7,6 +7,7 @@ use App\Models\Instance;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Nas\NasDrivers;
+use App\Radius\ClientsFile;
 use App\Support\Audit;
 use App\Support\LocalInstance;
 use Illuminate\Http\RedirectResponse;
@@ -48,9 +49,25 @@ class SiteController extends Controller
     public function update(Request $request, Site $site): RedirectResponse
     {
         $site->update($this->validated($request, $site));
+        // The home instance decides which routers this instance serves.
+        app(ClientsFile::class)->write();
         Audit::log('site.updated', $site, ['changed' => array_values(array_diff(array_keys($site->getChanges()), ['updated_at', 'version']))]);
 
         return back()->with('status', __('portal.saved'));
+    }
+
+    /**
+     * Take over a site (replacement instance, CONCEPT.md §10.4): this instance becomes its home and
+     * serves its routers from now on (clients file written at once).
+     */
+    public function takeOver(Site $site, LocalInstance $local, ClientsFile $clients): RedirectResponse
+    {
+        $previous = $site->home_instance_id;
+        $site->update(['home_instance_id' => $local->id()]);
+        $clients->write();
+        Audit::log('site.taken_over', $site, ['slug' => $site->slug, 'previous_home' => $previous]);
+
+        return back()->with('status', __('portal.sites.taken_over'));
     }
 
     public function destroy(Site $site): RedirectResponse
@@ -66,7 +83,15 @@ class SiteController extends Controller
     {
         $router = $site->nasClients()->create($request->validate([
             'name' => ['required', 'string', 'max:100'],
-            'nas_ip' => ['required', 'ipv4', Rule::unique('nas_clients', 'nas_ip')],
+            // Unique among the routers served by the same instance (one FreeRADIUS clients file).
+            'nas_ip' => ['required', 'ipv4', function (string $attribute, mixed $value, \Closure $fail) use ($site) {
+                $home = $site->home_instance_id ?? app(LocalInstance::class)->id();
+                $taken = NasClient::query()->with('site')->where('nas_ip', $value)->get()
+                    ->contains(fn (NasClient $n) => ($n->site?->home_instance_id ?? app(LocalInstance::class)->id()) === $home);
+                if ($taken) {
+                    $fail(__('validation.unique', ['attribute' => $attribute]));
+                }
+            }],
             'nas_identifier' => ['nullable', 'string', 'max:100'],
             'coa_port' => ['required', 'integer', 'between:1,65535'],
         ]));

@@ -11,10 +11,12 @@ use App\Federation\PairingException;
 use App\Federation\PeerCertificate;
 use App\Federation\Topology;
 use App\Http\Controllers\Controller;
+use App\Models\CertificateSource;
 use App\Models\Channel;
 use App\Models\FederationPeer;
 use App\Models\Instance;
 use App\Models\LocalSetting;
+use App\Models\NasClient;
 use App\Models\Setting;
 use App\Support\Audit;
 use App\Support\LocalInstance;
@@ -251,6 +253,12 @@ class FederationController extends Controller
         $items = [];
         foreach (Channel::query()->orderBy('kind')->orderBy('name')->get() as $channel) {
             $items[] = __('portal.federation.checklist_channel', ['name' => $channel->name, 'driver' => $channel->driver]);
+        }
+        if (NasClient::query()->exists()) {
+            $items[] = __('portal.federation.checklist_radius');
+        }
+        if (CertificateSource::query()->whereNotNull('api_key')->exists()) {
+            $items[] = __('portal.federation.checklist_certificates');
         }
         if (OidcSettings::hasClientSecret()) {
             $items[] = __('portal.federation.checklist_oidc');

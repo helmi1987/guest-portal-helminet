@@ -177,7 +177,7 @@ class Applier
             foreach (array_keys(Federation::TABLES) as $table) {
                 $columns = array_flip($this->columns($table));
                 foreach ($snapshot['tables'][$table] ?? [] as $row) {
-                    $row = array_intersect_key((array) $row, $columns);
+                    $row = array_diff_key(array_intersect_key((array) $row, $columns), array_flip(Federation::localColumns($table)));
                     foreach ($row as $column => $value) {
                         if (is_array($value) || is_object($value)) {
                             throw new RuntimeException("snapshot $table.$column is not a scalar");
@@ -310,7 +310,8 @@ class Applier
                 throw new RuntimeException("column $column is not a scalar");
             }
         }
-        $incoming = array_intersect_key($event['payload'], array_flip($this->columns($table)));
+        $incoming = array_diff_key(array_intersect_key($event['payload'], array_flip($this->columns($table))),
+            array_flip(Federation::localColumns($table)));
         $incoming['version'] = $event['version'];
         if ($table === 'settings' && isset($incoming['key'])) {
             $id = Setting::idFor((string) $incoming['key']);

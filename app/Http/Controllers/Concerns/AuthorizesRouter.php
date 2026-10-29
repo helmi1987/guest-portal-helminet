@@ -16,7 +16,7 @@ trait AuthorizesRouter
     /** Resolve the router from the route parameter; unknown ids are denied like a wrong token (403). */
     protected function authorizeRouter(Request $request, string $id, string $what): NasClient
     {
-        $nas = ctype_digit($id) ? NasClient::with('site')->find((int) $id) : null;
+        $nas = preg_match('/^([0-9A-Za-z]{26}|\d{1,18})$/', $id) ? NasClient::findServed($id) : null;
         $token = (string) $request->header('X-Portal-Token');
         $reason = match (true) {
             $nas === null => 'unknown router',

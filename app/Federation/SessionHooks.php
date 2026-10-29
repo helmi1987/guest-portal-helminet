@@ -5,6 +5,7 @@ namespace App\Federation;
 use App\Jobs\DisconnectSession;
 use App\Models\MacWhitelist;
 use App\Models\SessionSummary;
+use App\Radius\ClientsFile;
 use App\Support\LocalInstance;
 use Illuminate\Support\Facades\DB;
 
@@ -24,6 +25,10 @@ class SessionHooks
         $hooks->register('site_codes', fn (AppliedChange $c) => $this->enforceGrants(
             DB::table('grants')->where('site_code_id', $c->id)->pluck('id')->all()));
         $hooks->register('mac_whitelist', fn (AppliedChange $c) => $this->enforceWhitelist($c->id));
+        // Routers and home instances decide which routers this instance serves (FreeRADIUS clients file).
+        $hooks->register('nas_clients', fn () => app(ClientsFile::class)->write());
+        $hooks->register('sites', fn (AppliedChange $c) => ($c->before['home_instance_id'] ?? null) !== ($c->after['home_instance_id'] ?? null)
+            || ($c->before['deleted_at'] ?? null) !== ($c->after['deleted_at'] ?? null) ? app(ClientsFile::class)->write() : null);
         $hooks->register('mac_whitelist_site', fn (AppliedChange $c) => $this->enforceWhitelist(
             (string) ($c->after['mac_whitelist_id'] ?? $c->before['mac_whitelist_id'] ?? '')));
     }

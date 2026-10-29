@@ -6,7 +6,7 @@ use App\Models\NasClient;
 use Illuminate\Support\Facades\File;
 
 /**
- * Renders the FreeRADIUS clients file from the routers (CONCEPT.md §2.2).
+ * Renders the FreeRADIUS clients file from the routers served here (CONCEPT.md §2.2, §10.4).
  * A watcher service in the container restarts FreeRADIUS when the file changes.
  */
 class ClientsFile
@@ -15,8 +15,9 @@ class ClientsFile
     {
         $out = "# Managed by the portal. Do not edit.\n";
 
-        // NAS IPs are IPv4 only for now (IPv6 later).
-        foreach (NasClient::query()->orderBy('id')->get() as $nas) {
+        // Only routers of sites served by this instance (CONCEPT.md §10.4); the replicated others are
+        // kept for recovery. NAS IPs are IPv4 only for now (IPv6 later).
+        foreach (NasClient::query()->with('site')->orderBy('id')->get()->filter->isServedHere() as $nas) {
             $out .= sprintf(
                 "\nclient %s {\n    ipaddr = %s\n    secret = \"%s\"\n    shortname = %s\n}\n",
                 $nas->shortname(),

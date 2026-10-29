@@ -26,7 +26,7 @@ class Outbox
         if ($row === null) {
             return;
         }
-        $row = (array) $row;
+        $row = array_diff_key((array) $row, array_flip(Federation::localColumns($table)));
         $origin = $this->instance->id();
         $seq = $this->nextSeq($origin);
         $version = (string) $row['version'];

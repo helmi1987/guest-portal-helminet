@@ -278,7 +278,11 @@ class RadiusController extends Controller
     {
         $short = (string) $this->attr($request, 'FreeRADIUS-Client-Shortname');
 
-        $nas = preg_match('/^nas-(\d+)$/', $short, $m) ? NasClient::with('site')->find((int) $m[1]) : null;
+        $nas = preg_match('/^nas-([0-9a-z]{26})$/', $short, $m) ? NasClient::with('site')->find($m[1]) : null;
+        // Routers of sites served by another instance are not ours (their copy is for recovery only).
+        if ($nas !== null && ! $nas->isServedHere()) {
+            $nas = null;
+        }
         // FreeRADIUS has checked source IP and secret: record the contact (setup assistant status).
         $nas?->markSeen();
 

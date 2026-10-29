@@ -41,6 +41,14 @@
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 
+    @if ($site->exists && ! $site->isServedHere())
+        <section class="card mb-6 flex flex-wrap items-center justify-between gap-4 border-2 border-amber-300">
+            <p class="text-sm">{{ __('portal.sites.served_elsewhere', ['name' => \App\Models\Instance::withTrashed()->find($site->home_instance_id)?->name ?? $site->home_instance_id]) }}</p>
+            <form method="POST" action="{{ route('admin.sites.take-over', $site) }}" onsubmit="return confirm(@js(__('portal.sites.take_over_confirm')))">
+                @csrf <button class="btn-danger">{{ __('portal.sites.take_over') }}</button></form>
+        </section>
+    @endif
+
     @if ($site->exists)
         @php($siteCode = \App\Services\SiteCodeManager::current($site))
         <section class="card mb-6 flex flex-wrap items-center justify-between gap-4">

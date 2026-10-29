@@ -138,6 +138,10 @@ return [
         'regenerate_secret' => 'Nuovo segreto',
         'secret_regenerated' => 'Nuovo segreto RADIUS generato. Aggiornare la configurazione del router.',
         'cert_help' => 'Lo script aggiunge uno scheduler che scarica il certificato del router da questa istanza (file router.crt e router.key in /data/certs) e lo imposta nel profilo hotspot.',
+        'served_elsewhere' => 'I router di questa sede sono serviti dall\'istanza :name. Questa copia serve al ripristino.',
+        'take_over' => 'Prendi in carico questa sede',
+        'take_over_confirm' => 'Servire d\'ora in poi i router di questa sede da questa istanza? Usalo solo se l\'altra istanza non li serve più (p.es. sostituita).',
+        'taken_over' => 'Questa istanza serve ora i router di questa sede.',
     ],
     'setup' => [
         'title' => 'Assistente di configurazione',
@@ -614,6 +618,10 @@ return [
             'certwarden' => 'CertWarden',
             'url' => 'URL (bundle PEM)',
         ],
+        'copy_from' => 'Riprendi la fonte di un\'altra istanza',
+        'copy' => 'Riprendi',
+        'copied' => 'Fonte ripresa (compresa la chiave API).',
+        'copy_missing' => 'Quell\'istanza non ha una fonte per questo certificato.',
     ],
     'sms' => [
         'text' => 'Il tuo codice Wi-Fi ospiti: :code (valido :minutes min).',
@@ -780,5 +788,7 @@ return [
         'promoted' => 'Questa istanza è ora l\'hub. Crea un token di adesione per ogni altra istanza e riaccoppiale.',
         'replaced_as_hub' => 'Questa istanza è stata sostituita come hub e rimossa dalla federazione. Non replica più. Riaccoppiala con il nuovo hub come istanza normale:',
         'removed_here' => 'Questa istanza è stata rimossa dalla federazione e non replica più.',
+        'checklist_radius' => 'Segreti RADIUS dei router (rigenera nella pagina della sede e inseriscili su ogni router)',
+        'checklist_certificates' => 'Chiavi API delle fonti dei certificati (CertWarden / token URL)',
     ],
 ];

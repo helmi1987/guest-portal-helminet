@@ -71,6 +71,20 @@
                 <form method="POST" action="{{ route('admin.certificates.pull', $target) }}">
                     @csrf <button class="btn-light">{{ __('portal.certificates.pull') }}</button></form>
             @endif
+            @if ($t['others']->isNotEmpty())
+                {{-- Replacement instance: take over the source of the instance it replaces. --}}
+                <form method="POST" action="{{ route('admin.certificates.copy', $target) }}" class="mt-4 flex flex-wrap items-end gap-2"
+                      onsubmit="return confirm(@js(__('portal.confirm')))">
+                    @csrf
+                    <label class="label">{{ __('portal.certificates.copy_from') }}
+                        <select name="instance" class="field">
+                            @foreach ($t['others'] as $other)
+                                <option value="{{ $other->instance_id }}">{{ $other->instance?->name ?? $other->instance_id }} ({{ $other->type }})</option>
+                            @endforeach
+                        </select></label>
+                    <button class="btn-light">{{ __('portal.certificates.copy') }}</button>
+                </form>
+            @endif
         </section>
     @endforeach
 </x-layouts.admin>

@@ -138,6 +138,10 @@ return [
         'regenerate_secret' => 'Neues Secret',
         'secret_regenerated' => 'Neues RADIUS-Secret erzeugt. Router-Konfiguration anpassen.',
         'cert_help' => 'Das Skript legt einen Scheduler an, der das Router-Zertifikat von dieser Instanz herunterlädt (Dateien router.crt und router.key in /data/certs) und im Hotspot-Profil setzt.',
+        'served_elsewhere' => 'Die Router dieses Standorts werden von der Instanz :name bedient. Diese Kopie dient der Wiederherstellung.',
+        'take_over' => 'Diesen Standort übernehmen',
+        'take_over_confirm' => 'Die Router dieses Standorts ab jetzt von dieser Instanz bedienen? Nur verwenden, wenn die andere Instanz sie nicht mehr bedient (z.B. ersetzt).',
+        'taken_over' => 'Diese Instanz bedient jetzt die Router dieses Standorts.',
     ],
     'setup' => [
         'title' => 'Einrichtungsassistent',
@@ -614,6 +618,10 @@ return [
             'certwarden' => 'CertWarden',
             'url' => 'URL (PEM-Bundle)',
         ],
+        'copy_from' => 'Quelle einer anderen Instanz übernehmen',
+        'copy' => 'Übernehmen',
+        'copied' => 'Quelle übernommen (inklusive API-Schlüssel).',
+        'copy_missing' => 'Diese Instanz hat keine Quelle für dieses Zertifikat.',
     ],
     'sms' => [
         'text' => 'Dein Code für das Gäste-WLAN: :code (gültig :minutes Min.).',
@@ -780,5 +788,7 @@ return [
         'promoted' => 'Diese Instanz ist jetzt der Hub. Für jede andere Instanz ein Beitritts-Token erstellen und sie neu koppeln.',
         'replaced_as_hub' => 'Diese Instanz wurde als Hub ersetzt und aus der Föderation entfernt. Sie repliziert nicht mehr. Als normale Instanz mit dem neuen Hub neu koppeln:',
         'removed_here' => 'Diese Instanz wurde aus der Föderation entfernt und repliziert nicht mehr.',
+        'checklist_radius' => 'RADIUS-Secrets der Router (auf der Standortseite neu erzeugen und auf jedem Router eintragen)',
+        'checklist_certificates' => 'API-Schlüssel der Zertifikatsquellen (CertWarden / URL-Token)',
     ],
 ];
