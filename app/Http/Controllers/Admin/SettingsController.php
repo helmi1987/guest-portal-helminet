@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Approval\ApprovalSettings;
+use App\Auth\TwoFactor;
 use App\Http\Controllers\Controller;
 use App\Models\Channel;
 use App\Models\Setting;
 use App\Sms\PhoneNumber;
 use App\Sms\SmsSettings;
+use App\Support\Audit;
 use App\Support\LocalInstance;
 use App\Support\Redact;
 use Illuminate\Http\RedirectResponse;
@@ -34,6 +36,7 @@ class SettingsController extends Controller
             'adminUrl' => Setting::get('admin_url'),
             'locale' => ApprovalSettings::locale(),
             'telegramOwner' => ApprovalSettings::isTelegramOwner(),
+            'require2fa' => TwoFactor::required(),
         ]);
     }
 
@@ -47,7 +50,17 @@ class SettingsController extends Controller
         Setting::put('admin_url', isset($data['admin_url']) ? rtrim($data['admin_url'], '/') : null);
         Setting::put('notification_locale', $data['notification_locale']);
         Setting::put('telegram_owner', $request->boolean('telegram_owner') ? $instance->id() : 'none');
-        Log::info('Settings updated', ['user' => $request->user()->id, 'keys' => array_keys($data)]);
+        Audit::log('settings.updated', null, ['keys' => ['admin_url', 'notification_locale', 'telegram_owner']]);
+
+        return back()->with('status', __('portal.saved'));
+    }
+
+    /** Security: require TOTP for all admin UI users (CONCEPT.md §9). */
+    public function updateSecurity(Request $request): RedirectResponse
+    {
+        $request->validate(['require_2fa' => ['boolean']]);
+        Setting::put(TwoFactor::REQUIRED_SETTING, $request->boolean('require_2fa'));
+        Audit::log('settings.security', null, ['require_2fa' => $request->boolean('require_2fa')]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -68,7 +81,8 @@ class SettingsController extends Controller
         Setting::put('sms_duration_s', (int) round($data['sms_duration_hours'] * 3600));
         Setting::put('sms_countries', $countries);
         Setting::put('sms_caps', array_map('intval', $data['sms_caps']));
-        Log::info('SMS settings updated', ['user' => $request->user()->id]);
+        Audit::log('settings.sms', null, ['duration_s' => (int) round($data['sms_duration_hours'] * 3600),
+            'countries' => $countries, 'caps' => array_map('intval', $data['sms_caps'])]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -92,6 +106,7 @@ class SettingsController extends Controller
             return back()->withErrors(['phone' => __('portal.channels.test_failed', ['error' => $message])]);
         }
         Log::info('Test SMS sent', ['user' => $request->user()->id, 'channel' => $channel->id, 'phone' => Redact::phone($e164), 'provider_id' => $id]);
+        Audit::log('channel.tested', $channel);
 
         return back()->with('status', __('portal.channels.test_sent', ['id' => $id ?? '–']));
     }
@@ -116,7 +131,7 @@ class SettingsController extends Controller
 
         $channel = new Channel(['kind' => Channel::kindOf($driver), 'driver' => $driver]);
         $this->fill($request, $channel);
-        Log::info('Channel created', ['user' => $request->user()->id, 'channel' => $channel->id, 'driver' => $driver]);
+        Audit::log('channel.created', $channel, ['driver' => $driver, 'name' => $channel->name]);
 
         return redirect()->route('admin.settings')->with('status', __('portal.saved'));
     }
@@ -124,7 +139,7 @@ class SettingsController extends Controller
     public function updateChannel(Request $request, Channel $channel): RedirectResponse
     {
         $this->fill($request, $channel);
-        Log::info('Channel updated', ['user' => $request->user()->id, 'channel' => $channel->id]);
+        Audit::log('channel.updated', $channel, ['name' => $channel->name, 'enabled' => $channel->enabled]);
 
         return redirect()->route('admin.settings')->with('status', __('portal.saved'));
     }
@@ -132,7 +147,7 @@ class SettingsController extends Controller
     public function destroyChannel(Request $request, Channel $channel): RedirectResponse
     {
         $channel->delete();
-        Log::info('Channel deleted', ['user' => $request->user()->id, 'channel' => $channel->id]);
+        Audit::log('channel.deleted', $channel, ['name' => $channel->name]);
 
         return redirect()->route('admin.settings')->with('status', __('portal.deleted'));
     }

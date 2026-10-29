@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\LocalSetting;
 use App\Models\Site;
+use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
@@ -39,14 +40,16 @@ class SetupController extends Controller
         $data = $this->validateWithin($request, $site->driver()->setupFields()['network'], 'subnet', ['gateway', 'pool']);
         $data['vlan_id'] = (int) $data['vlan_id'];
         $site->update(['settings' => array_merge($site->settings ?? [], ['setup' => $data])]);
+        Audit::log('site.setup_network', $site, $data);
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-network')->with('status', __('portal.saved'));
     }
 
     public function updateContainer(Request $request, Site $site): RedirectResponse
     {
-        LocalSetting::put(self::CONTAINER_KEY,
-            $this->validateWithin($request, $site->driver()->setupFields()['container'], 'veth_address', ['veth_gateway']));
+        $data = $this->validateWithin($request, $site->driver()->setupFields()['container'], 'veth_address', ['veth_gateway']);
+        LocalSetting::put(self::CONTAINER_KEY, $data);
+        Audit::log('settings.setup_container', $site, $data);
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-container')->with('status', __('portal.saved'));
     }

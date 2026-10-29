@@ -4,9 +4,9 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\TermsVersion;
+use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 use Illuminate\View\View;
 
 /**
@@ -31,7 +31,7 @@ class TermsController extends Controller
         if ($terms->is($before)) {
             return back()->with('status', __('portal.terms.unchanged'));
         }
-        Log::info('Terms published', ['locale' => $locale, 'version' => $terms->number, 'user' => $request->user()->id]);
+        Audit::log('terms.published', $terms, ['locale' => $locale, 'number' => $terms->number]);
 
         return back()->with('status', __('portal.terms.published', ['version' => $terms->number]));
     }

@@ -45,7 +45,7 @@
             <thead><tr><th>MAC</th><th>{{ __('portal.grants.guest') }}</th><th>{{ __('portal.grants.bound_at') }}</th><th>{{ __('portal.grants.unbound_at') }}</th></tr></thead>
             <tbody>
                 @forelse ($grant->devices->sortByDesc('bound_at') as $device)
-                    <tr><td class="font-mono">{{ $device->mac }}</td><td>{{ $device->guest ? $device->guest->first_name.' '.$device->guest->last_name : '–' }}</td>
+                    <tr><td class="font-mono">{{ $device->mac }}</td><td>{{ $device->guest ? $device->guest->first_name.' '.$device->guest->last_name : '–' }}@if ($device->guest?->phone_e164)<br><span class="font-mono text-xs">{{ auth()->user()->displayPhone($device->guest->phone_e164) }}</span>@endif</td>
                         <td>{{ $device->bound_at->format('Y-m-d H:i') }}</td><td>{{ $device->unbound_at?->format('Y-m-d H:i') ?? '–' }}</td></tr>
                 @empty
                     <tr><td colspan="4" class="text-slate-500">{{ __('portal.none') }}</td></tr>

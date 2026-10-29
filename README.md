@@ -13,7 +13,8 @@ can be supported via drivers (contributions welcome).
 **Status:** early development (milestone M5: SMS login; v0.6.0: setup assistant). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
-router certificate; admin extras and federation follow (see CONCEPT.md §14).
+router certificate; M6 (in progress): users with roles admin/manager, TOTP two-factor login, audit log;
+remaining admin extras and federation follow (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -27,6 +28,8 @@ docker run -d --name guest-portal --restart unless-stopped \
   ghcr.io/OWNER/REPO:edge
 docker exec -it guest-portal artisan portal:admin   # create the first admin
 ```
+
+Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa admin@example.com`.
 
 - Guest portal: `https://<host>/`, admin UI: `https://<host>:8443/admin`.
 - Router setup: admin UI → Sites → add site and router → "Set up" (setup assistant: guided steps

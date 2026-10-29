@@ -21,6 +21,17 @@
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 
+    <form method="POST" action="{{ route('admin.settings.security') }}" class="card mb-6 grid gap-4">
+        @csrf
+        <h2 class="text-lg font-semibold">{{ __('portal.settings.security') }}</h2>
+        <label class="flex items-start gap-2 text-sm">
+            <input type="hidden" name="require_2fa" value="0">
+            <input type="checkbox" name="require_2fa" value="1" @checked($require2fa) class="mt-0.5">
+            <span>{{ __('portal.settings.require_2fa') }}<br><span class="text-xs text-slate-500">{{ __('portal.settings.require_2fa_help') }}</span></span>
+        </label>
+        <div><button class="btn">{{ __('portal.save') }}</button></div>
+    </form>
+
     <form method="POST" action="{{ route('admin.settings.sms') }}" class="card mb-6 grid gap-4 md:grid-cols-2">
         @csrf
         <h2 class="text-lg font-semibold md:col-span-2">{{ __('portal.settings.sms') }}</h2>

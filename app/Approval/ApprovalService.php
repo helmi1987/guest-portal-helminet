@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Models\TermsAcceptance;
 use App\Models\User;
 use App\Services\GrantManager;
+use App\Support\Audit;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -75,6 +76,9 @@ class ApprovalService
         if ($result === 'decided') {
             Log::info('Approval decided', ['request' => $request->id, 'status' => $request->status->value,
                 'duration_s' => $request->duration_s, 'by' => $by, 'via' => $via]);
+            Audit::log($request->status === ApprovalStatus::Approved ? 'approval.approved' : 'approval.denied', $request,
+                ['via' => $via, 'site' => $request->site?->slug, 'duration_s' => $request->duration_s, 'grant' => $request->grant_id],
+                $user, $by);
         }
         if ($result !== 'unchanged') {
             // Update the channel messages (e.g. remove the Telegram buttons).

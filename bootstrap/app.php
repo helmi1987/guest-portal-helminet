@@ -2,6 +2,7 @@
 
 use App\Http\Middleware\DetectZone;
 use App\Http\Middleware\EnsureRole;
+use App\Http\Middleware\EnsureTwoFactor;
 use App\Http\Middleware\EnsureZone;
 use App\Http\Middleware\InternalApiAuth;
 use App\Http\Middleware\SetLocale;
@@ -31,6 +32,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'zone' => EnsureZone::class,
             'role' => EnsureRole::class,
+            'two_factor' => EnsureTwoFactor::class,
             'locale' => SetLocale::class,
         ]);
         // The zone check must run before auth redirects, otherwise /admin on the guest port redirects.

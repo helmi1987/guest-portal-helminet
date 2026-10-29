@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\ApprovalRequest;
+use App\Models\AuditLog;
 use App\Models\Device;
 use App\Models\Grant;
 use App\Models\Guest;
@@ -17,8 +18,8 @@ use Illuminate\Console\Command;
 
 /**
  * Retention purge (CONCEPT.md §9, §11). Minimal version: removes guest-related records older than
- * the retention period; grants that are still usable are kept. Terms acceptances and audit log
- * follow with their features; tombstone handling with federation (M7).
+ * the retention period (including terms acceptances and the audit log); grants that are still usable
+ * are kept. Tombstone handling with federation (M7).
  */
 class PurgeData extends Command
 {
@@ -38,6 +39,7 @@ class PurgeData extends Command
         TermsAcceptance::withTrashed()->where('accepted_at', '<', $cutoff)->forceDelete();
         OtpChallenge::withTrashed()->where('created_at', '<', $cutoff)->forceDelete();
         SmsMessage::query()->where('created_at', '<', $cutoff)->delete();
+        AuditLog::withTrashed()->where('created_at', '<', $cutoff)->forceDelete();
 
         // Session summaries cascade to raw accounting.
         SessionSummary::withTrashed()->whereNotNull('stopped_at')->where('stopped_at', '<', $cutoff)->forceDelete();

@@ -1,12 +1,15 @@
 <?php
 
 use App\Http\Controllers\Admin\ApprovalController;
+use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\LogoutController;
+use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SetupController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\TermsController;
+use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ApprovalLinkController;
 use App\Http\Controllers\Guest\LocaleController;
 use App\Http\Controllers\Guest\PortalController;
@@ -59,34 +62,50 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
     });
 
     Route::middleware('auth')->group(function () {
-        Route::view('/', 'admin.dashboard')->name('admin.dashboard');
         Route::post('/logout', LogoutController::class)->name('logout');
 
-        Route::middleware('role:admin,manager')->name('admin.')->group(function () {
-            Route::get('/grants/print', [GrantController::class, 'print'])->name('grants.print');
-            Route::resource('grants', GrantController::class)->only(['index', 'create', 'store', 'edit', 'update']);
-            Route::post('/grants/{grant}/extend', [GrantController::class, 'extend'])->name('grants.extend');
-            Route::post('/grants/{grant}/expiry', [GrantController::class, 'expiry'])->name('grants.expiry');
-            Route::post('/grants/{grant}/revoke', [GrantController::class, 'revoke'])->name('grants.revoke');
-            Route::get('/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
-            Route::post('/approvals/{approval}', [ApprovalController::class, 'decide'])->name('approvals.decide');
+        // Own profile: reachable without 2FA so that "require 2FA" users can enrol.
+        Route::middleware('role:admin,manager')->prefix('profile')->name('admin.')->group(function () {
+            Route::get('/', [ProfileController::class, 'show'])->name('profile');
+            Route::post('/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
+            Route::post('/two-factor', [ProfileController::class, 'beginTwoFactor'])->name('profile.two-factor');
+            Route::post('/two-factor/confirm', [ProfileController::class, 'confirmTwoFactor'])->name('profile.two-factor.confirm')
+                ->middleware('throttle:10,1');
+            Route::post('/two-factor/recovery-codes', [ProfileController::class, 'regenerateRecoveryCodes'])
+                ->name('profile.two-factor.recovery')->middleware('throttle:10,1');
+            Route::delete('/two-factor', [ProfileController::class, 'disableTwoFactor'])->name('profile.two-factor.disable')
+                ->middleware('throttle:10,1');
         });
 
-        Route::middleware('role:admin')->group(function () {
-            Route::get('/settings', [SettingsController::class, 'show'])->name('admin.settings');
-            Route::post('/settings', [SettingsController::class, 'update'])->name('admin.settings.update');
-            Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('admin.settings.sms');
-            Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('admin.channels.test')
-                ->middleware('throttle:5,1');
-            Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('admin.channels.create');
-            Route::post('/channels', [SettingsController::class, 'storeChannel'])->name('admin.channels.store');
-            Route::get('/channels/{channel}', [SettingsController::class, 'editChannel'])->name('admin.channels.edit');
-            Route::put('/channels/{channel}', [SettingsController::class, 'updateChannel'])->name('admin.channels.update');
-            Route::delete('/channels/{channel}', [SettingsController::class, 'destroyChannel'])->name('admin.channels.destroy');
-            Route::get('/terms', [TermsController::class, 'index'])->name('admin.terms');
-            Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('admin.terms.update');
+        Route::middleware('two_factor')->group(function () {
+            // Admin + manager (CONCEPT.md §9): codes/grants, approvals.
+            Route::middleware('role:admin,manager')->name('admin.')->group(function () {
+                Route::view('/', 'admin.dashboard')->name('dashboard');
+                Route::get('/grants/print', [GrantController::class, 'print'])->name('grants.print');
+                Route::resource('grants', GrantController::class)->only(['index', 'create', 'store', 'edit', 'update']);
+                Route::post('/grants/{grant}/extend', [GrantController::class, 'extend'])->name('grants.extend');
+                Route::post('/grants/{grant}/expiry', [GrantController::class, 'expiry'])->name('grants.expiry');
+                Route::post('/grants/{grant}/revoke', [GrantController::class, 'revoke'])->name('grants.revoke');
+                Route::get('/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
+                Route::post('/approvals/{approval}', [ApprovalController::class, 'decide'])->name('approvals.decide');
+            });
 
-            Route::name('admin.')->group(function () {
+            // Admin only: settings, channels, terms, sites/routers/setup, users, audit log.
+            Route::middleware('role:admin')->name('admin.')->group(function () {
+                Route::get('/settings', [SettingsController::class, 'show'])->name('settings');
+                Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
+                Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('settings.sms');
+                Route::post('/settings/security', [SettingsController::class, 'updateSecurity'])->name('settings.security');
+                Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('channels.test')
+                    ->middleware('throttle:5,1');
+                Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('channels.create');
+                Route::post('/channels', [SettingsController::class, 'storeChannel'])->name('channels.store');
+                Route::get('/channels/{channel}', [SettingsController::class, 'editChannel'])->name('channels.edit');
+                Route::put('/channels/{channel}', [SettingsController::class, 'updateChannel'])->name('channels.update');
+                Route::delete('/channels/{channel}', [SettingsController::class, 'destroyChannel'])->name('channels.destroy');
+                Route::get('/terms', [TermsController::class, 'index'])->name('terms');
+                Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('terms.update');
+
                 Route::resource('sites', SiteController::class)->except(['show']);
                 Route::get('/sites/{site}/login.html', [SiteController::class, 'loginPage'])->name('sites.login-page');
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
@@ -98,6 +117,10 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     Route::post('/{router}/secret', [SiteController::class, 'regenerateSecret'])->name('secret');
                     Route::get('/{router}/config', [SiteController::class, 'routerConfig'])->name('config');
                 });
+
+                Route::resource('users', UserController::class)->except(['show']);
+                Route::post('/users/{user}/reset-two-factor', [UserController::class, 'resetTwoFactor'])->name('users.reset-two-factor');
+                Route::get('/audit', [AuditController::class, 'index'])->name('audit');
             });
         });
     });

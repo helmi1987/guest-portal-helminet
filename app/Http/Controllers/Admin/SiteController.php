@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Nas\NasDrivers;
+use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -30,6 +31,7 @@ class SiteController extends Controller
     public function store(Request $request): RedirectResponse
     {
         $site = Site::create($this->validated($request));
+        Audit::log('site.created', $site, ['slug' => $site->slug, 'name' => $site->name]);
 
         return redirect()->route('admin.sites.edit', $site)->with('status', __('portal.saved'));
     }
@@ -42,6 +44,7 @@ class SiteController extends Controller
     public function update(Request $request, Site $site): RedirectResponse
     {
         $site->update($this->validated($request, $site));
+        Audit::log('site.updated', $site, ['changed' => array_values(array_diff(array_keys($site->getChanges()), ['updated_at', 'version']))]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -50,18 +53,20 @@ class SiteController extends Controller
     {
         $site->nasClients->each->delete();
         $site->delete();
+        Audit::log('site.deleted', $site, ['slug' => $site->slug]);
 
         return redirect()->route('admin.sites.index')->with('status', __('portal.deleted'));
     }
 
     public function storeRouter(Request $request, Site $site): RedirectResponse
     {
-        $site->nasClients()->create($request->validate([
+        $router = $site->nasClients()->create($request->validate([
             'name' => ['required', 'string', 'max:100'],
             'nas_ip' => ['required', 'ipv4', Rule::unique('nas_clients', 'nas_ip')],
             'nas_identifier' => ['nullable', 'string', 'max:100'],
             'coa_port' => ['required', 'integer', 'between:1,65535'],
         ]));
+        Audit::log('router.created', $router, ['site' => $site->slug, 'name' => $router->name, 'nas_ip' => $router->nas_ip]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -70,6 +75,7 @@ class SiteController extends Controller
     {
         $router->radius_secret = NasClient::generateSecret();
         $router->save();
+        Audit::log('router.secret_regenerated', $router, ['site' => $site->slug, 'name' => $router->name]);
 
         return back()->with('status', __('portal.sites.secret_regenerated'));
     }
@@ -77,6 +83,7 @@ class SiteController extends Controller
     public function destroyRouter(Site $site, NasClient $router): RedirectResponse
     {
         $router->delete();
+        Audit::log('router.deleted', $router, ['site' => $site->slug, 'name' => $router->name]);
 
         return back()->with('status', __('portal.deleted'));
     }

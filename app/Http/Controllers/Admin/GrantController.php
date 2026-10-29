@@ -9,10 +9,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Grant;
 use App\Models\Site;
 use App\Services\GrantManager;
+use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
 
@@ -66,10 +66,16 @@ class GrantController extends Controller
             'site_ids' => $data['site_ids'] ?? [],
         ];
 
-        $ids = collect(range(1, $data['quantity']))
-            ->map(fn () => $manager->createCode($attributes, $request->user())->id);
+        $grants = collect(range(1, $data['quantity']))
+            ->map(fn () => $manager->createCode($attributes, $request->user()));
+        foreach ($grants as $grant) {
+            Audit::log('grant.created', $grant, [
+                'duration_s' => $attributes['duration_s'], 'expiry_mode' => $attributes['expiry_mode'],
+                'label' => $attributes['label'], 'sites' => $attributes['site_ids'], 'batch' => $grants->count(),
+            ]);
+        }
 
-        return redirect()->route('admin.grants.print', ['ids' => $ids->all()]);
+        return redirect()->route('admin.grants.print', ['ids' => $grants->pluck('id')->all()]);
     }
 
     public function edit(Grant $grant): View
@@ -97,6 +103,10 @@ class GrantController extends Controller
             'rate_limit' => $data['rate_limit'] ?? null,
         ]);
         $grant->syncSites($data['site_ids'] ?? []);
+        Audit::log('grant.updated', $grant, [
+            'changed' => array_values(array_diff(array_keys($grant->getChanges()), ['updated_at', 'version'])),
+            'sites' => $data['site_ids'] ?? [],
+        ]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -110,7 +120,7 @@ class GrantController extends Controller
         }
 
         $manager->extend($grant, (int) round($hours * 3600));
-        $this->audit('extend', $grant, $request, ['hours' => $hours]);
+        Audit::log('grant.extended', $grant, ['hours' => $hours, 'expires_at' => $grant->expires_at?->toIso8601String()]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -119,7 +129,7 @@ class GrantController extends Controller
     {
         $data = $request->validate(['expires_at' => ['required', 'date']]);
         $manager->setExpiry($grant, Carbon::parse($data['expires_at']));
-        $this->audit('set_expiry', $grant, $request, $data);
+        Audit::log('grant.expiry', $grant, ['expires_at' => $grant->expires_at?->toIso8601String()]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -127,7 +137,7 @@ class GrantController extends Controller
     public function revoke(Request $request, Grant $grant, GrantManager $manager): RedirectResponse
     {
         $manager->revoke($grant);
-        $this->audit('revoke', $grant, $request);
+        Audit::log('grant.revoked', $grant);
 
         return back()->with('status', __('portal.grants.revoked'));
     }
@@ -156,11 +166,5 @@ class GrantController extends Controller
     private function date(?string $value): ?Carbon
     {
         return $value ? Carbon::parse($value) : null;
-    }
-
-    /** Minimal audit trail in the log until the audit log table exists (M6). */
-    private function audit(string $action, Grant $grant, Request $request, array $data = []): void
-    {
-        Log::info('Grant '.$action, ['grant' => $grant->id, 'user' => $request->user()?->id] + $data);
     }
 }
