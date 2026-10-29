@@ -12,7 +12,7 @@
                        class="rounded border border-slate-300 px-3 py-2 font-mono">
                 @error('code') <span class="text-sm text-red-600">{{ $message }}</span> @enderror
             </label>
-            <button type="submit" class="rounded bg-slate-900 px-4 py-2 font-medium text-white">{{ __('portal.auth.two_factor_submit') }}</button>
+            <button type="submit" class="gp-button btn">{{ __('portal.auth.two_factor_submit') }}</button>
             <button type="button" wire:click="cancel" class="text-sm underline">{{ __('portal.back') }}</button>
         </form>
     @else
@@ -29,7 +29,7 @@
                        class="rounded border border-slate-300 px-3 py-2">
                 @error('password') <span class="text-sm text-red-600">{{ $message }}</span> @enderror
             </label>
-            <button type="submit" class="rounded bg-slate-900 px-4 py-2 font-medium text-white">{{ __('portal.auth.submit') }}</button>
+            <button type="submit" class="gp-button btn">{{ __('portal.auth.submit') }}</button>
         </form>
         @if ($oidcLabel !== null)
             <div class="mt-4 border-t border-slate-200 pt-4">
