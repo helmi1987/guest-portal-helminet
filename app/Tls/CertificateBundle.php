@@ -45,10 +45,10 @@ final class CertificateBundle
         $ordered = [$certs[0][$leaf], ...array_values(array_diff_key($certs[0], [$leaf => true]))];
 
         $info = CertificateInfo::fromPem($ordered[0]);
-        if ($info->validTo <= time()) {
+        if ($info->validTo <= now()->getTimestamp()) {
             throw new CertificateException('certificate expired on '.date('Y-m-d', $info->validTo));
         }
-        if ($info->validFrom > time() + 300) {
+        if ($info->validFrom > now()->getTimestamp() + 300) {
             throw new CertificateException('certificate not valid before '.date('Y-m-d H:i', $info->validFrom));
         }
 

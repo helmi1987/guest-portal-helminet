@@ -73,7 +73,7 @@ final class CertificateInfo
 
     public function expired(): bool
     {
-        return $this->validTo <= time();
+        return $this->validTo <= now()->getTimestamp();
     }
 
     private function subjectCn(): string

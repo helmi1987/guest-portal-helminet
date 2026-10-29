@@ -82,7 +82,8 @@ class CertificatePullTest extends TestCase
         CertificateSources::put('router', 'url', 'https://pem.example.com/router.pem', null, null, 'bearer-secret-1');
         [$cert] = $this->makeCert('*.guest.example.com');
         [, $otherKey] = $this->makeCert('other');
-        [$expired, $expiredKey] = $this->makeCert('old.example.com', -1);
+        [$expired, $expiredKey] = $this->makeCert('old.example.com', 1);
+        $this->travel(2)->days(); // negative validity days are rejected by newer OpenSSL bindings
         Http::fake(['pem.example.com/*' => Http::sequence()
             ->push($otherKey.$cert)
             ->push($expiredKey.$expired)
