@@ -1,4 +1,4 @@
-<div class="mx-auto mt-16 max-w-sm rounded-lg bg-white p-6 shadow">
+<div class="mx-auto mt-16 max-w-sm rounded-lg bg-(--gp-surface) p-6 shadow-(--gp-card-shadow)">
     <h1 class="mb-4 text-xl font-semibold">{{ __('portal.auth.title') }}</h1>
     @if (session('oidc_error'))
         <p class="mb-4 rounded bg-red-100 px-3 py-2 text-sm text-red-800">{{ session('oidc_error') }}</p>

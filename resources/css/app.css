@@ -9,29 +9,91 @@
 }
 
 /*
-| Branding variables (stable API, docs/branding.md). Defaults reproduce the built-in look; the theme
-| stylesheet (/branding/theme/...) loaded after this file overrides them.
+| Branding variables (stable API, docs/branding.md). Two fixed colour schemes (no prefers-color-scheme):
+| light = the original look, dark = the default. The scheme class sits on <html> (and <body>), so a
+| `:root { ... }` rule in the theme stylesheet (/branding/theme/..., loaded after this file, unlayered)
+| still overrides the scheme defaults. [data-gp-scheme] scopes a scheme inside a page (settings preview).
 */
 @layer base {
-    :root {
+    :root, [data-gp-scheme='light'] {
         --gp-accent: var(--color-slate-900);
         --gp-accent-contrast: #fff;
         --gp-bg: var(--color-slate-100);
         --gp-text: var(--color-slate-900);
         --gp-surface: #fff;
+        --gp-border: var(--color-slate-300);
+        --gp-divider: rgb(0 0 0 / 0.1);
+        --gp-input-bg: #fff;
+        --gp-input-text: var(--color-slate-900);
+        --gp-header-bg: var(--gp-accent);
+        --gp-header-text: var(--gp-accent-contrast);
+        --gp-danger: var(--color-red-700);
+        --gp-card-shadow: 0 1px 3px 0 rgb(0 0 0 / 0.1), 0 1px 2px -1px rgb(0 0 0 / 0.1);
+    }
+    [data-gp-scheme='light'] { color-scheme: light; }
+
+    html.gp-theme-dark, [data-gp-scheme='dark'] {
+        color-scheme: dark;
+        --gp-accent: #e2e8f0;
+        --gp-accent-contrast: #000;
+        --gp-bg: #0f172a;
+        --gp-text: #e2e8f0;
+        --gp-surface: #1e293b;
+        --gp-border: #475569;
+        --gp-divider: rgb(255 255 255 / 0.12);
+        --gp-input-bg: #0f172a;
+        --gp-input-text: #f1f5f9;
+        --gp-header-bg: var(--gp-surface);
+        --gp-header-text: var(--gp-text);
+        --gp-danger: #b91c1c;
+        --gp-card-shadow: 0 0 0 1px rgb(255 255 255 / 0.08), 0 1px 3px 0 rgb(0 0 0 / 0.4);
+    }
+
+    /*
+    | Dark scheme: remaps the Tailwind palette colours the views use for secondary text, borders and
+    | status boxes (light tints become translucent tints, dark text becomes light text; WCAG AA on
+    | --gp-surface and --gp-bg). slate-900/slate-100 stay (dark code blocks).
+    */
+    html.gp-theme-dark {
+        --color-slate-200: #334155;
+        --color-slate-300: #475569;
+        --color-slate-500: #94a3b8;
+        --color-slate-600: #cbd5e1;
+        --color-red-50: rgb(239 68 68 / 0.12);
+        --color-red-100: rgb(239 68 68 / 0.18);
+        --color-red-200: rgb(239 68 68 / 0.4);
+        --color-red-600: #f87171;
+        --color-red-700: #fca5a5;
+        --color-red-800: #fecaca;
+        --color-green-50: rgb(34 197 94 / 0.12);
+        --color-green-100: rgb(34 197 94 / 0.18);
+        --color-green-200: rgb(34 197 94 / 0.4);
+        --color-green-700: #86efac;
+        --color-green-800: #bbf7d0;
+        --color-emerald-700: #6ee7b7;
+        --color-amber-50: rgb(245 158 11 / 0.12);
+        --color-amber-100: rgb(245 158 11 / 0.18);
+        --color-amber-300: rgb(245 158 11 / 0.45);
+        --color-amber-400: rgb(245 158 11 / 0.6);
+        --color-amber-700: #fcd34d;
+        --color-amber-800: #fde68a;
+        --color-amber-900: #fef3c7;
+        --color-sky-100: rgb(14 165 233 / 0.18);
+        --color-sky-800: #bae6fd;
     }
 }
 
 @layer components {
-    .field { @apply rounded border border-slate-300 bg-white px-3 py-2 text-slate-900; }
+    .field { @apply rounded border border-(--gp-border) bg-(--gp-input-bg) px-3 py-2 text-(--gp-input-text); }
     .label { @apply flex flex-col gap-1 text-sm; }
     .btn { @apply inline-block rounded bg-(--gp-accent) px-4 py-2 font-medium text-(--gp-accent-contrast); }
-    .btn-light { @apply inline-block rounded border border-slate-300 bg-white px-3 py-1.5 text-sm text-slate-900; }
-    .btn-danger { @apply inline-block rounded bg-red-700 px-3 py-1.5 text-sm font-medium text-white; }
-    .card { @apply rounded-lg bg-(--gp-surface) p-6 shadow; }
+    .btn-light { @apply inline-block rounded border border-(--gp-border) bg-(--gp-surface) px-3 py-1.5 text-sm text-(--gp-input-text); }
+    .btn-danger { @apply inline-block rounded bg-(--gp-danger) px-3 py-1.5 text-sm font-medium text-white; }
+    .card { @apply rounded-lg bg-(--gp-surface) p-6 shadow-(--gp-card-shadow); }
     .gp-link { @apply text-(--gp-accent); }
     .gp-logo { @apply text-(--gp-accent); }
     .data-table { @apply w-full text-left text-sm; }
     .data-table th { @apply border-b border-slate-200 px-2 py-2 font-semibold; }
     .data-table td { @apply border-b border-slate-100 px-2 py-2 align-top; }
+    .gp-theme-dark .data-table td { border-color: rgb(255 255 255 / 0.07); }
 }

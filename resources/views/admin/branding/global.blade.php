@@ -1,4 +1,4 @@
-{{-- Settings → Appearance: global logo, favicon, colours and custom CSS (docs/branding.md). --}}
+{{-- Settings → Appearance: global logo, favicon, colour scheme, colours and custom CSS (docs/branding.md). --}}
 @php($assets = app(\App\Branding\BrandingAssets::class))
 <form method="POST" action="{{ route('admin.settings.branding') }}" enctype="multipart/form-data" id="branding"
       class="card mb-6 grid gap-4 md:grid-cols-2">
@@ -36,14 +36,23 @@
         </div>
     @endforeach
 
+    <label class="label md:col-span-2">{{ __('portal.branding.scheme') }}
+        <select name="scheme" class="field md:max-w-xs" data-gp-scheme-input>
+            @foreach (\App\Branding\BrandingSettings::SCHEMES as $scheme)
+                <option value="{{ $scheme }}" @selected(old('scheme', $values['scheme']) === $scheme)>{{ __('portal.branding.schemes.'.$scheme) }}</option>
+            @endforeach
+        </select>
+        <span class="text-xs text-slate-500">{{ __('portal.branding.scheme_help') }}</span>
+    </label>
+
     <div class="grid gap-4 md:col-span-2 md:grid-cols-3">
         @foreach (\App\Branding\BrandingSettings::COLORS as $key)
+            @php($default = \App\Branding\Branding::DEFAULTS[$values['scheme']][$key])
             <label class="label">{{ __('portal.branding.'.$key) }}
                 <input name="{{ $key }}" value="{{ old($key, $values[$key]) }}" maxlength="7" pattern="#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})"
-                       placeholder="{{ \App\Branding\Branding::DEFAULTS[$key] }}" class="field font-mono"
-                       data-gp-var="{{ ['accent' => '--gp-accent', 'background' => '--gp-bg', 'text' => '--gp-text'][$key] }}"
-                       data-gp-fallback="{{ \App\Branding\Branding::DEFAULTS[$key] }}">
-                <span class="text-xs text-slate-500">{{ __('portal.branding.color_help', ['default' => \App\Branding\Branding::DEFAULTS[$key]]) }}</span>
+                       placeholder="{{ $default }}" class="field font-mono"
+                       data-gp-var="{{ ['accent' => '--gp-accent', 'background' => '--gp-bg', 'text' => '--gp-text'][$key] }}" data-gp-key="{{ $key }}">
+                <span class="text-xs text-slate-500">{{ __('portal.branding.color_help', ['default' => $default]) }}</span>
             </label>
         @endforeach
     </div>

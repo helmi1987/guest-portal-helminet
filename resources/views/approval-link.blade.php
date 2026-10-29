@@ -1,7 +1,7 @@
 {{-- Signed approval link page (admin port, no login, no session): GET shows, POST decides. --}}
 @php($branding = \App\Branding\BrandingSettings::forAdmin())
 <!DOCTYPE html>
-<html lang="{{ app()->getLocale() }}">
+<html lang="{{ app()->getLocale() }}" class="{{ $branding->themeClass() }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

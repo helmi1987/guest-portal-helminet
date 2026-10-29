@@ -12,10 +12,11 @@ use App\Support\Audit;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Appearance (admin only, docs/branding.md): global logo, favicon, colours and custom CSS in the
+ * Appearance (admin only, docs/branding.md): global logo, favicon, colours, colour scheme and custom CSS in the
  * settings, per-site overrides on the site page. Audited without file contents or CSS text.
  */
 class BrandingController extends Controller
@@ -39,6 +40,7 @@ class BrandingController extends Controller
             $new[$key] = BrandingSettings::color($request->input($key));
         }
         $new['css'] = $this->css($request);
+        $new['scheme'] = BrandingSettings::scheme($request->input('scheme')) ?? BrandingSettings::SCHEMES[0];
 
         BrandingSettings::saveGlobal($new);
         $this->prune();
@@ -75,6 +77,10 @@ class BrandingController extends Controller
         if ($override('css')) {
             $new['css'] = $this->css($request);
         }
+        if ($override('scheme')) {
+            $new['scheme'] = BrandingSettings::scheme($request->input('scheme'))
+                ?? throw ValidationException::withMessages(['scheme' => __('portal.branding.errors.scheme_required')]);
+        }
 
         BrandingSettings::saveSite($site, $new);
         $this->prune();
@@ -93,6 +99,7 @@ class BrandingController extends Controller
             'favicon_remove' => ['boolean'],
             'override' => ['array'],
             'override.*' => ['boolean'],
+            'scheme' => ['nullable', Rule::in(BrandingSettings::SCHEMES)],
             ...collect(BrandingSettings::COLORS)->mapWithKeys(fn ($key) => [$key => ['nullable', 'string',
                 'regex:/^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/']])->all(),
             'css' => ['nullable', 'string', function (string $attribute, mixed $value, \Closure $fail) {

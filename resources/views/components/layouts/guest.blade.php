@@ -1,9 +1,9 @@
-{{-- Guest pages: light, mobile-first, no Livewire; must work in captive-portal mini browsers without JS.
+{{-- Guest pages: mobile-first, no Livewire; must work in captive-portal mini browsers without JS.
      gp-* classes are the stable styling hooks for custom CSS (docs/branding.md). --}}
 @props(['step' => null, 'variant' => null, 'title' => null])
 @php($branding = \App\Branding\BrandingSettings::forGuest(request()))
 <!DOCTYPE html>
-<html lang="{{ app()->getLocale() }}">
+<html lang="{{ app()->getLocale() }}" class="{{ $branding->themeClass() }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">

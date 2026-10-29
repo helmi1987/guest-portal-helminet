@@ -2,7 +2,7 @@
      repair broken custom CSS. gp-* classes are stable styling hooks (docs/branding.md). --}}
 @php($branding = \App\Branding\BrandingSettings::forAdmin())
 <!DOCTYPE html>
-<html lang="{{ app()->getLocale() }}">
+<html lang="{{ app()->getLocale() }}" class="{{ $branding->themeClass() }}">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -14,10 +14,10 @@
 </head>
 <body class="{{ $branding->bodyClasses('admin') }} min-h-screen bg-(--gp-bg) text-(--gp-text) antialiased">
     @auth
-        <header class="gp-header bg-(--gp-accent) text-(--gp-accent-contrast)">
+        <header class="gp-header bg-(--gp-header-bg) text-(--gp-header-text)">
             <div class="mx-auto flex max-w-5xl items-center justify-between gap-4 p-4">
                 <nav class="gp-nav flex flex-wrap items-center gap-4">
-                    <a href="{{ route('admin.dashboard') }}" class="gp-title flex items-center gap-2 font-semibold"><x-branding.logo :branding="$branding" size="h-6" class="text-(--gp-accent-contrast)" />{{ __('portal.admin.title') }}</a>
+                    <a href="{{ route('admin.dashboard') }}" class="gp-title flex items-center gap-2 font-semibold"><x-branding.logo :branding="$branding" size="h-6" class="text-(--gp-header-text)" />{{ __('portal.admin.title') }}</a>
                     <a href="{{ route('admin.grants.index') }}">{{ __('portal.grants.title') }}</a>
                     <a href="{{ route('admin.approvals.index') }}">{{ __('portal.approvals.title') }}</a>
                     <a href="{{ route('admin.guests.index') }}">{{ __('portal.guests.title') }}</a>

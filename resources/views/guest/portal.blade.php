@@ -31,12 +31,12 @@
             </label>
 
             @if ($terms)
-                <details class="gp-terms rounded border border-black/10 bg-black/[.02] text-sm">
+                <details class="gp-terms rounded border border-(--gp-divider) bg-black/[.02] text-sm">
                     <summary class="cursor-pointer px-3 py-2 font-medium">
                         {{ __('portal.guest.terms_show') }}
                         <span class="opacity-70">({{ __('portal.guest.terms_version', ['version' => $terms->number]) }})</span>
                     </summary>
-                    <div class="gp-terms-text max-h-64 space-y-2 overflow-y-auto border-t border-black/10 px-3 py-2" lang="{{ $terms->locale }}">
+                    <div class="gp-terms-text max-h-64 space-y-2 overflow-y-auto border-t border-(--gp-divider) px-3 py-2" lang="{{ $terms->locale }}">
                         @foreach ($terms->paragraphs() as $paragraph)
                             <p>{!! nl2br(e($paragraph)) !!}</p>
                         @endforeach
@@ -55,7 +55,7 @@
             <button type="submit" class="gp-button btn py-3 text-base">{{ __('portal.guest.connect') }}</button>
             @if ($smsEnabled)
                 {{-- No access code: get one by SMS (name and terms are checked by the server). --}}
-                <div class="gp-alt-login gp-alt-sms flex flex-col gap-2 border-t border-black/10 pt-4 text-sm">
+                <div class="gp-alt-login gp-alt-sms flex flex-col gap-2 border-t border-(--gp-divider) pt-4 text-sm">
                     <p class="gp-hint opacity-80">{{ __('portal.guest.sms_intro') }}</p>
                     <label class="gp-label label">
                         <span>{{ __('portal.guest.phone') }}</span>
@@ -68,7 +68,7 @@
             @endif
             @if ($approvalEnabled)
                 {{-- No access code: ask an approver instead (name and terms are checked by the server). --}}
-                <div class="gp-alt-login gp-alt-approval border-t border-black/10 pt-4 text-sm">
+                <div class="gp-alt-login gp-alt-approval border-t border-(--gp-divider) pt-4 text-sm">
                     <p class="gp-hint mb-2 opacity-80">{{ __('portal.guest.approval_intro') }}</p>
                     <button type="submit" formaction="{{ route('guest.approval.request') }}" formnovalidate
                             class="gp-button gp-button-secondary btn-light w-full py-3 text-base">{{ __('portal.guest.approval_request') }}</button>

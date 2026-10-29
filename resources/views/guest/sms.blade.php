@@ -22,7 +22,7 @@
             <button type="submit" class="gp-button btn py-3 text-base">{{ __('portal.guest.connect') }}</button>
         </form>
 
-        <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-black/10 pt-4 text-sm">
+        <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-(--gp-divider) pt-4 text-sm">
             @if ($canResend)
                 <form method="POST" action="{{ route('guest.sms.resend') }}">
                     @csrf <button type="submit" class="gp-button gp-button-secondary btn-light">{{ __('portal.guest.sms_resend') }}</button></form>

@@ -10,7 +10,8 @@ use Illuminate\Http\Request;
  * Branding settings (CONCEPT.md §9, docs/branding.md): global defaults in the replicated setting
  * "branding", optional per-site overrides in the replicated site setting "branding". A key present
  * in the site overrides means "override", a missing key means "inherit". Values:
- * logo/favicon {hash, ext} | null, accent/background/text "#rrggbb" | null, css string.
+ * logo/favicon {hash, ext} | null, accent/background/text "#rrggbb" | null, css string,
+ * scheme "dark" | "light" (fixed colour scheme, not prefers-color-scheme; unset = dark).
  */
 final class BrandingSettings
 {
@@ -18,12 +19,15 @@ final class BrandingSettings
 
     public const COLORS = ['accent', 'background', 'text'];
 
-    public const FIELDS = ['logo', 'favicon', 'accent', 'background', 'text', 'css'];
+    public const FIELDS = ['logo', 'favicon', 'accent', 'background', 'text', 'css', 'scheme'];
+
+    /** Colour schemes; the first one is the default. */
+    public const SCHEMES = ['dark', 'light'];
 
     /** Request attribute a controller sets when the guest page's site is not in the session. */
     public const SITE_ATTRIBUTE = 'branding_site';
 
-    /** @return array{logo: ?array, favicon: ?array, accent: ?string, background: ?string, text: ?string, css: string} */
+    /** @return array{logo: ?array, favicon: ?array, accent: ?string, background: ?string, text: ?string, css: string, scheme: string} */
     public static function global(): array
     {
         return self::normalize((array) Setting::get(self::SETTING, []), true);
@@ -118,6 +122,12 @@ final class BrandingSettings
         return '#'.$hex;
     }
 
+    /** "dark" / "light"; null for anything else. */
+    public static function scheme(mixed $value): ?string
+    {
+        return is_string($value) && in_array($value, self::SCHEMES, true) ? $value : null;
+    }
+
     /**
      * Drops unknown keys and malformed values. $complete: all fields (global), otherwise only the
      * keys present (site overrides).
@@ -133,6 +143,7 @@ final class BrandingSettings
             $out[$key] = match ($key) {
                 'logo', 'favicon' => BrandingAssets::valid($value) ? ['hash' => $value['hash'], 'ext' => $value['ext']] : null,
                 'css' => is_string($value) ? $value : '',
+                'scheme' => self::scheme($value) ?? ($complete ? self::SCHEMES[0] : null),
                 default => self::color($value),
             };
             // A site override without a value (no file, invalid colour) means inherit.

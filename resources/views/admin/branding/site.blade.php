@@ -34,9 +34,24 @@
         </div>
     @endforeach
 
+    <div class="flex flex-col gap-1 text-sm md:col-span-2">
+        <label class="flex items-center gap-2 font-medium">
+            <input type="hidden" name="override[scheme]" value="0">
+            <input type="checkbox" name="override[scheme]" value="1" id="branding-override-scheme"
+                   @checked(old('override.scheme', isset($overrides['scheme'])))>
+            {{ __('portal.branding.override', ['item' => __('portal.branding.scheme')]) }}</label>
+        <select name="scheme" aria-label="{{ __('portal.branding.scheme') }}" class="field md:max-w-xs"
+                data-gp-scheme-input data-gp-fallback="{{ $global['scheme'] }}" data-gp-toggle="#branding-override-scheme">
+            @foreach (\App\Branding\BrandingSettings::SCHEMES as $scheme)
+                <option value="{{ $scheme }}" @selected(old('scheme', $overrides['scheme'] ?? $global['scheme']) === $scheme)>{{ __('portal.branding.schemes.'.$scheme) }}</option>
+            @endforeach
+        </select>
+        <span class="text-xs text-slate-500">{{ __('portal.branding.inherit_value', ['value' => __('portal.branding.schemes.'.$global['scheme'])]) }}</span>
+    </div>
+
     <div class="grid gap-4 md:col-span-2 md:grid-cols-3">
         @foreach (\App\Branding\BrandingSettings::COLORS as $key)
-            @php($fallback = $global[$key] ?? \App\Branding\Branding::DEFAULTS[$key])
+            @php($fallback = $global[$key] ?? \App\Branding\Branding::DEFAULTS[$effective['scheme']][$key])
             <div class="flex flex-col gap-1 text-sm">
                 <label class="flex items-center gap-2 font-medium">
                     <input type="hidden" name="override[{{ $key }}]" value="0">
@@ -45,7 +60,7 @@
                     {{ __('portal.branding.override', ['item' => __('portal.branding.'.$key)]) }}</label>
                 <input name="{{ $key }}" value="{{ old($key, $overrides[$key] ?? '') }}" maxlength="7" pattern="#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})"
                        placeholder="{{ $fallback }}" aria-label="{{ __('portal.branding.'.$key) }}" class="field font-mono"
-                       data-gp-var="{{ $vars[$key] }}" data-gp-fallback="{{ $fallback }}" data-gp-toggle="#branding-override-{{ $key }}">
+                       data-gp-var="{{ $vars[$key] }}" data-gp-key="{{ $key }}" data-gp-fallback="{{ $global[$key] }}" data-gp-toggle="#branding-override-{{ $key }}">
                 <span class="text-xs text-slate-500">{{ __('portal.branding.inherit_value', ['value' => $fallback]) }}</span>
             </div>
         @endforeach

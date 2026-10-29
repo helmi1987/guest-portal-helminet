@@ -11,11 +11,14 @@ use Illuminate\Support\Str;
  */
 final class Branding
 {
-    /** Built-in defaults of the CSS variables (resources/css/app.css), used for the preview. */
-    public const DEFAULTS = ['accent' => '#0f172a', 'background' => '#f1f5f9', 'text' => '#0f172a'];
+    /** Built-in defaults of the colour variables per scheme (resources/css/app.css), shown as placeholders. */
+    public const DEFAULTS = [
+        'dark' => ['accent' => '#e2e8f0', 'background' => '#0f172a', 'text' => '#e2e8f0'],
+        'light' => ['accent' => '#0f172a', 'background' => '#f1f5f9', 'text' => '#0f172a'],
+    ];
 
     /**
-     * @param  array{logo: ?array, favicon: ?array, accent: ?string, background: ?string, text: ?string, css: string}  $values
+     * @param  array{logo: ?array, favicon: ?array, accent: ?string, background: ?string, text: ?string, css: string, scheme?: string}  $values
      * @param  bool  $siteTheme  the site overrides colours or CSS (own stylesheet), else the global one is used
      */
     public function __construct(public readonly array $values, public readonly ?Site $site = null, private readonly bool $siteTheme = false) {}
@@ -36,6 +39,18 @@ final class Branding
         return $this->faviconUrl() ? BrandingAssets::mime($this->values['favicon']['ext']) : null;
     }
 
+    /** Fixed colour scheme: "dark" (default) or "light". */
+    public function scheme(): string
+    {
+        return BrandingSettings::scheme($this->values['scheme'] ?? null) ?? BrandingSettings::SCHEMES[0];
+    }
+
+    /** Theme class on <html> and <body>; the scheme defaults of the --gp-* variables hang on the <html> one. */
+    public function themeClass(): string
+    {
+        return 'gp-theme-'.$this->scheme();
+    }
+
     /** Stylesheet with the colour variables and the custom CSS; empty when nothing is configured. */
     public function css(): string
     {
@@ -43,6 +58,9 @@ final class Branding
         if ($accent = $this->values['accent']) {
             $vars[] = "--gp-accent: $accent;";
             $vars[] = '--gp-accent-contrast: '.self::contrast($accent).';';
+            // A custom accent also colours the admin top bar in the dark scheme (as in the light one).
+            $vars[] = '--gp-header-bg: var(--gp-accent);';
+            $vars[] = '--gp-header-text: var(--gp-accent-contrast);';
         }
         if ($background = $this->values['background']) {
             $vars[] = "--gp-bg: $background;";
@@ -73,7 +91,7 @@ final class Branding
         return $this->siteTheme && $this->site ? (string) $this->site->getKey() : 'global';
     }
 
-    /** Stable body classes: gp-page gp-guest|gp-admin [gp-site-<slug>] [gp-step-<step> [gp-step-<step>-<variant>]]. */
+    /** Stable body classes: gp-page gp-guest|gp-admin [gp-site-<slug>] [gp-step-<step> [gp-step-<step>-<variant>]] gp-theme-dark|light. */
     public function bodyClasses(string $area, ?string $step = null, ?string $variant = null): string
     {
         $classes = ['gp-page', 'gp-'.$area];
@@ -86,6 +104,7 @@ final class Branding
                 $classes[] = 'gp-step-'.self::classToken($step).'-'.self::classToken($variant);
             }
         }
+        $classes[] = $this->themeClass();
 
         return implode(' ', $classes);
     }

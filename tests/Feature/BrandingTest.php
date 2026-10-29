@@ -265,6 +265,70 @@ class BrandingTest extends TestCase
             ->assertSee('gp-logo-default', false);
     }
 
+    public function test_colour_scheme_defaults_to_dark_and_global_switch_to_light(): void
+    {
+        // Unset value (existing installs) = dark, on guest and admin pages (<html> and <body>).
+        $this->assertSame('dark', BrandingSettings::global()['scheme']);
+        $html = $this->enterPortal()->getContent();
+        $this->assertStringContainsString('<html lang="en" class="gp-theme-dark">', $html);
+        $this->assertMatchesRegularExpression('/<body class="[^"]*\bgp-theme-dark\b/', $html);
+        $this->onZone('admin')->actingAs($this->admin)->get('/admin')->assertSee('gp-theme-dark', false)
+            ->assertDontSee('gp-theme-light', false);
+
+        $this->save('/admin/settings/branding', ['scheme' => 'light'])->assertSessionHasNoErrors();
+        $this->assertSame('light', BrandingSettings::global()['scheme']);
+        $this->assertSame(['changed' => ['scheme']], AuditLog::where('action', 'settings.branding')->sole()->data);
+        $html = $this->enterPortal()->getContent();
+        $this->assertMatchesRegularExpression('/<body class="[^"]*\bgp-theme-light\b/', $html);
+        $this->assertStringNotContainsString('gp-theme-dark', $html);
+        $this->onZone('admin')->actingAs($this->admin)->get('/admin')->assertSee('gp-theme-light', false);
+        // The scheme is a class only; it does not create a theme stylesheet.
+        $this->assertStringNotContainsString('/branding/theme/', $html);
+
+        $this->save('/admin/settings/branding', ['scheme' => 'blue'])->assertSessionHasErrors('scheme');
+        $this->assertSame('light', BrandingSettings::global()['scheme']);
+    }
+
+    public function test_site_scheme_override_inherit_and_admin_uses_global(): void
+    {
+        $this->save('/admin/sites/'.$this->site->id.'/branding', ['override' => ['scheme' => '1'], 'scheme' => 'light'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(['scheme' => 'light'], BrandingSettings::siteOverrides($this->site->fresh()));
+        $this->assertSame(['slug' => 'Site-A', 'overrides' => ['scheme'], 'changed' => ['scheme']],
+            AuditLog::where('action', 'site.branding')->sole()->data);
+        $this->assertMatchesRegularExpression('/<body class="[^"]*\bgp-theme-light\b/', $this->enterPortal()->getContent());
+        // Admin UI (even the edit page of that site) and pages without a site keep the global scheme.
+        $this->onZone('admin')->actingAs($this->admin)->get('/admin/sites/'.$this->site->id.'/edit')->assertOk()
+            ->assertSee('class="gp-theme-dark"', false)->assertDontSee('gp-theme-light"', false);
+        $this->flushSession();
+        $this->assertStringContainsString('gp-theme-dark', $this->onZone('guest')->get('/')->getContent());
+
+        // Global light, site overrides dark.
+        $this->save('/admin/settings/branding', ['scheme' => 'light'])->assertSessionHasNoErrors();
+        $this->save('/admin/sites/'.$this->site->id.'/branding', ['override' => ['scheme' => '1'], 'scheme' => 'dark'])
+            ->assertSessionHasNoErrors();
+        $this->assertMatchesRegularExpression('/<body class="[^"]*\bgp-theme-dark\b/', $this->enterPortal()->getContent());
+        $this->onZone('admin')->actingAs($this->admin)->get('/admin')->assertSee('class="gp-theme-light"', false);
+
+        // Inherit again: the key is removed and the global scheme applies.
+        $this->save('/admin/sites/'.$this->site->id.'/branding', ['override' => ['scheme' => '0'], 'scheme' => 'dark'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame([], BrandingSettings::siteOverrides($this->site->fresh()));
+        $this->assertMatchesRegularExpression('/<body class="[^"]*\bgp-theme-light\b/', $this->enterPortal()->getContent());
+        $this->save('/admin/sites/'.$this->site->id.'/branding', ['override' => ['scheme' => '1']])->assertSessionHasErrors('scheme');
+    }
+
+    public function test_manager_cannot_change_scheme(): void
+    {
+        $manager = User::factory()->create();
+        $this->onZone('admin')->actingAs($manager)->post('/admin/settings/branding', ['scheme' => 'light'])->assertForbidden();
+        $this->onZone('admin')->actingAs($manager)->post('/admin/sites/'.$this->site->id.'/branding',
+            ['override' => ['scheme' => '1'], 'scheme' => 'light'])->assertForbidden();
+        $this->assertSame('dark', BrandingSettings::global()['scheme']);
+        $this->assertSame([], BrandingSettings::siteOverrides($this->site->fresh()));
+        $this->assertSame(0, AuditLog::whereIn('action', ['settings.branding', 'site.branding'])->count());
+    }
+
     private function save(string $uri, array $data = [])
     {
         return $this->onZone('admin')->actingAs($this->admin)->from('/admin/settings')->post($uri, $data);

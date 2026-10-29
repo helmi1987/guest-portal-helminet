@@ -1,6 +1,6 @@
 # Branding
 
-Logo, favicon, colours and custom CSS of the guest pages and the admin UI. Admin role only; every
+Logo, favicon, colour scheme, colours and custom CSS of the guest pages and the admin UI. Admin role only; every
 change is written to the audit log (`settings.branding`, `site.branding`; changed keys only, no file
 contents or CSS text). Decisions: CONCEPT.md §9 ("Branding"), §10.3, §12.
 
@@ -11,7 +11,7 @@ contents or CSS text). Decisions: CONCEPT.md §9 ("Branding"), §10.3, §12.
 | Global defaults | Admin UI → Settings → Appearance | Guest pages of all sites, admin UI, signed approval pages |
 | Site overrides | Admin UI → Sites → site → "Appearance of this site" | Guest pages of that site only |
 
-Resolution order for each item (logo, favicon, accent, background, text colour, custom CSS):
+Resolution order for each item (logo, favicon, colour scheme, accent, background, text colour, custom CSS):
 **site override → global setting → built-in default.** Each item of a site is either inherited
 (checkbox off) or overridden (checkbox on). A site's custom CSS **replaces** the global custom CSS
 (copy the global CSS into the site field to extend it).
@@ -58,15 +58,28 @@ stable look. Uploaded files are served with
 
 ## 3. Colours
 
-Hex values (`#1d4ed8` or `#14f`); empty = default. The settings page has a live preview card.
+Colour scheme (v0.11.0): **Dark** (default; also when not set) or **Light** (the look before v0.11.0).
+A fixed choice for all visitors, it does not follow the device setting (`prefers-color-scheme`). It
+sets the defaults of the variables below; custom colours override them in both schemes. The admin UI
+always uses the global scheme. The printable voucher sheet stays light.
 
-| Setting | Variable | Default | Used for |
+Hex values (`#1d4ed8` or `#14f`); empty = default of the scheme. The settings page has a live preview card.
+
+| Setting | Variable | Default light / dark | Used for |
 |---|---|---|---|
-| Accent colour | `--gp-accent` | `#0f172a` (slate-900) | Primary buttons, active language, links (`.gp-link`), default logo, admin top bar |
-| (computed) | `--gp-accent-contrast` | `#fff` | Text on accent backgrounds: black or white, whichever has the higher contrast to the accent |
-| Background colour | `--gp-bg` | `#f1f5f9` (slate-100) | Page background |
-| Text colour | `--gp-text` | `#0f172a` (slate-900) | Page text |
-| (CSS only) | `--gp-surface` | `#fff` | Card background (`.gp-card`); set it in custom CSS for dark themes |
+| Accent colour | `--gp-accent` | `#0f172a` / `#e2e8f0` | Primary buttons, active language, links (`.gp-link`), default logo, admin top bar (light; dark: only a custom accent) |
+| (computed) | `--gp-accent-contrast` | `#fff` / `#000` | Text on accent backgrounds: black or white, whichever has the higher contrast to the accent |
+| Background colour | `--gp-bg` | `#f1f5f9` / `#0f172a` | Page background |
+| Text colour | `--gp-text` | `#0f172a` / `#e2e8f0` | Page text |
+| (CSS only) | `--gp-surface` | `#fff` / `#1e293b` | Card background (`.gp-card`), secondary buttons |
+| (CSS only) | `--gp-border` | `#cbd5e1` / `#475569` | Border of inputs and secondary buttons |
+| (CSS only) | `--gp-divider` | `rgb(0 0 0 / .1)` / `rgb(255 255 255 / .12)` | Separator lines in guest cards |
+| (CSS only) | `--gp-input-bg` | `#fff` / `#0f172a` | Input background |
+| (CSS only) | `--gp-input-text` | `#0f172a` / `#f1f5f9` | Input and secondary button text |
+| (CSS only) | `--gp-header-bg` | `var(--gp-accent)` / `var(--gp-surface)` | Admin top bar (a custom accent sets it to the accent in both schemes) |
+| (CSS only) | `--gp-header-text` | `var(--gp-accent-contrast)` / `var(--gp-text)` | Admin top bar text |
+| (CSS only) | `--gp-danger` | red-700 / `#b91c1c` | Delete buttons |
+| (CSS only) | `--gp-card-shadow` | shadow / thin outline | Card shadow |
 
 The colour variables are written to the theme stylesheet only when set; otherwise the defaults of the
 built-in stylesheet apply, so the look without branding is unchanged.
@@ -106,6 +119,7 @@ and the HTML structure around them are **not** stable; do not target them.
 | Class | Marks |
 |---|---|
 | `gp-page` | Every page with branding |
+| `gp-theme-dark` / `gp-theme-light` | Colour scheme of the page (also on `<html>`, where the scheme defaults of the `--gp-*` variables are set, so `:root { ... }` in custom CSS overrides them) |
 | `gp-guest` / `gp-admin` | Guest port pages / admin UI (incl. login and signed approval link page) |
 | `gp-site-<slug>` | Guest page of a site (slug lower-case, other characters replaced by `-`), e.g. `gp-site-site-a` |
 | `gp-step-<step>` | Guest step: `landing`, `portal` (login form), `sms` (SMS code entry), `approval` (waiting for approval), `handoff` (login to the router), `waiting` (router confirmation), `status` (online), `error`; admin: `approval-link` |
@@ -131,7 +145,7 @@ and the HTML structure around them are **not** stable; do not target them.
 
 | Class | Marks |
 |---|---|
-| `gp-card` | Content card (white box) |
+| `gp-card` | Content card (`--gp-surface` box) |
 | `gp-card-title` | Card heading (`h1`) |
 | `gp-intro` | Introductory text below the heading |
 | `gp-hint` | Secondary/help text |
@@ -157,7 +171,7 @@ The admin content pages (tables, forms) have no hooks beyond the layout; style t
 
 ## 6. Examples
 
-Dark theme (set background `#0b1120` and text `#e2e8f0` in the colour fields, then):
+Darker variant of the dark scheme (set background `#0b1120` and text `#e2e8f0` in the colour fields, then):
 
 ```css
 :root { --gp-surface: #111827; }
