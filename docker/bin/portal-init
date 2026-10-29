@@ -48,6 +48,12 @@ sed -e "s/__GUEST_PORT__/${GUEST_PORT:-443}/g" \
     -e "s/__INTERNAL_PORT__/${INTERNAL_PORT:-8080}/g" \
     -e "s/__FEDERATION_PORT__/${FEDERATION_PORT:-9443}/g" \
     /etc/nginx/portal.conf.template > "$RUN_DIR/nginx-portal.conf"
+# Without a federation certificate (generation failed) the federation listener is left out, so nginx
+# still serves the guest and admin ports.
+if [ ! -s "$RUN_DIR/federation.crt" ] || [ ! -s "$RUN_DIR/federation.key" ]; then
+    log "WARNING: no federation certificate, federation listener disabled"
+    sed -i '/# __FEDERATION_BEGIN__/,/# __FEDERATION_END__/d' "$RUN_DIR/nginx-portal.conf"
+fi
 # Some runtimes (e.g. containers without IPv6) cannot bind [::].
 [ -f /proc/net/if_inet6 ] || sed -i '/listen \[::\]/d' "$RUN_DIR/nginx-portal.conf"
 

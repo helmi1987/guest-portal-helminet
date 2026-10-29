@@ -115,10 +115,12 @@ class RadiusController extends Controller
         if ($roaming !== null) {
             Log::info('RADIUS roaming device accepted', ['grant' => $roaming->id, 'nas' => $nas->nas_ip, 'mac' => $mac]);
 
-            return response()->json(array_merge([
-                'reply:Session-Timeout' => max(1, $roaming->remainingSeconds()),
-                'reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval'),
-            ], $nas->site->driver()->replyAttributes($roaming)));
+            $reply = ['reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval')];
+            if (($remaining = $roaming->remainingSeconds()) !== null) {
+                $reply['reply:Session-Timeout'] = max(1, $remaining);
+            }
+
+            return response()->json(array_merge($reply, $nas->site->driver()->replyAttributes($roaming)));
         }
 
         if ($entry === null) {
@@ -150,7 +152,11 @@ class RadiusController extends Controller
             }
             $loginSite = TermsAcceptance::query()->where('grant_id', $grant->id)->where('mac', $mac)
                 ->latest('accepted_at')->value('site_id');
-            if ($loginSite !== null && $loginSite !== $nas->site_id) {
+            // An admin disconnected the device at this site: no automatic login again until the grant
+            // changes (e.g. extended); a portal login by the guest still works.
+            $kicked = SessionSummary::query()->where('grant_id', $grant->id)->where('mac', $mac)
+                ->where('site_id', $nas->site_id)->where('kicked_at', '>=', $grant->updated_at)->exists();
+            if ($loginSite !== null && $loginSite !== $nas->site_id && ! $kicked) {
                 return $grant;
             }
         }

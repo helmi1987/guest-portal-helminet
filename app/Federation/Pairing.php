@@ -94,8 +94,13 @@ class Pairing
             if (Instance::query()->where('cert_fingerprint', $pin)->exists()) {
                 throw new PairingException('certificate already registered', 409);
             }
-            DB::table('federation_join_tokens')->where('id', $token->id)
+            // Consume atomically: only one join can use the token, even with parallel requests.
+            $consumed = DB::table('federation_join_tokens')->where('id', $token->id)->whereNull('used_at')
+                ->where('expires_at', '>', now())
                 ->update(['used_at' => now(), 'used_by_instance_id' => $new['id'], 'updated_at' => now()]);
+            if ($consumed !== 1) {
+                throw new PairingException('invalid or expired join token', 403);
+            }
 
             // The first pairing makes this instance the hub (CONCEPT.md §10.1).
             if ($this->topology->hubId() === null) {

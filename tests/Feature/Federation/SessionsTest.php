@@ -19,6 +19,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\Cache;
 use Tests\TestCase;
 
 /**
@@ -150,6 +151,8 @@ class SessionsTest extends TestCase
         $this->on('a', function () use ($session) {
             $this->onZone('admin')->get('/admin/guests')->assertOk()
                 ->assertSee(__('portal.guests.remote_unreachable', ['names' => 'B']));
+            // The unreachable instance is not asked again right away (the list stays fast).
+            $this->assertTrue(Cache::has('federation:live-down:'.$session->serving_instance_id));
             $this->onZone('admin')->post("/admin/instances/{$session->serving_instance_id}/sessions/{$session->id}/disconnect")
                 ->assertSessionHasErrors(['session' => __('portal.guests.remote_unreachable_disconnect', ['name' => 'B'])]);
         });

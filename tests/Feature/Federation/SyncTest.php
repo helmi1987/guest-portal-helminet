@@ -77,22 +77,29 @@ class SyncTest extends TestCase
             $this->assertTrue(EventCodec::verify($event, $key));
         }
 
-        // Forged payload (e.g. altered by a relaying instance): valid prefix applied, origin paused.
+        // Forged payload (e.g. altered by a relaying instance): valid prefix applied, the event dropped,
+        // the sending peer paused; the origin itself is not paused (no denial of service by a peer).
         $forged = $events;
         $last = count($forged) - 1;
         $forged[$last]['payload'] = str_replace('123456', '654321', $forged[$last]['payload']);
-        $result = $this->on('b', fn () => app(Inbox::class)->receive($forged)[$idA]);
-        $this->assertSame('paused', $result->status);
+        $relay = '01JRELAY000000000000000000';
+        $result = $this->on('b', fn () => app(Inbox::class)->receive($forged, null, $relay)[$idA]);
+        $this->assertSame('stopped', $result->status);
         $this->assertStringContainsString('invalid signature', $result->reason);
         $this->assertSame($events[$last - 1]['seq'], $result->lastSeq);
         $this->assertNull($this->rowOn('b', 'grants', $events[$last]['record_id']));
+        $this->assertNull($this->on('b', fn () => DB::table('peer_cursors')->where('origin', $idA)->value('paused_at')));
+        $this->assertStringContainsString('invalid signature', $this->on('b', fn () => FederationPeer::find($relay)->pause_reason));
+        // The genuine event from another route is applied.
+        $this->assertSame('ok', $this->on('b', fn () => app(Inbox::class)->receive($events)[$idA])->status);
+        $this->assertNotNull($this->rowOn('b', 'grants', $events[$last]['record_id']));
 
         // Unsigned events are rejected as well.
         $this->makeInstances('c');
         $unsigned = $events;
         $unsigned[0]['sig'] = null;
         $result = $this->on('c', fn () => app(Inbox::class)->receive($unsigned)[$idA]);
-        $this->assertSame('paused', $result->status);
+        $this->assertSame('stopped', $result->status);
         $this->assertStringContainsString('unsigned event at seq 1', $result->reason);
 
         // Unknown origin without self-introduction: waits.

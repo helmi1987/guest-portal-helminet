@@ -26,6 +26,9 @@ use Throwable;
  */
 class Applier
 {
+    /** Columns of an instance row only that instance may change (CONCEPT.md §10.6). */
+    public const INSTANCE_TRUST_COLUMNS = ['signing_public_key', 'cert_fingerprint', 'federation_url', 'admin_url'];
+
     private static bool $resolving = false;
 
     /** @var array<string, list<string>> */
@@ -267,6 +270,12 @@ class Applier
         $incoming['id'] = $id;
 
         $local = $this->row($table, $id);
+        if ($table === 'instances' || ($table === 'settings' && ($incoming['key'] ?? null) === Topology::HUB_SETTING)) {
+            $incoming = $this->authorized($table, $event['origin'], $id, $incoming, $local);
+            if ($incoming === null) {
+                return 'dropped';
+            }
+        }
         $before = null;
         if ($local === null) {
             if (! $snapshot && $this->beyondHorizon($event['version'])) {
@@ -296,6 +305,60 @@ class Applier
         }
 
         return $this->write($table, $row, $local, $before, $event['origin']) ? 'applied' : 'ignored';
+    }
+
+    /**
+     * Authority rules for the federation's own membership (CONCEPT.md §10.6): every instance may write
+     * any row, but the trust anchors of an instance (signing key, certificate pin, URLs) change only
+     * by events of that instance itself; new instance rows (registrations) and tombstones/restores
+     * (removals) only by the hub; the hub setting only by the current hub. Without a configured hub
+     * (single instance, tests) an instance may only introduce its own row. Disallowed fields keep the
+     * local value; a disallowed new row or hub change is dropped.
+     *
+     * @return array<string, mixed>|null incoming state to apply, null: drop the event
+     */
+    private function authorized(string $table, string $origin, string $id, array $incoming, ?array $local): ?array
+    {
+        $hub = Setting::get(Topology::HUB_SETTING);
+        $hub = is_string($hub) && $hub !== '' ? $hub : null;
+
+        if ($table === 'settings') {
+            if ($hub === null || $origin === $hub) {
+                return $incoming;
+            }
+            $this->rejected($table, $id, $origin, 'hub setting changed by a non-hub instance');
+
+            return null;
+        }
+
+        if ($local === null) {
+            if ($hub !== null ? $origin === $hub : $origin === $id) {
+                return $incoming;
+            }
+            $this->rejected($table, $id, $origin, 'instance registered by a non-hub instance');
+
+            return null;
+        }
+        if ($origin !== $id) {
+            foreach (self::INSTANCE_TRUST_COLUMNS as $column) {
+                if (array_key_exists($column, $incoming) && $incoming[$column] !== $local[$column]) {
+                    $this->rejected($table, $id, $origin, "$column changed by another instance");
+                    $incoming[$column] = $local[$column];
+                }
+            }
+        }
+        if ($origin !== $hub && array_key_exists('deleted_at', $incoming) && $incoming['deleted_at'] !== $local['deleted_at']) {
+            $this->rejected($table, $id, $origin, 'instance removed or restored by a non-hub instance');
+            $incoming['deleted_at'] = $local['deleted_at'];
+        }
+
+        return $incoming;
+    }
+
+    private function rejected(string $table, string $id, string $origin, string $reason): void
+    {
+        $this->result->conflicts[] = "$table#$id: $reason (origin $origin)";
+        Log::warning('Federation event field rejected', compact('table', 'id', 'origin', 'reason'));
     }
 
     /**

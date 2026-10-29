@@ -97,12 +97,16 @@ class FederationController extends Controller
     }
 
     /** Hub instance and the offline rule (replicated settings). */
-    public function updateSettings(Request $request): RedirectResponse
+    public function updateSettings(Request $request, Topology $topology): RedirectResponse
     {
         $data = $request->validate([
             'hub' => ['required', Rule::exists('instances', 'id')->whereNull('deleted_at')],
             'offline_sms_only' => ['boolean'],
         ]);
+        // Only the hub hands the role on (the others would reject the change, CONCEPT.md §10.6).
+        if (! $topology->isHub() && $data['hub'] !== $topology->hubId()) {
+            return back()->withErrors(['hub' => __('portal.federation.hub_only_on_hub')]);
+        }
         Setting::put(Topology::HUB_SETTING, $data['hub']);
         Setting::put(Topology::OFFLINE_SMS_ONLY_SETTING, $request->boolean('offline_sms_only'));
         Audit::log('federation.settings_updated', null, ['hub' => $data['hub'], 'offline_sms_only' => $request->boolean('offline_sms_only')]);

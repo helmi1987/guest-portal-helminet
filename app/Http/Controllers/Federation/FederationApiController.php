@@ -89,7 +89,7 @@ class FederationApiController extends Controller
             return response()->json(['error' => $reason], 409);
         }
 
-        $results = $inbox->receive((array) $request->input('events'), $peer->id);
+        $results = $inbox->receive((array) $request->input('events'), $peer->id, $peer->id);
 
         return response()->json([
             'cursors' => collect($results)->map(fn (ApplyResult $r) => $r->lastSeq),

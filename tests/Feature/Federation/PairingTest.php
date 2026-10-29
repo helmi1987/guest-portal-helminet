@@ -158,12 +158,13 @@ class PairingTest extends TestCase
             $this->onZone('admin')->post('/admin/federation/tokens')->assertRedirect()->assertSessionHas('federation_join');
             $this->assertSame(2, DB::table('federation_join_tokens')->count());
 
-            $this->onZone('admin')->put('/admin/federation/settings', ['hub' => $newId, 'offline_sms_only' => '0'])->assertRedirect();
-            $this->assertSame($newId, app(Topology::class)->hubId());
+            $hubId = app(LocalInstance::class)->id();
+            $this->onZone('admin')->put('/admin/federation/settings', ['hub' => $hubId, 'offline_sms_only' => '0'])->assertRedirect();
+            $this->assertSame($hubId, app(Topology::class)->hubId());
             $this->assertFalse(app(Topology::class)->offlineSmsOnly());
-            // The hub cannot be removed.
-            $this->onZone('admin')->delete("/admin/federation/peers/$newId")->assertSessionHasErrors('federation');
-            $this->onZone('admin')->put('/admin/federation/settings', ['hub' => app(LocalInstance::class)->id(), 'offline_sms_only' => '1']);
+            // This instance cannot remove itself.
+            $this->onZone('admin')->delete("/admin/federation/peers/$hubId")->assertSessionHasErrors('federation');
+            $this->onZone('admin')->put('/admin/federation/settings', ['hub' => $hubId, 'offline_sms_only' => '1']);
 
             $this->onZone('admin')->post("/admin/federation/peers/$newId/unpause")->assertRedirect();
             $this->assertNull(FederationPeer::find($newId)->paused_at);

@@ -110,6 +110,34 @@ class SiteRulesTest extends TestCase
         $this->assertTrue($session->fresh()->accessEnded());
     }
 
+    public function test_admin_disconnect_blocks_roaming_at_that_site_until_the_grant_changes(): void
+    {
+        $grant = $this->redeemedGrant();
+        $this->macAuth($this->otherNas)->assertOk();
+        $this->radius($this->otherNas, 'accounting', ['Acct-Status-Type' => 'Start', 'Acct-Session-Id' => 'k1',
+            'User-Name' => self::MAC, 'Calling-Station-Id' => self::MAC])->assertNoContent();
+        $session = SessionSummary::query()->where('site_id', $this->other->id)->sole();
+
+        $admin = User::factory()->admin()->create();
+        $this->onZone('admin')->actingAs($admin)->post("/admin/sessions/{$session->id}/disconnect")->assertRedirect();
+        $this->assertNotNull($session->fresh()->kicked_at);
+        // The router re-authenticates the MAC at once: not accepted again.
+        $this->macAuth($this->otherNas)->assertStatus(401);
+
+        // A change of the grant (e.g. extended) lifts the block.
+        Carbon::setTestNow(now()->addMinute());
+        app(GrantManager::class)->extend($grant->fresh(), 3600);
+        $this->macAuth($this->otherNas)->assertOk();
+    }
+
+    public function test_roaming_without_expiry_sends_no_session_timeout(): void
+    {
+        $grant = $this->redeemedGrant();
+        $grant->forceFill(['expires_at' => null])->save();
+        $response = $this->macAuth($this->otherNas)->assertOk();
+        $this->assertArrayNotHasKey('reply:Session-Timeout', $response->json());
+    }
+
     public function test_no_roaming_to_a_site_the_grant_does_not_allow_or_for_unbound_devices(): void
     {
         $this->redeemedGrant([$this->home->id]);

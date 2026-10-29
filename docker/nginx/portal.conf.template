@@ -31,6 +31,7 @@ server {
     include /etc/nginx/portal-app.conf;
 }
 
+# __FEDERATION_BEGIN__ (removed by portal-init when the federation certificate is missing)
 # Federation API between instances (CONCEPT.md §10.2): mTLS with the instance's own self-signed
 # certificate. Every peer must present its certificate; it is not checked against a CA here
 # (optional_no_ca), Laravel compares its public key pin (SPKI sha256) with instances.cert_fingerprint.
@@ -57,6 +58,7 @@ server {
         fastcgi_param HTTP_PROXY "";
     }
 }
+# __FEDERATION_END__
 
 # Internal API (FreeRADIUS -> Laravel, healthcheck). Loopback only.
 server {

@@ -465,7 +465,9 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
   and a 10-year self-signed certificate once (`/data/federation/federation.{crt,key}`, key root:portal 640);
   the pin format is curl's `sha256//<base64>`; port env `FEDERATION_PORT` (default 9443), own URL
   `PORTAL_FEDERATION_URL` (editable later); peer calls verify no CA, pin the key (set on the curl handle,
-  Guzzle does not accept the option), present the client certificate, no redirects, short timeouts. Ed25519
+  Guzzle does not accept the option), present the client certificate, no redirects, short timeouts.
+  Without a federation certificate (generation failed) portal-init leaves the federation listener out, so
+  guest and admin ports still start. Ed25519
   key pair in `local_settings` (secret encrypted with `APP_KEY`), public key in `instances.signing_public_key`.
 - Events are signed per origin (Ed25519, libsodium), since the hub relays events of other origins.
 - Pairing: only fresh instances join (before the setup admin exists); the hub is the first instance.
@@ -583,12 +585,16 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
   asks the other instances live (`GET /federation/sessions?grant_ids[]=`, a non-hub instance asks the hub
   with `relay=1`, the hub adds its other peers; unreachable instances are named); the disconnect button
   for a foreign session calls `POST /federation/sessions/{id}/disconnect` with the serving instance, the
-  hub forwards to its direct peer; unreachable: error message. Sites have a home instance (site form,
+  hub forwards to its direct peer; unreachable: error message; an instance that failed is skipped by live
+  queries for 30 s. A push gives every origin a fair share of a batch and leaves out origins the peer does
+  not take, so one stuck origin does not block the others. Sites have a home instance (site form,
   default the creating instance; empty = the instance it is on); one-time credentials are accepted only
   there. Roaming: MAC authentication accepts a MAC that is the active device of a running grant allowed at
   the NAS's site when the device logged in (terms acceptance) at another site (assumption: at its own site
   it keeps using the portal, so an admin disconnect there is not undone at once); Session-Timeout = remaining
-  time, the accounting session belongs to the grant. Limited mode (§10.1): the portal hides push approval
+  time (none without expiry), the accounting session belongs to the grant; after an admin disconnect of
+  the device at that site (`session_summaries.kicked_at`) roaming there stays off until the grant changes
+  (a portal login still works). Limited mode (§10.1): the portal hides push approval
   and shows a notice; normal codes are rejected ("Limited mode: please use SMS login") unless the device is
   already bound to the code; SMS and site-code grants are allowed (`Grant::isAllowedWhileOffline()`).
 
@@ -604,6 +610,13 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
 
 - A compromised peer can read all replicated data including the data key, but not the RADIUS secrets of
   other sites; event signatures prevent it from forging events of other origins.
+- Membership authority (implemented): the trust anchors of an instance row (signing key, certificate pin,
+  federation and admin URL) change only by events of that instance; new instance rows (registrations) and
+  removals/restores only by the hub (without a configured hub an instance may only introduce its own row,
+  and only then may an unknown origin introduce its key); the setting `federation_hub` only by the current
+  hub (the UI allows it only there). Disallowed fields keep the local value, a disallowed registration or
+  hub change is dropped (logged). An event with a missing or invalid signature is dropped and the peer
+  that sent it is paused (not the origin, so a peer cannot block another origin).
 
 ## 11. Data model
 

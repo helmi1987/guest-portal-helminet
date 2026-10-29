@@ -109,6 +109,8 @@ class GuestController extends Controller
             return back()->withErrors(['session' => __('portal.guests.other_instance')]);
         }
 
+        // Remembered: roaming MAC authentication does not log the device in again at this site.
+        $session->update(['kicked_at' => now()]);
         DisconnectSession::dispatch($session->id);
         $session->mac_whitelist_id !== null
             ? Audit::log('whitelist.disconnected', $session->macWhitelist, ['session' => $session->id, 'site' => $session->site_id])

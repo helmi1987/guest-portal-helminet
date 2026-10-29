@@ -754,5 +754,6 @@ return [
         'checklist_key' => 'Chiave dati della federazione: rinnovata automaticamente.',
         'checklist_channel' => 'Canale «:name» (:driver): token, chiave API o segreto webhook',
         'checklist_oidc' => 'Client secret OIDC (presso l\'identity provider e nelle impostazioni)',
+        'hub_only_on_hub' => 'Solo l\'hub può cedere il ruolo di hub a un\'altra istanza.',
     ],
 ];

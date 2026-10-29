@@ -754,5 +754,6 @@ return [
         'checklist_key' => 'Federation data key: renewed automatically.',
         'checklist_channel' => 'Channel ":name" (:driver): token, API key or webhook secret',
         'checklist_oidc' => 'OIDC client secret (at the identity provider and under Settings)',
+        'hub_only_on_hub' => 'Only the hub can hand the hub role to another instance.',
     ],
 ];

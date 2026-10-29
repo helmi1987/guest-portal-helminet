@@ -103,7 +103,8 @@ class DataKey
     /** @return list<string> */
     public function knownIds(): array
     {
-        return array_keys($this->ring()['keys']);
+        // Ids that look numeric become integer array keys in PHP.
+        return array_map('strval', array_keys($this->ring()['keys']));
     }
 
     /** Raw key bytes (distribution to peers). */
@@ -147,8 +148,9 @@ class DataKey
         $current = is_string($ring['current'] ?? null) ? $ring['current'] : null;
         $added = 0;
         foreach (is_array($ring['keys'] ?? null) ? $ring['keys'] : [] as $kid => $key) {
+            $kid = (string) $kid; // numeric-looking ids arrive as integer array keys
             $raw = is_string($key) ? base64_decode($key, true) : false;
-            if (! is_string($kid) || $raw === false || ! preg_match('/^[0-9a-f]{8}$/', $kid) || strlen($raw) !== 32) {
+            if ($raw === false || ! preg_match('/^[0-9a-f]{8}$/', $kid) || strlen($raw) !== 32) {
                 continue;
             }
             $new = ! in_array($kid, $known, true);

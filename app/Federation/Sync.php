@@ -149,7 +149,7 @@ class Sync
                 if ($events === []) {
                     break;
                 }
-                $result = $this->inbox->receive($events, $peer->id)[$origin] ?? null;
+                $result = $this->inbox->receive($events, $peer->id, $peer->id)[$origin] ?? null;
                 $applied += $result?->applied ?? 0;
                 if ($result === null || $result->status !== 'ok' || $result->lastSeq <= $after) {
                     break;
@@ -169,18 +169,22 @@ class Sync
             : [$local];
         usort($origins, fn ($a, $b) => [$a !== $local, $a] <=> [$b !== $local, $b]);
 
+        // Fair share per page: every origin gets its part, and an origin the peer does not take (gap,
+        // missing parent, unknown key) is left out of the following pages instead of blocking the others.
+        $limit = (int) config('portal.federation.batch', 500);
+        $stalled = [];
         $sent = 0;
         for ($page = 0; $page < self::MAX_PAGES; $page++) {
+            $active = array_values(array_diff($origins, $stalled));
+            $share = max(1, intdiv($limit, max(1, count($active))));
             $events = [];
-            $limit = (int) config('portal.federation.batch', 500);
-            foreach ($origins as $origin) {
-                if (count($events) >= $limit) {
-                    break;
-                }
+            $sentPerOrigin = [];
+            foreach ($active as $origin) {
                 $after = $state->ack($origin) ?? 0;
                 foreach (DB::table(Outbox::TABLE)->where('origin', $origin)->where('seq', '>', $after)
-                    ->orderBy('seq')->limit($limit - count($events))->get() as $event) {
+                    ->orderBy('seq')->limit($share)->get() as $event) {
                     $events[] = EventCodec::toWire($event);
+                    $sentPerOrigin[$origin] = true;
                 }
             }
             if ($events === []) {
@@ -201,8 +205,10 @@ class Sync
             $state->last_seen_at = now();
             $state->save();
             $sent += count($events);
-            if ($state->acks == $before) {
-                break; // no progress (gap, missing parent): the peer pulls the rest
+            foreach (array_keys($sentPerOrigin) as $origin) {
+                if (($state->acks[$origin] ?? null) === ($before[$origin] ?? null)) {
+                    $stalled[] = $origin; // no progress: the peer pulls the rest later
+                }
             }
         }
 

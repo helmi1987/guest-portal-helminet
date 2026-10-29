@@ -94,23 +94,26 @@ fi
 # Federation key and certificate (container start only, never replaced while running: peers pin
 # the public key, a new key means pairing again).
 FED="$DATA_DIR/federation"
-if [ "$WATCH" = 0 ]; then
+federation_cert() {
     if [ -L "$FED" ] || [ -L "$FED/federation.crt" ] || [ -L "$FED/federation.key" ]; then
         log "WARNING: $FED or its files are symlinks, federation listener without certificate"
-    else
-        mkdir -p "$FED"
-        if ! valid_pair "$FED/federation.crt" "$FED/federation.key"; then
-            [ -e "$FED/federation.key" ] && log "WARNING: $FED/federation.crt/.key invalid, generating a new pair (peers must pair again)"
-            log "generating federation key and certificate"
-            rm -f "$FED/federation.crt" "$FED/federation.key"
-            openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
-                -subj "/CN=portal-federation" -keyout "$FED/federation.key" -out "$FED/federation.crt" 2>/dev/null
-        fi
-        own 644 "$FED/federation.crt"; own 640 "$FED/federation.key"
-        { chown -h root:portal "$FED" && chmod 750 "$FED"; } 2>/dev/null || true
-        ln -sfn "$FED/federation.crt" "$RUN_DIR/federation.crt"
-        ln -sfn "$FED/federation.key" "$RUN_DIR/federation.key"
+        return 1
     fi
+    mkdir -p "$FED" || return 1
+    if ! valid_pair "$FED/federation.crt" "$FED/federation.key"; then
+        [ -e "$FED/federation.key" ] && log "WARNING: $FED/federation.crt/.key invalid, generating a new pair (peers must pair again)"
+        log "generating federation key and certificate"
+        rm -f "$FED/federation.crt" "$FED/federation.key"
+        openssl req -x509 -newkey ec -pkeyopt ec_paramgen_curve:prime256v1 -nodes -days 3650 \
+            -subj "/CN=portal-federation" -keyout "$FED/federation.key" -out "$FED/federation.crt" 2>/dev/null || return 1
+    fi
+    own 644 "$FED/federation.crt"; own 640 "$FED/federation.key"
+    { chown -h root:portal "$FED" && chmod 750 "$FED"; } 2>/dev/null || true
+    ln -sfn "$FED/federation.crt" "$RUN_DIR/federation.crt" && ln -sfn "$FED/federation.key" "$RUN_DIR/federation.key"
+}
+# Failures are not fatal: the portal runs without the federation listener (portal-init leaves it out).
+if [ "$WATCH" = 0 ]; then
+    federation_cert || { log "WARNING: federation certificate not available"; rm -f "$RUN_DIR/federation.crt" "$RUN_DIR/federation.key"; }
 fi
 
 # Folder writable by the app (group portal): the certificate pull replaces files atomically by rename.

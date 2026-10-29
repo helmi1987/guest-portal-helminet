@@ -754,5 +754,6 @@ return [
         'checklist_key' => 'Föderations-Datenschlüssel: automatisch erneuert.',
         'checklist_channel' => 'Kanal «:name» (:driver): Token, API-Schlüssel oder Webhook-Secret',
         'checklist_oidc' => 'OIDC-Client-Secret (beim Identity Provider und unter Einstellungen)',
+        'hub_only_on_hub' => 'Nur der Hub kann die Hub-Rolle an eine andere Instanz übergeben.',
     ],
 ];

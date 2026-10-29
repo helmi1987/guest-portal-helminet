@@ -11,14 +11,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 /**
  * RADIUS session: of a grant, or of a MAC whitelist entry (grant_id null, CONCEPT.md §5).
  */
-#[Fillable(['grant_id', 'mac_whitelist_id', 'site_id', 'serving_instance_id', 'mac', 'ip', 'started_at', 'stopped_at'])]
+#[Fillable(['grant_id', 'mac_whitelist_id', 'site_id', 'serving_instance_id', 'mac', 'ip', 'started_at', 'stopped_at', 'kicked_at'])]
 class SessionSummary extends Model
 {
     use Replicated;
 
     protected function casts(): array
     {
-        return ['started_at' => 'datetime', 'stopped_at' => 'datetime'];
+        return ['started_at' => 'datetime', 'stopped_at' => 'datetime', 'kicked_at' => 'datetime'];
     }
 
     public function grant(): BelongsTo

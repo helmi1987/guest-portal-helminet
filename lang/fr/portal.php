@@ -754,5 +754,6 @@ return [
         'checklist_key' => 'Clé de données de la fédération : renouvelée automatiquement.',
         'checklist_channel' => 'Canal « :name » (:driver) : jeton, clé API ou secret webhook',
         'checklist_oidc' => 'Client secret OIDC (chez le fournisseur d\'identité et dans les réglages)',
+        'hub_only_on_hub' => 'Seul le hub peut transmettre le rôle de hub à une autre instance.',
     ],
 ];

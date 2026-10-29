@@ -3,11 +3,13 @@
 namespace App\Federation;
 
 use App\Jobs\DisconnectSession;
+use App\Models\FederationPeer;
 use App\Models\Instance;
 use App\Models\SessionSummary;
 use App\Support\LocalInstance;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Cache;
 use RuntimeException;
 use Throwable;
 
@@ -21,6 +23,11 @@ class RemoteSessions
 {
     /** Grants per query. */
     public const MAX_GRANTS = 100;
+
+    private const DOWN_KEY = 'federation:live-down:';
+
+    /** Seconds an unreachable peer is skipped by live queries. */
+    private const DOWN_SECONDS = 30;
 
     public function __construct(private LocalInstance $instance, private Topology $topology, private PeerClient $client) {}
 
@@ -43,6 +50,14 @@ class RemoteSessions
             if ($peer->id === $exceptPeer) {
                 continue;
             }
+            // A peer that just failed is not asked again for a while: the list stays fast.
+            $state = FederationPeer::query()->find($peer->id);
+            if (Cache::has(self::DOWN_KEY.$peer->id)
+                || ($state?->last_error !== null && $state->last_attempt_at?->gt(now()->subSeconds(self::DOWN_SECONDS)))) {
+                $unreachable[] = $peer->name;
+
+                continue;
+            }
             try {
                 $response = $this->client->to($peer, (int) config('portal.federation.live_timeout', 4))
                     ->get('/federation/sessions', ['grant_ids' => $grantIds, 'relay' => ! $isHub && $relay ? 1 : 0]);
@@ -56,6 +71,7 @@ class RemoteSessions
                 }
                 $unreachable = array_merge($unreachable, array_filter((array) $response->json('unreachable'), 'is_string'));
             } catch (Throwable) {
+                Cache::put(self::DOWN_KEY.$peer->id, true, self::DOWN_SECONDS);
                 $unreachable[] = $peer->name;
             }
         }
@@ -121,6 +137,7 @@ class RemoteSessions
         if ($session->stopped_at !== null) {
             return 'not_online';
         }
+        $session->update(['kicked_at' => now()]);
         DisconnectSession::dispatch($session->id);
 
         return 'sent';

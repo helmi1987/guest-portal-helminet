@@ -56,7 +56,8 @@
         @csrf @method('PUT')
         <h2 class="text-lg font-semibold md:col-span-2">{{ __('portal.federation.settings') }}</h2>
         <label class="label">{{ __('portal.federation.hub_instance') }}
-            <select name="hub" class="field">
+            @unless ($isHub)<input type="hidden" name="hub" value="{{ $hubId }}">@endunless
+            <select name="hub" class="field" @disabled(! $isHub)>
                 @foreach ($instances as $instance)
                     <option value="{{ $instance->id }}" @selected(old('hub', $hubId ?? $self->id) === $instance->id)>{{ $instance->name }}@if ($instance->id === $self->id) ({{ __('portal.federation.this') }})@endif</option>
                 @endforeach

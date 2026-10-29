@@ -1,0 +1,152 @@
+<?php
+
+namespace Tests\Feature\Federation;
+
+use App\Enums\ExpiryMode;
+use App\Enums\GrantType;
+use App\Federation\EventCodec;
+use App\Federation\Outbox;
+use App\Federation\Pairing;
+use App\Federation\Topology;
+use App\Models\Grant;
+use App\Models\Instance;
+use App\Models\Setting;
+use App\Models\User;
+use App\Support\Hlc;
+use App\Support\LocalInstance;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\DB;
+use Tests\TestCase;
+
+/**
+ * Federation review fixes: a compromised member cannot take over the membership (trust anchors of
+ * other instances, registrations, removals, hub setting); one stuck origin does not starve a push.
+ */
+class AuthorityTest extends TestCase
+{
+    use FederatedHttp, RefreshDatabase, SimulatesInstances;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        Carbon::setTestNow('2026-10-31 10:00:00');
+        $this->makeInstances('hub', 'a', 'b');
+        $pin = $this->giveCertificate('hub');
+        $this->giveCertificate('a');
+        $this->giveCertificate('b');
+        $this->routeFederation(['hub', 'a', 'b']);
+        foreach (['a', 'b'] as $spoke) {
+            $token = $this->on('hub', fn () => app(Pairing::class)->createToken(null)['token']);
+            $this->assertSame(0, $this->on($spoke, fn () => Artisan::call('portal:federation:join', [
+                'url' => 'https://hub.example.com:9443', 'token' => $token, 'fingerprint' => $pin])), Artisan::output());
+        }
+        $this->syncRound();
+    }
+
+    private function syncRound(): void
+    {
+        foreach (['hub', 'a', 'b', 'hub', 'a', 'b'] as $name) {
+            $this->on($name, fn () => Artisan::call('portal:federation:sync'));
+        }
+    }
+
+    /** A raw write on b recorded as b's (validly signed) event: what a compromised instance can send. */
+    private function forgeOnB(string $table, string $id, array $values, bool $insert = false): void
+    {
+        $this->on('b', function () use ($table, $id, $values, $insert) {
+            DB::transaction(function () use ($table, $id, $values, $insert) {
+                $values['version'] = app(Hlc::class)->now();
+                $insert ? DB::table($table)->insert(['id' => $id] + $values) : DB::table($table)->where('id', $id)->update($values);
+                app(Outbox::class)->record($table, $id);
+            });
+        });
+        $this->syncRound();
+    }
+
+    public function test_trust_anchors_of_an_instance_change_only_by_its_own_events(): void
+    {
+        $hubId = $this->idOf('hub');
+        $original = $this->rowOn('a', 'instances', $hubId);
+        $this->forgeOnB('instances', $hubId, ['signing_public_key' => base64_encode(random_bytes(32)),
+            'cert_fingerprint' => 'sha256//'.base64_encode(random_bytes(32)), 'federation_url' => 'https://attacker.example.com:9443',
+            'admin_url' => 'https://attacker.example.com', 'name' => 'Renamed']);
+
+        foreach (['hub', 'a'] as $name) {
+            $row = $this->rowOn($name, 'instances', $hubId);
+            foreach (['signing_public_key', 'cert_fingerprint', 'federation_url', 'admin_url'] as $column) {
+                $this->assertSame($original[$column], $row[$column], "$name $column");
+            }
+        }
+        // Replication keeps working with the genuine keys.
+        $grant = $this->on('hub', fn () => Grant::create(['type' => GrantType::Code, 'code' => '123456', 'duration_s' => 60,
+            'expiry_mode' => ExpiryMode::FirstLogin]));
+        $this->syncRound();
+        $this->assertNotNull($this->rowOn('a', 'grants', $grant->id));
+
+        // An instance may change its own URLs (b trusts nothing anymore: it broke its own copy).
+        $idA = $this->idOf('a');
+        $this->on('a', fn () => Instance::find($idA)->update(['federation_url' => 'https://a-new.example.com:9443']));
+        $this->syncRound();
+        $this->assertSame('https://a-new.example.com:9443', $this->rowOn('hub', 'instances', $idA)['federation_url']);
+    }
+
+    public function test_only_the_hub_registers_and_removes_instances(): void
+    {
+        $idA = $this->idOf('a');
+        $this->forgeOnB('instances', $idA, ['deleted_at' => now()->toDateTimeString()]);
+        $this->assertNull($this->rowOn('hub', 'instances', $idA)['deleted_at']);
+        $this->assertNull($this->rowOn('a', 'instances', $idA)['deleted_at']);
+
+        $fake = '01JFAKE0000000000000000000';
+        $this->forgeOnB('instances', $fake, ['name' => 'Fake', 'origin_instance_id' => $fake,
+            'signing_public_key' => base64_encode(random_bytes(32)), 'created_at' => now(), 'updated_at' => now()], insert: true);
+        $this->assertNull($this->rowOn('hub', 'instances', $fake));
+        $this->assertNull($this->rowOn('a', 'instances', $fake));
+
+        // The hub's removal replicates.
+        $idB = $this->idOf('b');
+        $this->on('hub', fn () => Instance::find($idB)->delete());
+        $this->syncRound();
+        $this->assertNotNull($this->rowOn('a', 'instances', $idB)['deleted_at']);
+    }
+
+    public function test_hub_setting_changes_only_by_the_hub(): void
+    {
+        $hubId = $this->idOf('hub');
+        $this->forgeOnB('settings', Setting::idFor(Topology::HUB_SETTING), ['value' => json_encode($this->idOf('b'))]);
+        $this->assertSame($hubId, $this->on('hub', fn () => app(Topology::class)->hubId()));
+        $this->assertSame($hubId, $this->on('a', fn () => app(Topology::class)->hubId()));
+
+        // The settings form of a non-hub instance cannot hand the role over either.
+        $this->on('a', function () use ($hubId) {
+            $this->actingAs(User::factory()->admin()->create());
+            $this->onZone('admin')->put('/admin/federation/settings', ['hub' => app(LocalInstance::class)->id(),
+                'offline_sms_only' => '1'])->assertSessionHasErrors('hub');
+            $this->assertSame($hubId, app(Topology::class)->hubId());
+        });
+    }
+
+    public function test_a_stuck_origin_does_not_starve_the_push_of_other_origins(): void
+    {
+        config(['portal.federation.batch' => 2]);
+        // Validly signed events of an origin b cannot verify (key unknown), sorting before a's.
+        $pair = sodium_crypto_sign_keypair();
+        $stuck = '00000000000000000000000000';
+        $this->on('hub', function () use ($pair, $stuck) {
+            for ($seq = 1; $seq <= 3; $seq++) {
+                $id = sprintf('01JSTUCK%018d', $seq);
+                $version = Hlc::format(Hlc::wallMs(), $seq, $stuck);
+                $payload = json_encode(['id' => $id, 'first_name' => 'X', 'last_name' => 'Y', 'version' => $version]);
+                DB::table(Outbox::TABLE)->insert(['origin' => $stuck, 'seq' => $seq, 'table' => 'guests', 'record_id' => $id,
+                    'version' => $version, 'payload' => $payload, 'proto' => 1, 'created_at' => now(),
+                    'sig' => base64_encode(sodium_crypto_sign_detached(EventCodec::message($stuck, $seq, 'guests', $id,
+                        $version, 1, $payload), sodium_crypto_sign_secretkey($pair)))]);
+            }
+        });
+        $grant = $this->on('a', fn () => Grant::create(['type' => GrantType::Code, 'code' => '222222', 'duration_s' => 60,
+            'expiry_mode' => ExpiryMode::FirstLogin]));
+        $this->assertNotNull($this->rowOn('b', 'grants', $grant->id));
+    }
+}
