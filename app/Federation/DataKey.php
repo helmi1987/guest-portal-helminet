@@ -106,7 +106,7 @@ class DataKey
         return array_keys($this->ring()['keys']);
     }
 
-    /** Raw key bytes (for distribution to peers in a later part). */
+    /** Raw key bytes (distribution to peers). */
     public function key(string $kid): string
     {
         $stored = $this->ring()['keys'][$kid] ?? null;
@@ -115,6 +115,50 @@ class DataKey
         }
 
         return base64_decode(Crypt::decryptString($stored), true);
+    }
+
+    /**
+     * Whole key ring for a peer (pairing, heartbeat): raw keys base64-encoded. Only sent over the
+     * pinned mTLS channel to registered peers.
+     *
+     * @return array{current: string, keys: array<string, string>}
+     */
+    public function export(): array
+    {
+        $current = $this->currentId();
+        $keys = [];
+        foreach ($this->knownIds() as $kid) {
+            $keys[$kid] = base64_encode($this->key($kid));
+        }
+
+        return ['current' => $current, 'keys' => $keys];
+    }
+
+    /**
+     * Add the unknown keys of a peer's ring. The peer's current key becomes current here when it was
+     * unknown (a rotation elsewhere); with $adoptCurrent (pairing) always.
+     *
+     * @param  array{current?: mixed, keys?: mixed}  $ring
+     * @return int number of keys added
+     */
+    public function importRing(array $ring, bool $adoptCurrent = false): int
+    {
+        $known = $this->knownIds();
+        $current = is_string($ring['current'] ?? null) ? $ring['current'] : null;
+        $added = 0;
+        foreach (is_array($ring['keys'] ?? null) ? $ring['keys'] : [] as $kid => $key) {
+            $raw = is_string($key) ? base64_decode($key, true) : false;
+            if (! is_string($kid) || $raw === false || ! preg_match('/^[0-9a-f]{8}$/', $kid) || strlen($raw) !== 32) {
+                continue;
+            }
+            $new = ! in_array($kid, $known, true);
+            if ($new || ($adoptCurrent && $kid === $current)) {
+                $this->import($kid, $raw, makeCurrent: $kid === $current);
+                $added += $new ? 1 : 0;
+            }
+        }
+
+        return $added;
     }
 
     private function encrypter(string $kid): Encrypter

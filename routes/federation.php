@@ -8,3 +8,8 @@ use Illuminate\Support\Facades\Route;
 Route::middleware('federation.peer')->group(function () {
     Route::get('/status', [FederationApiController::class, 'status'])->name('federation.status');
 });
+
+// Pairing: the joining instance is not registered yet; the one-time join token authorizes, its
+// certificate (pin) is taken from the TLS handshake.
+Route::post('/join', [FederationApiController::class, 'join'])->name('federation.join')
+    ->middleware(['federation.peer:join', 'throttle:10,1']);

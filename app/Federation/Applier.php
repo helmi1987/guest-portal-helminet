@@ -153,6 +153,66 @@ class Applier
         return $result;
     }
 
+    /**
+     * Initial state from the hub at pairing (CONCEPT.md §10.2): all rows of the replicated tables in
+     * parent-before-child order, written raw with last-writer-wins against local rows (a fresh
+     * instance has none but its own instance row), the stored events of the rows' current versions
+     * (base states for the conflict rules) and the hub's cursors, so the sync continues after them.
+     *
+     * @param  array{tables?: array<string, list<array>>, events?: list<array>, cursors?: array<string, int>}  $snapshot
+     * @return int rows written
+     */
+    public function applySnapshot(array $snapshot): int
+    {
+        $local = $this->instance->id();
+        $written = 0;
+        DB::transaction(function () use ($snapshot, $local, &$written) {
+            if (DB::getDriverName() === 'sqlite') {
+                DB::statement('PRAGMA defer_foreign_keys = ON');
+            }
+            $max = null;
+            foreach (array_keys(Federation::TABLES) as $table) {
+                $columns = array_flip($this->columns($table));
+                foreach ($snapshot['tables'][$table] ?? [] as $row) {
+                    $row = array_intersect_key((array) $row, $columns);
+                    foreach ($row as $column => $value) {
+                        if (is_array($value) || is_object($value)) {
+                            throw new RuntimeException("snapshot $table.$column is not a scalar");
+                        }
+                    }
+                    if (! isset($row['id'], $row['version']) || ! is_string($row['version'])) {
+                        throw new RuntimeException("snapshot row of $table without id or version");
+                    }
+                    Hlc::parse($row['version']);
+                    $current = $this->row($table, (string) $row['id']);
+                    if ($current !== null && strcmp((string) $current['version'], $row['version']) >= 0) {
+                        continue;
+                    }
+                    $this->put($table, $row, $current === null);
+                    $written++;
+                    $max = $max === null || strcmp($row['version'], $max) > 0 ? $row['version'] : $max;
+                }
+            }
+            foreach ($snapshot['events'] ?? [] as $event) {
+                $event = $this->normalise($event);
+                if ($event['origin'] !== $local && Federation::isReplicated($event['table'])) {
+                    $this->store($event);
+                }
+            }
+            foreach ($snapshot['cursors'] ?? [] as $origin => $seq) {
+                if (is_string($origin) && $origin !== $local) {
+                    DB::table('peer_cursors')->upsert([['origin' => $origin, 'last_seq' => (int) $seq, 'created_at' => now(),
+                        'updated_at' => now()]], ['origin'], ['last_seq', 'updated_at']);
+                }
+            }
+            if ($max !== null) {
+                $this->hlc->receive($max);
+            }
+        });
+
+        return $written;
+    }
+
     public function unpause(string $origin): void
     {
         DB::table('peer_cursors')->where('origin', $origin)->update(['paused_at' => null, 'pause_reason' => null,
@@ -399,7 +459,8 @@ class Applier
             'table' => $event['table'],
             'record_id' => $event['record_id'],
             'version' => $event['version'],
-            'payload' => Outbox::encode($event['payload']),
+            // The exact JSON string of the origin when available (signature stays verifiable for relays).
+            'payload' => $event['raw'] ?? Outbox::encode($event['payload']),
             'proto' => $event['proto'],
             'sig' => $event['sig'],
             'created_at' => now(),
@@ -419,7 +480,7 @@ class Applier
         $result->stop('paused', $reason);
     }
 
-    /** @return array{origin: string, seq: int, table: string, record_id: string, version: string, payload: array, proto: int, sig: ?string} */
+    /** @return array{origin: string, seq: int, table: string, record_id: string, version: string, payload: array, raw: ?string, proto: int, sig: ?string} */
     private function normalise(array|object $event): array
     {
         $event = (array) $event;
@@ -431,7 +492,8 @@ class Applier
             'table' => (string) $event['table'],
             'record_id' => (string) $event['record_id'],
             'version' => (string) $event['version'],
-            'payload' => is_string($payload) ? (array) json_decode($payload, true) : (array) $payload,
+            'payload' => is_string($payload) ? (array) json_decode($payload, true, 512, JSON_THROW_ON_ERROR) : (array) $payload,
+            'raw' => is_string($payload) ? $payload : null,
             'proto' => (int) ($event['proto'] ?? Federation::FEDERATION_PROTOCOL),
             'sig' => $event['sig'] ?? null,
         ];

@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\BackupController;
 use App\Http\Controllers\Admin\BrandingController;
 use App\Http\Controllers\Admin\CertificateController;
+use App\Http\Controllers\Admin\FederationController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\GuestController;
 use App\Http\Controllers\Admin\LogoutController;
@@ -113,7 +114,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 });
             });
 
-            // Admin only: code CSV export, settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates.
+            // Admin only: code CSV export, settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates, federation.
             Route::middleware('role:admin')->name('admin.')->group(function () {
                 Route::get('/grants/export', [GrantController::class, 'export'])->name('grants.export');
                 Route::get('/settings', [SettingsController::class, 'show'])->name('settings');
@@ -162,6 +163,15 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     ->whereIn('target', ['portal', 'router']);
                 Route::post('/certificates/{target}/pull', [CertificateController::class, 'pull'])->name('certificates.pull')
                     ->whereIn('target', ['portal', 'router'])->middleware('throttle:5,1');
+
+                Route::prefix('/federation')->name('federation')->group(function () {
+                    Route::get('/', [FederationController::class, 'show']);
+                    Route::put('/instance', [FederationController::class, 'updateInstance'])->name('.instance');
+                    Route::put('/settings', [FederationController::class, 'updateSettings'])->name('.settings');
+                    Route::post('/tokens', [FederationController::class, 'createToken'])->name('.token')->middleware('throttle:10,1');
+                    Route::post('/peers/{instance}/unpause', [FederationController::class, 'unpause'])->name('.unpause');
+                    Route::delete('/peers/{instance}', [FederationController::class, 'destroy'])->name('.destroy');
+                });
             });
         });
     });

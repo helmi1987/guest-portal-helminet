@@ -435,8 +435,8 @@ Features:
 
 ## 10. Federation (multi-instance)
 
-Decisions 2026-10-29 (M7). Implementation status: parts A-D (change log, data key, apply engine,
-federation listener with mTLS) implemented; pairing, sync, hooks and UI follow (§14).
+Decisions 2026-10-29 (M7). Implementation status: parts A-E (change log, data key, apply engine,
+federation listener with mTLS, pairing and admin page) implemented; sync and hooks follow (§14).
 
 ### 10.1 Model
 
@@ -471,7 +471,21 @@ federation listener with mTLS) implemented; pairing, sync, hooks and UI follow (
   An admin creates a one-time join token (15 min, stored hashed); the new instance calls
   `POST /federation/join` with token, its fingerprint and Ed25519 public key; it shows the hub's
   fingerprint for confirmation. The hub returns peer list, pins, data key and a snapshot (topologically
-  sorted) and announces the new instance to its peers.
+  sorted) and announces the new instance to its peers. Implemented (part E): admin page "Federation"
+  (admin only, audited): own identity (id, name, federation URL, admin URL, pin, signing key, hub), hub
+  setting (`federation_hub`, set to the member on the first pairing), setting "offline: SMS only", join
+  token (40 characters, sha256 stored, single use, 15 min, shown once with the member's URL and pin as a
+  ready command), instances with last contact, lag, skew, pause state, resume and remove. Joining is a
+  CLI command on the new instance: `artisan portal:federation:join <url> <token> <pin> [--name
+  --federation-url --admin-url]` (no web form: the first admin is created by CLI too, and an
+  unauthenticated join form would let anyone reaching a fresh admin port take it over). **Fresh** means:
+  never joined, no rows in any replicated table (users including deleted ones, sites, settings, ...) except
+  its own instance row, no events of other origins. The member registers the instance with the pin of its
+  TLS client certificate, answers with the data key ring (adopted as is), a snapshot (rows of all replicated
+  tables in parent order, the stored events of the current versions of rows with uniqueness rules, highest
+  sequence per origin as cursors) read in the registration transaction. Removing an instance tombstones it
+  (pin no longer trusted everywhere), rotates the data key and lists the secrets to renew (channels, OIDC);
+  the hub cannot be removed. Transport state per direct peer is local (`federation_peers`).
 - Transport: push after commit (queue job, `POST /federation/events`); pull every 30 s
   (`GET /federation/events?origin=&after=&limit=500`); heartbeat `GET /federation/status` (time,
   protocol, cursors). Further endpoints: `GET /federation/snapshot`, `GET /federation/branding/{hash}.{ext}`,
@@ -569,7 +583,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 
 | Table | Key fields |
 |---|---|
-| `instances` R | id, name, federation_url, cert_fingerprint, last_seen_at, clock_skew_ms (M7 adds admin_url) |
+| `instances` R | id, name, federation_url, admin_url, cert_fingerprint (pin), signing_public_key (Ed25519); last_seen_at, clock_skew_ms unused (heartbeat state is local: `federation_peers`) |
 | `users` R | id, name, email, password, role (admin/manager), totp_secret (`federated`), totp_confirmed_at, totp_last_step, recovery_codes (hashed), oidc_subject (unique, `<iss> <sub>`) |
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
 | `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port, cert_token (enc), last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at |
@@ -593,6 +607,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `login_attempts` | id, mac, ip, site_id, method, success, created_at |
 | `audit_logs` R | id, user_id, actor (label), action, subject_type, subject_id, data (json), ip, created_at |
 | `federation_events` / `peer_cursors` | change log, local and foreign (origin, seq, table, record_id, version, payload, proto, sig, created_at; unique origin+seq) / last_seq + pause state per origin |
+| `federation_peers` / `federation_join_tokens` | local: heartbeat state per direct peer (last_seen_at, clock_skew_ms, protocol, origins, acks, pause) / join tokens (sha256, expires_at, used_at) |
 | Laravel defaults | `jobs`, `failed_jobs`, `cache`, `sessions`, `migrations` |
 
 Purge job removes guests, devices, summaries, accounting, attempts, acceptances, OTP challenges,
@@ -678,7 +693,8 @@ login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authe
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
 M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
-(apply engine with conflict rules) and D (federation listener, mTLS pin, peer client) implemented; E-L open.
+(apply engine with conflict rules), D (federation listener, mTLS pin, peer client) and E (pairing, federation
+page) implemented; F-L open.
 
 | # | Content | Acceptance criteria |
 |---|---|---|

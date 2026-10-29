@@ -6,6 +6,7 @@ use App\Federation\Applier;
 use App\Federation\ApplyResult;
 use App\Federation\DataKey;
 use App\Federation\Outbox;
+use App\Federation\PeerCertificate;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
 use Closure;
@@ -30,15 +31,38 @@ trait SimulatesInstances
             DB::purge($connection);
             Artisan::call('migrate', ['--database' => $connection, '--force' => true]);
             $instance = new LocalInstance;
-            $this->sims[$name] = ['instance' => $instance, 'hlc' => new Hlc($instance)];
+            $this->sims[$name] = ['instance' => $instance, 'hlc' => new Hlc($instance), 'dir' => null];
             $this->on($name, fn () => app(LocalInstance::class)->id());
         }
     }
 
+    /**
+     * Own federation certificate for a simulated instance (config portal.federation.dir while active).
+     *
+     * @return string certificate pin
+     */
+    protected function giveCertificate(string $name): string
+    {
+        $dir = sys_get_temp_dir().'/portal-test-'.getmypid().'/fed-'.$name.'-'.bin2hex(random_bytes(3));
+        mkdir($dir, 0700, true);
+        $key = openssl_pkey_new(['private_key_type' => OPENSSL_KEYTYPE_EC, 'curve_name' => 'prime256v1']);
+        $cert = openssl_csr_sign(openssl_csr_new(['commonName' => 'portal-federation'], $key), null, $key, 3650);
+        openssl_x509_export_to_file($cert, "$dir/federation.crt");
+        openssl_pkey_export_to_file($key, "$dir/federation.key");
+        $this->sims[$name]['dir'] = $dir;
+
+        return PeerCertificate::pin((string) file_get_contents("$dir/federation.crt"));
+    }
+
+    protected function certificateOf(string $name): string
+    {
+        return (string) file_get_contents($this->sims[$name]['dir'].'/federation.crt');
+    }
+
     protected function on(string $name, Closure $callback): mixed
     {
-        $previous = [DB::getDefaultConnection(), app(LocalInstance::class), app(Hlc::class)];
-        $this->bind("sim_$name", $this->sims[$name]['instance'], $this->sims[$name]['hlc']);
+        $previous = [DB::getDefaultConnection(), app(LocalInstance::class), app(Hlc::class), config('portal.federation.dir')];
+        $this->bind("sim_$name", $this->sims[$name]['instance'], $this->sims[$name]['hlc'], $this->sims[$name]['dir'] ?? $previous[3]);
         try {
             return $callback();
         } finally {
@@ -95,9 +119,10 @@ trait SimulatesInstances
         return $row === null ? null : (array) $row;
     }
 
-    private function bind(string $connection, LocalInstance $instance, Hlc $hlc): void
+    private function bind(string $connection, LocalInstance $instance, Hlc $hlc, ?string $dir = null): void
     {
         DB::setDefaultConnection($connection);
+        config(['portal.federation.dir' => $dir]);
         app()->instance(LocalInstance::class, $instance);
         app()->instance(Hlc::class, $hlc);
         app()->forgetInstance(Outbox::class);

@@ -148,6 +148,16 @@ return [
         'timeout' => 10,
         // Live queries for the admin UI (sessions of other instances, remote disconnect).
         'live_timeout' => 4,
+        // Pairing: lifetime of a join token (minutes).
+        'join_token_minutes' => 15,
+        // A non-hub instance treats the hub as unreachable after this many seconds without a
+        // successful heartbeat (limited mode: new logins only by SMS or site code).
+        'hub_unreachable_after' => (int) env('PORTAL_FEDERATION_HUB_UNREACHABLE_AFTER', 120),
+        // Clock skew to a peer: warning above, replication with the peer paused above (milliseconds).
+        'skew_warn_ms' => (int) env('PORTAL_FEDERATION_SKEW_WARN_MS', 30000),
+        'skew_pause_ms' => (int) env('PORTAL_FEDERATION_SKEW_PAUSE_MS', 300000),
+        // Events per page (push and pull).
+        'batch' => 500,
     ],
 
     'version' => trim((string) @file_get_contents(base_path('VERSION'))) ?: 'dev',

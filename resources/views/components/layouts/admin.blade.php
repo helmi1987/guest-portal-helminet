@@ -31,6 +31,7 @@
                         <a href="{{ route('admin.audit') }}">{{ __('portal.audit.title') }}</a>
                         <a href="{{ route('admin.certificates.index') }}">{{ __('portal.certificates.title') }}</a>
                         <a href="{{ route('admin.backups.index') }}">{{ __('portal.backups.title') }}</a>
+                        <a href="{{ route('admin.federation') }}">{{ __('portal.federation.title') }}</a>
                     @endif
                 </nav>
                 <div class="gp-user-menu flex items-center gap-4 text-sm">
