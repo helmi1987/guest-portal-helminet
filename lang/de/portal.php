@@ -426,6 +426,7 @@ return [
         'notifications' => 'Benachrichtigungen',
         'admin_url' => 'Admin-URL für Links',
         'admin_url_help' => 'Basis-URL des Admin-Ports, wie ihn die Freigebenden erreichen (VPN oder Reverse Proxy). Wird in den signierten Freigabe-Links verwendet.',
+        'admin_url_missing' => 'Nicht gesetzt: Links und die OIDC-Redirect-URI verwenden :url (APP_URL mit dem Admin-Port). Die URL eintragen, unter der Freigebende und der Identity Provider den Admin-Port erreichen.',
         'notification_locale' => 'Sprache der Benachrichtigungen',
         'telegram_owner' => 'Diese Instanz empfängt Telegram-Tastendrücke (Telegram-Owner)',
         'telegram_owner_help' => 'Genau eine Instanz darf Telegram-Updates abfragen.',

@@ -34,9 +34,9 @@
                     @php($online = $entry->sessions->first())
                     <tr>
                         <td class="font-mono"><a href="{{ route('admin.whitelist.edit', $entry) }}" class="underline">{{ $entry->mac }}</a></td>
-                        <td>{{ $entry->comment }}<div class="text-xs text-slate-500">{{ $entry->creator?->name ?? '–' }} · {{ $entry->created_at?->format('Y-m-d H:i') }}</div></td>
+                        <td>{{ $entry->comment }}<div class="text-xs text-slate-500">{{ $entry->creator?->name ?? '–' }} · {{ \App\Support\LocalTime::format($entry->created_at, 'Y-m-d H:i') }}</div></td>
                         <td class="text-xs">{{ $entry->siteLinks->map(fn ($l) => $sites[$l->site_id] ?? $l->site_id)->join(', ') ?: __('portal.all') }}</td>
-                        <td class="text-xs">{{ $entry->expires_at?->format('Y-m-d H:i') ?? __('portal.whitelist.unlimited') }}</td>
+                        <td class="text-xs">{{ \App\Support\LocalTime::format($entry->expires_at, 'Y-m-d H:i') ?? __('portal.whitelist.unlimited') }}</td>
                         <td class="text-xs">
                             {{ __('portal.whitelist.statuses.'.(! $entry->active ? 'inactive' : ($entry->isExpired() ? 'expired' : 'active'))) }}
                             @if ($online)<br><span class="font-semibold text-green-700">{{ __('portal.grants.online') }}</span> {{ $sites[$online->site_id] ?? '' }} · IP {{ $online->ip ?? '–' }}@endif

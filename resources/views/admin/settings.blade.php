@@ -6,7 +6,10 @@
         <h2 class="text-lg font-semibold md:col-span-2">{{ __('portal.settings.notifications') }}</h2>
         <label class="label">{{ __('portal.settings.admin_url') }}
             <input name="admin_url" value="{{ old('admin_url', $adminUrl) }}" placeholder="https://portal.example.com:8443" class="field">
-            <span class="text-xs text-slate-500">{{ __('portal.settings.admin_url_help') }}</span></label>
+            <span class="text-xs text-slate-500">{{ __('portal.settings.admin_url_help') }}</span>
+            @if ($adminUrlMissing)
+                <span class="text-xs text-amber-700">{{ __('portal.settings.admin_url_missing', ['url' => $adminUrlFallback]) }}</span>
+            @endif</label>
         <label class="label">{{ __('portal.settings.notification_locale') }}
             <select name="notification_locale" class="field">
                 @foreach (config('portal.locales') as $code)

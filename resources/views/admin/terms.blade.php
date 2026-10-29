@@ -27,7 +27,7 @@
                             <thead><tr><th>{{ __('portal.terms.version') }}</th><th>{{ __('portal.terms.published_at') }}</th><th>{{ __('portal.terms.acceptances') }}</th></tr></thead>
                             <tbody>
                                 @foreach ($list as $version)
-                                    <tr><td>{{ $version->number }}</td><td>{{ $version->published_at->format('Y-m-d H:i') }}</td><td>{{ $version->acceptances_count }}</td></tr>
+                                    <tr><td>{{ $version->number }}</td><td>{{ \App\Support\LocalTime::format($version->published_at, 'Y-m-d H:i') }}</td><td>{{ $version->acceptances_count }}</td></tr>
                                 @endforeach
                             </tbody>
                         </table>

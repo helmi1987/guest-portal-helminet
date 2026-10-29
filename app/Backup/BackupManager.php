@@ -3,6 +3,7 @@
 namespace App\Backup;
 
 use App\Models\LocalSetting;
+use App\Support\LocalTime;
 use Illuminate\Support\Facades\Log;
 use PDO;
 use RuntimeException;
@@ -48,7 +49,8 @@ class BackupManager
         }
         @chmod($dir, 0700);
 
-        $stamp = now()->utc()->format('Ymd-His');
+        // Local time of the display zone (readable for admins); sorting uses the name.
+        $stamp = LocalTime::now()->format('Ymd-His');
         $name = "portal-backup-$stamp.tar.gz";
         for ($i = 2; file_exists("$dir/$name"); $i++) {
             $name = "portal-backup-$stamp-$i.tar.gz";

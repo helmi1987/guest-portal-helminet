@@ -60,6 +60,12 @@ One Alpine Linux based image (decided):
 | Scheduler | `php artisan schedule:work` as s6 service | No cron daemon. |
 | Database | SQLite (WAL) on volume `/data` | Zero ops. Optional MariaDB/MySQL via `DB_CONNECTION` env for larger installs. |
 
+- Time zone (decision 2026-10-29, v0.10.0): `app.timezone` stays UTC, so the database, expiry and
+  rate-limit logic and the scheduler (fixed UTC times, no DST gaps) are unchanged. Only display and
+  input use the display zone (`APP_TIMEZONE`, else `TZ`, else UTC; unknown names: UTC): admin UI
+  times, `datetime-local` inputs (converted to UTC on save), notification texts ("open until"),
+  backup and CSV export file names. Rejected: setting `app.timezone` to local time (Eloquent stores
+  wall-clock times without offset, existing rows would shift and DST makes local times ambiguous).
 - Internal API: nginx listener on `127.0.0.1` only (e.g. port 8080) for FreeRADIUS → Laravel,
   authenticated by a random shared token generated at first start (sent by `rlm_rest` as HTTP
   basic auth password).
@@ -346,7 +352,7 @@ All login methods produce a **grant**; a code is a grant created in advance.
   claim (default `groups`), group names for admin/manager (default `portal-admin`/`portal-manager`),
   portal 2FA mode, ACR value, max. auth age (optional), link by email (default on); a secret that
   cannot be decrypted is logged (without value) and flagged in the settings. Redirect URI `<admin URL>/admin/oidc/callback` (admin URL setting,
-  fallback `APP_URL`), shown in the settings. Flow: discovery (`<issuer>/.well-known/openid-configuration`,
+  fallback `APP_URL` with `ADMIN_PORT`, default 8443, warning in the settings while empty; v0.10.0), shown in the settings. Flow: discovery (`<issuer>/.well-known/openid-configuration`,
   cached 1 h, issuer must match; saving the settings clears discovery and JWKS cache), Authorization Code with PKCE (S256), state + nonce + verifier in the
   session (10 min, single use), token request with `client_secret_basic` (or `_post` if only that is
   offered); ID token checked with firebase/php-jwt: RS256/ES256 only, key from JWKS (cached 1 h, one
@@ -398,7 +404,7 @@ Features:
 | Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login. |
 | Retention | Retention period (default 1 year); nightly purge job. |
-| Backup | Implemented M6, per instance: daily `portal:backup` (02:45) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<UTC timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY), `certs/` and `branding/` (v0.10.0); entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. |
+| Backup | Implemented M6, per instance: daily `portal:backup` (02:45 UTC) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY), `certs/` and `branding/` (v0.10.0); entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Timestamp in the display time zone since v0.10.0 (before: UTC; known limit: two backups within the repeated DST hour may sort in the wrong order). Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. |
 | Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create (bulk: one entry with count)/edit/extend/expiry/revoke/disconnect/CSV export, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), MAC whitelist changes, settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
 | Federation | Peers, status, lag, join token, Telegram owner. |
 | RouterOS generator | Per site: copy-paste script (hotspot, RADIUS client, `/radius incoming`, walled garden, cert fetch), `login.html` download and upload instructions. |

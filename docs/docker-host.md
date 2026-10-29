@@ -58,7 +58,7 @@ services:
     environment:
       APP_URL: https://portal.example.com     # name the guests/routers use (must match the certificate)
       PORTAL_HOSTNAME: portal.example.com
-      TZ: Europe/Zurich
+      TZ: Europe/Zurich                       # display time zone (admin UI, notifications, backup names); data stays UTC
       # TRUSTED_PROXIES: 192.168.1.10       # only if the admin UI is published through a reverse proxy
 
 networks:
@@ -80,7 +80,7 @@ generated secrets, SQLite database, self-signed certificate).
 ## 4. First admin
 
 ```bash
-docker exec -it guest-portal php artisan portal:admin
+docker exec -it guest-portal artisan portal:admin
 ```
 
 Admin UI: `https://<portal-ip>:8443/admin` (self-signed certificate until you add your own).

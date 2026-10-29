@@ -40,39 +40,42 @@ class RadiusController extends Controller
         }
 
         $reason = null;
-        $authorize = fn () => DB::transaction(function () use ($nas, $username, $password, $mac, $request, $grants, &$reason) {
-            $token = RadiusToken::query()->where('username', $username)->lockForUpdate()->first();
+        // Regular closure (not fn): an arrow function would capture $reason by value and lose the reject reason.
+        $authorize = function () use ($nas, $username, $password, $mac, $request, $grants, &$reason) {
+            return DB::transaction(function () use ($nas, $username, $password, $mac, $request, $grants, &$reason) {
+                $token = RadiusToken::query()->where('username', $username)->lockForUpdate()->first();
 
-            $reason = match (true) {
-                $nas === null => 'unknown NAS',
-                $nas->nas_identifier && $nas->nas_identifier !== $this->attr($request, 'NAS-Identifier') => 'NAS-Identifier mismatch',
-                $token === null => 'unknown user',
-                $token->used_at !== null => 'token already used',
-                $token->expires_at->isPast() => 'token expired',
-                ! hash_equals($token->password_hash, RadiusToken::hashPassword($password)) => 'wrong password',
-                $mac === null || $mac !== $token->mac => 'MAC mismatch',
-                $token->site_id !== $nas->site_id => 'site mismatch',
-                default => null,
-            };
-            if ($reason !== null) {
-                return null;
-            }
+                $reason = match (true) {
+                    $nas === null => 'unknown NAS',
+                    $nas->nas_identifier && $nas->nas_identifier !== $this->attr($request, 'NAS-Identifier') => 'NAS-Identifier mismatch',
+                    $token === null => 'unknown user',
+                    $token->used_at !== null => 'token already used',
+                    $token->expires_at->isPast() => 'token expired',
+                    ! hash_equals($token->password_hash, RadiusToken::hashPassword($password)) => 'wrong password',
+                    $mac === null || $mac !== $token->mac => 'MAC mismatch',
+                    $token->site_id !== $nas->site_id => 'site mismatch',
+                    default => null,
+                };
+                if ($reason !== null) {
+                    return null;
+                }
 
-            $grant = Grant::query()->with('siteLinks')->find($token->grant_id);
-            if ($grant === null || ! $grant->isUsable() || ! $grant->allowsSite($nas->site_id)) {
-                $reason = 'grant not usable';
+                $grant = Grant::query()->with('siteLinks')->find($token->grant_id);
+                if ($grant === null || ! $grant->isUsable() || ! $grant->allowsSite($nas->site_id)) {
+                    $reason = 'grant not usable';
 
-                return null;
-            }
+                    return null;
+                }
 
-            $device = $grants->bindDevice($grant, $mac, $token->guest_id);
-            $token->update(['used_at' => now(), 'device_id' => $device->id]);
+                $device = $grants->bindDevice($grant, $mac, $token->guest_id);
+                $token->update(['used_at' => now(), 'device_id' => $device->id]);
 
-            return array_merge([
-                'reply:Session-Timeout' => max(1, $grant->remainingSeconds()),
-                'reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval'),
-            ], $nas->site->driver()->replyAttributes($grant));
-        });
+                return array_merge([
+                    'reply:Session-Timeout' => max(1, $grant->remainingSeconds()),
+                    'reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval'),
+                ], $nas->site->driver()->replyAttributes($grant));
+            });
+        };
 
         // Serialise per grant: concurrent requests with different MACs must not both bind a device.
         $grantId = RadiusToken::query()->where('username', $username)->value('grant_id');

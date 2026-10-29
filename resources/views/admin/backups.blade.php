@@ -19,7 +19,7 @@
                     @foreach ($backups as $backup)
                         <tr>
                             <td><a href="{{ route('admin.backups.download', $backup['name']) }}" class="underline">{{ $backup['name'] }}</a></td>
-                            <td>{{ \Illuminate\Support\Carbon::createFromTimestamp($backup['created_at'])->timezone(config('app.timezone'))->format('Y-m-d H:i') }}</td>
+                            <td>{{ \Illuminate\Support\Carbon::createFromTimestamp($backup['created_at'])->setTimezone(\App\Support\LocalTime::zone())->format('Y-m-d H:i') }}</td>
                             <td>{{ number_format($backup['size'] / 1024, 0, '.', "'") }} KB</td>
                             <td class="text-right">
                                 <form method="POST" action="{{ route('admin.backups.destroy', $backup['name']) }}" onsubmit="return confirm(@js(__('portal.confirm')))">

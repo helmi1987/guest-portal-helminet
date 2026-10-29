@@ -31,6 +31,8 @@
         <env name="SESSION_DRIVER" value="array"/>
         <env name="PORTAL_DEFAULT_ZONE" value=""/>
         <env name="INTERNAL_API_TOKEN" value="test-internal-token"/>
+        <env name="APP_TIMEZONE" value="UTC"/>
+        <env name="ADMIN_PORT" value="8443"/>
         <env name="PULSE_ENABLED" value="false"/>
         <env name="TELESCOPE_ENABLED" value="false"/>
         <env name="NIGHTWATCH_ENABLED" value="false"/>

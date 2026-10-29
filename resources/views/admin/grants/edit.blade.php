@@ -6,11 +6,11 @@
 
     <section class="card mb-6 grid gap-2 text-sm md:grid-cols-3">
         <div>{{ __('portal.grants.duration') }}: {{ \App\Support\Duration::format($grant->duration_s) }} ({{ $grant->expiry_mode->label() }})</div>
-        <div>{{ __('portal.grants.first_login') }}: {{ $grant->first_login_at?->format('Y-m-d H:i') ?? '–' }}</div>
-        <div>{{ __('portal.grants.expires_at') }}: {{ $grant->expires_at?->format('Y-m-d H:i') ?? '–' }}
+        <div>{{ __('portal.grants.first_login') }}: {{ \App\Support\LocalTime::format($grant->first_login_at, 'Y-m-d H:i') ?? '–' }}</div>
+        <div>{{ __('portal.grants.expires_at') }}: {{ \App\Support\LocalTime::format($grant->expires_at, 'Y-m-d H:i') ?? '–' }}
             @if ($grant->remainingSeconds()) ({{ __('portal.grants.remaining') }} {{ \App\Support\Duration::format($grant->remainingSeconds()) }}) @endif</div>
         <div>{{ __('portal.grants.extensions') }}: {{ $grant->extensions_used }}{{ $grant->max_extensions !== null ? ' / '.$grant->max_extensions : '' }}</div>
-        <div>{{ __('portal.grants.revoked_at') }}: {{ $grant->revoked_at?->format('Y-m-d H:i') ?? '–' }}</div>
+        <div>{{ __('portal.grants.revoked_at') }}: {{ \App\Support\LocalTime::format($grant->revoked_at, 'Y-m-d H:i') ?? '–' }}</div>
         @if ($grant->code && ($ssid = $qr->ssidFor($grant)))
             <div class="flex items-center gap-3 md:col-span-3">
                 <div class="h-28 w-28 shrink-0 bg-white">{!! $qr->wifiSvg($ssid, 112) !!}</div>
@@ -30,7 +30,7 @@
             <form method="POST" action="{{ route('admin.grants.expiry', $grant) }}" class="flex items-end gap-2">
                 @csrf
                 <label class="label">{{ __('portal.grants.set_expiry') }}
-                    <input type="datetime-local" name="expires_at" value="{{ $grant->expires_at?->format('Y-m-d\TH:i') }}" required class="field"></label>
+                    <input type="datetime-local" name="expires_at" value="{{ \App\Support\LocalTime::format($grant->expires_at, 'Y-m-d\TH:i') }}" required class="field"></label>
                 <button class="btn-light">{{ __('portal.grants.apply') }}</button>
             </form>
             <form method="POST" action="{{ route('admin.grants.revoke', $grant) }}" onsubmit="return confirm(@js(__('portal.confirm')))">
@@ -52,7 +52,7 @@
             <tbody>
                 @forelse ($grant->devices->sortByDesc('bound_at') as $device)
                     <tr><td class="font-mono">{{ $device->mac }}</td><td>{{ $device->guest ? $device->guest->first_name.' '.$device->guest->last_name : '–' }}@if ($device->guest?->phone_e164)<br><span class="font-mono text-xs">{{ auth()->user()->displayPhone($device->guest->phone_e164) }}</span>@endif</td>
-                        <td>{{ $device->bound_at->format('Y-m-d H:i') }}</td><td>{{ $device->unbound_at?->format('Y-m-d H:i') ?? '–' }}</td></tr>
+                        <td>{{ \App\Support\LocalTime::format($device->bound_at, 'Y-m-d H:i') }}</td><td>{{ \App\Support\LocalTime::format($device->unbound_at, 'Y-m-d H:i') ?? '–' }}</td></tr>
                 @empty
                     <tr><td colspan="4" class="text-slate-500">{{ __('portal.none') }}</td></tr>
                 @endforelse
@@ -64,7 +64,7 @@
             <tbody>
                 @forelse ($grant->sessions as $session)
                     <tr><td class="font-mono">{{ $session->mac }}</td><td>{{ $session->ip ?? '–' }}</td>
-                        <td>{{ $session->started_at->format('Y-m-d H:i') }}</td><td>{{ $session->stopped_at?->format('Y-m-d H:i') ?? __('portal.grants.online') }}</td></tr>
+                        <td>{{ \App\Support\LocalTime::format($session->started_at, 'Y-m-d H:i') }}</td><td>{{ \App\Support\LocalTime::format($session->stopped_at, 'Y-m-d H:i') ?? __('portal.grants.online') }}</td></tr>
                 @empty
                     <tr><td colspan="4" class="text-slate-500">{{ __('portal.none') }}</td></tr>
                 @endforelse

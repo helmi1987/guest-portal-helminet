@@ -5,6 +5,7 @@ namespace App\Approval;
 use App\Enums\ApprovalStatus;
 use App\Models\ApprovalRequest;
 use App\Support\Duration;
+use App\Support\LocalTime;
 
 /**
  * Localized notification texts (language: admin setting "notification_locale").
@@ -25,7 +26,7 @@ class ApprovalMessage
             __('portal.approvals.notify.guest', ['name' => $request->guestName()], $locale),
             __('portal.approvals.notify.site', ['site' => $request->site?->name], $locale),
             __('portal.approvals.notify.device', ['mac' => $request->mac], $locale),
-            __('portal.approvals.notify.valid_until', ['time' => $request->expires_at->timezone(config('app.timezone'))->format('H:i')], $locale),
+            __('portal.approvals.notify.valid_until', ['time' => LocalTime::format($request->expires_at, 'H:i')], $locale),
         ];
     }
 

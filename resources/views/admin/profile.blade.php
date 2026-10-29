@@ -14,7 +14,7 @@
     <section class="card mb-6">
         <h2 class="mb-2 text-lg font-semibold">{{ __('portal.profile.two_factor') }}</h2>
         @if ($user->hasTwoFactor())
-            <p class="mb-4 text-sm">{{ __('portal.profile.two_factor_active', ['date' => $user->totp_confirmed_at->format('d.m.Y'), 'count' => $recoveryLeft]) }}</p>
+            <p class="mb-4 text-sm">{{ __('portal.profile.two_factor_active', ['date' => \App\Support\LocalTime::format($user->totp_confirmed_at, 'd.m.Y'), 'count' => $recoveryLeft]) }}</p>
             <p class="mb-4 text-xs text-slate-500">{{ __('portal.profile.two_factor_manage_help') }}</p>
             @foreach (['recovery' => 'POST', 'disable' => 'DELETE'] as $action => $method)
                 <form method="POST" action="{{ route('admin.profile.two-factor.'.$action) }}" class="mb-4 grid gap-4 md:grid-cols-3">

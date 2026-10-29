@@ -8,11 +8,11 @@ use App\Models\MacWhitelist;
 use App\Models\SessionSummary;
 use App\Models\Site;
 use App\Support\Audit;
+use App\Support\LocalTime;
 use App\Support\Mac;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -161,7 +161,7 @@ class MacWhitelistController extends Controller
             'attributes' => [
                 'mac' => $data['mac'],
                 'comment' => $data['comment'],
-                'expires_at' => ($data['expires_at'] ?? null) ? Carbon::parse($data['expires_at']) : null,
+                'expires_at' => LocalTime::parse($data['expires_at'] ?? null),
                 'active' => (bool) ($data['active'] ?? false),
             ],
             'site_ids' => array_values($data['site_ids'] ?? []),

@@ -10,10 +10,40 @@ use App\Support\LocalInstance;
  */
 class ApprovalSettings
 {
-    /** Base URL of the admin port as reached by approvers (VPN / reverse proxy), for signed links. */
+    /**
+     * Base URL of the admin port as reached by approvers (VPN / reverse proxy), for signed links and
+     * the OIDC redirect URI. Without the setting: APP_URL with the admin port (ADMIN_PORT), because
+     * APP_URL is the guest port where /admin answers 404.
+     */
     public static function adminUrl(): string
     {
-        return rtrim((string) (Setting::get('admin_url') ?: config('app.url')), '/');
+        $configured = Setting::get('admin_url');
+        if (is_string($configured) && $configured !== '') {
+            return rtrim($configured, '/');
+        }
+
+        return self::fallbackAdminUrl();
+    }
+
+    /** True when the admin URL setting is empty (the settings page warns). */
+    public static function adminUrlMissing(): bool
+    {
+        $configured = Setting::get('admin_url');
+
+        return ! is_string($configured) || $configured === '';
+    }
+
+    /** APP_URL (scheme, host, path) with the admin port. */
+    public static function fallbackAdminUrl(): string
+    {
+        $url = rtrim((string) config('app.url'), '/');
+        $parts = parse_url($url);
+        if (! is_array($parts) || ! isset($parts['scheme'], $parts['host'])) {
+            return $url;
+        }
+        $host = str_contains($parts['host'], ':') && ! str_starts_with($parts['host'], '[') ? '['.$parts['host'].']' : $parts['host'];
+
+        return $parts['scheme'].'://'.$host.':'.(int) config('portal.admin_port').rtrim($parts['path'] ?? '', '/');
     }
 
     /** Language of Telegram / Gotify / webhook messages and of the signed link pages. */

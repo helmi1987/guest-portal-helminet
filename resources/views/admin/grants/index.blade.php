@@ -21,7 +21,7 @@
                         <td>{{ $grant->label }}</td>
                         <td>{{ $grant->status()->label() }}</td>
                         <td>{{ \App\Support\Duration::format($grant->duration_s) }}</td>
-                        <td>{{ $grant->expires_at?->format('Y-m-d H:i') ?? '–' }}</td>
+                        <td>{{ \App\Support\LocalTime::format($grant->expires_at, 'Y-m-d H:i') ?? '–' }}</td>
                         <td class="font-mono text-xs">{{ $grant->devices->first()?->mac ?? '–' }}</td>
                         <td>{{ $grant->siteLinks->isEmpty() ? __('portal.all') : $grant->siteLinks->map(fn ($l) => $sites[$l->site_id] ?? '?')->join(', ') }}</td>
                     </tr>

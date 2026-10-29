@@ -11,6 +11,7 @@ use App\Models\TermsVersion;
 use App\Services\GrantManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
@@ -77,9 +78,15 @@ class RadiusFlowTest extends TestCase
     {
         $fields = $this->redeem($this->code()->code, self::MAC_A)->viewData('fields');
 
+        Log::spy();
         $this->authorize($fields['username'], 'wrong', self::MAC_A)->assertStatus(401);
         $this->authorize($fields['username'], $fields['password'], self::MAC_B)->assertStatus(401);
         $this->authorize($fields['username'], $fields['password'], self::MAC_A)->assertOk();
+
+        // The reject reason set inside the locked transaction reaches the log.
+        foreach (['wrong password', 'MAC mismatch'] as $reason) {
+            Log::shouldHaveReceived('info')->with('RADIUS reject', \Mockery::on(fn ($context) => $context['reason'] === $reason))->once();
+        }
     }
 
     public function test_new_mac_rebinds_grant_and_disconnects_old_session(): void

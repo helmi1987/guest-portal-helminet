@@ -19,6 +19,13 @@ return [
     // empty: host of APP_URL.
     'hostname' => env('PORTAL_HOSTNAME'),
 
+    // Time zone for times shown in the admin UI, notifications and backup file names, and for
+    // admin input. Storage, expiry logic and the scheduler stay in UTC (app.timezone).
+    'display_timezone' => env('APP_TIMEZONE', env('TZ', 'UTC')),
+
+    // Admin listener port (nginx, env ADMIN_PORT); used for the admin URL fallback (APP_URL + this port).
+    'admin_port' => (int) env('ADMIN_PORT', 8443),
+
     // Display name of this instance (federation, later milestones).
     'instance_name' => env('PORTAL_INSTANCE_NAME', 'Portal'),
 

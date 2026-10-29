@@ -16,7 +16,7 @@ services:
     environment:
       APP_URL: https://portal.example.com
       PORTAL_HOSTNAME: portal.example.com
-      TZ: UTC
+      TZ: UTC                       # display time zone, e.g. Europe/Zurich (APP_TIMEZONE overrides); data stays UTC
       # TRUSTED_PROXIES: 10.0.0.2   # when the admin UI is behind a reverse proxy
       # Optional MariaDB/MySQL instead of SQLite:
       # DB_CONNECTION: mariadb

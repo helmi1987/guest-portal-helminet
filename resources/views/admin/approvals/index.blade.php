@@ -11,7 +11,7 @@
                         <td>{{ $request->guestName() }}</td>
                         <td>{{ $request->site?->name }}</td>
                         <td class="font-mono">{{ $request->mac }}</td>
-                        <td>{{ $request->created_at->format('d.m.Y H:i') }}</td>
+                        <td>{{ \App\Support\LocalTime::format($request->created_at, 'd.m.Y H:i') }}</td>
                         <td>
                             <form method="POST" action="{{ route('admin.approvals.decide', $request) }}" class="flex flex-wrap items-center gap-2">
                                 @csrf
@@ -42,7 +42,7 @@
                         <td>{{ $request->guestName() }}</td>
                         <td>{{ $request->site?->name }}</td>
                         <td class="font-mono">{{ $request->mac }}</td>
-                        <td>{{ $request->created_at->format('d.m.Y H:i') }}</td>
+                        <td>{{ \App\Support\LocalTime::format($request->created_at, 'd.m.Y H:i') }}</td>
                         <td>{{ $request->currentStatus()->label() }}</td>
                         <td>{{ $request->decided_by ?? '–' }}</td>
                         <td>

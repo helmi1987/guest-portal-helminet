@@ -426,6 +426,7 @@ return [
         'notifications' => 'Notifiche',
         'admin_url' => 'URL admin per i link',
         'admin_url_help' => 'URL di base della porta admin come raggiunta da chi approva (VPN o reverse proxy). Usato nei link firmati di approvazione.',
+        'admin_url_missing' => 'Non impostato: i link e l\'URI di reindirizzamento OIDC usano :url (APP_URL con la porta di amministrazione). Inserire l\'URL con cui gli approvatori e il provider di identità raggiungono la porta di amministrazione.',
         'notification_locale' => 'Lingua delle notifiche',
         'telegram_owner' => 'Questa istanza riceve i pulsanti Telegram (Telegram owner)',
         'telegram_owner_help' => 'Esattamente un\'istanza può interrogare gli aggiornamenti Telegram.',

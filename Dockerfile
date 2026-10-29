@@ -40,7 +40,7 @@ LABEL org.opencontainers.image.title="mikrotik-guest-portal" \
 RUN apk add --no-cache \
         s6-overlay nginx openssl curl ca-certificates tzdata \
         freeradius freeradius-rest freeradius-utils \
-        php84 php84-fpm php84-opcache php84-openssl php84-mbstring php84-tokenizer php84-ctype \
+        php84 php84-fpm php84-opcache php84-phar php84-openssl php84-mbstring php84-tokenizer php84-ctype \
         php84-dom php84-xml php84-xmlwriter php84-fileinfo php84-iconv php84-session php84-curl \
         php84-intl php84-pdo php84-pdo_sqlite php84-pdo_mysql php84-simplexml php84-bcmath \
         php84-pcntl php84-posix php84-sodium \

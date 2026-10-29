@@ -40,6 +40,8 @@ class SettingsController extends Controller
             'smsCountries' => implode(', ', SmsSettings::countries()),
             'smsCaps' => SmsSettings::caps(),
             'adminUrl' => Setting::get('admin_url'),
+            'adminUrlMissing' => ApprovalSettings::adminUrlMissing(),
+            'adminUrlFallback' => ApprovalSettings::fallbackAdminUrl(),
             'locale' => ApprovalSettings::locale(),
             'telegramOwner' => ApprovalSettings::isTelegramOwner(),
             'require2fa' => TwoFactor::required(),

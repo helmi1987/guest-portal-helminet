@@ -18,7 +18,7 @@
                     <dt class="text-slate-500">{{ __('portal.certificates.issuer') }}</dt><dd>{{ $info->issuer }}</dd>
                     <dt class="text-slate-500">{{ __('portal.certificates.valid_to') }}</dt>
                     <dd @class(['text-red-700 font-semibold' => $info->expired() || $info->validTo < time() + 14 * 86400])>
-                        {{ \Illuminate\Support\Carbon::createFromTimestamp($info->validTo)->timezone(config('app.timezone'))->format('Y-m-d H:i') }}
+                        {{ \Illuminate\Support\Carbon::createFromTimestamp($info->validTo)->setTimezone(\App\Support\LocalTime::zone())->format('Y-m-d H:i') }}
                         @if ($info->expired()) ({{ __('portal.certificates.expired') }}) @endif</dd>
                     <dt class="text-slate-500">{{ __('portal.certificates.fingerprint') }}</dt><dd class="break-all font-mono text-xs">{{ $info->fingerprint }}</dd>
                 </dl>
@@ -31,7 +31,7 @@
 
             @if ($status)
                 <p @class(['text-sm', 'text-red-700' => ($status['result'] ?? null) === 'failed'])>
-                    {{ __('portal.certificates.last_pull', ['time' => \Illuminate\Support\Carbon::parse($status['checked_at'])->timezone(config('app.timezone'))->format('Y-m-d H:i')]) }}
+                    {{ __('portal.certificates.last_pull', ['time' => \Illuminate\Support\Carbon::parse($status['checked_at'])->setTimezone(\App\Support\LocalTime::zone())->format('Y-m-d H:i')]) }}
                     {{ __('portal.certificates.results.'.($status['result'] ?? 'failed')) }}@if (! empty($status['error'])): {{ $status['error'] }}@endif
                 </p>
                 @if (! empty($status['warning']))

@@ -5,9 +5,9 @@
     <input name="rate_limit" value="{{ old('rate_limit', $grant?->rate_limit) }}" placeholder="5M/10M" class="field">
     <span class="text-xs text-slate-500">{{ __('portal.grants.rate_limit_help') }}</span></label>
 <label class="label">{{ __('portal.grants.valid_from') }}
-    <input type="datetime-local" name="valid_from" value="{{ old('valid_from', $grant?->valid_from?->format('Y-m-d\TH:i')) }}" class="field"></label>
+    <input type="datetime-local" name="valid_from" value="{{ old('valid_from', \App\Support\LocalTime::format($grant?->valid_from, 'Y-m-d\TH:i')) }}" class="field"></label>
 <label class="label">{{ __('portal.grants.redeem_until') }}
-    <input type="datetime-local" name="redeem_until" value="{{ old('redeem_until', $grant?->redeem_until?->format('Y-m-d\TH:i')) }}" class="field"></label>
+    <input type="datetime-local" name="redeem_until" value="{{ old('redeem_until', \App\Support\LocalTime::format($grant?->redeem_until, 'Y-m-d\TH:i')) }}" class="field"></label>
 <label class="label">{{ __('portal.grants.max_extensions') }}
     <input type="number" min="0" name="max_extensions" value="{{ old('max_extensions', $grant?->max_extensions) }}" class="field"></label>
 <fieldset class="label">

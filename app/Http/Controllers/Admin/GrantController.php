@@ -11,6 +11,7 @@ use App\Models\Site;
 use App\Services\GrantManager;
 use App\Services\VoucherQr;
 use App\Support\Audit;
+use App\Support\LocalTime;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -139,7 +140,7 @@ class GrantController extends Controller
     public function expiry(Request $request, Grant $grant, GrantManager $manager): RedirectResponse
     {
         $data = $request->validate(['expires_at' => ['required', 'date']]);
-        $manager->setExpiry($grant, Carbon::parse($data['expires_at']));
+        $manager->setExpiry($grant, LocalTime::parse($data['expires_at']));
         Audit::log('grant.expiry', $grant, ['expires_at' => $grant->expires_at?->toIso8601String()]);
 
         return back()->with('status', __('portal.saved'));
@@ -178,7 +179,7 @@ class GrantController extends Controller
                 ]), escape: '');
             }
             fclose($out);
-        }, 'codes-'.now()->format('Ymd-His').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
+        }, 'codes-'.LocalTime::now()->format('Ymd-His').'.csv', ['Content-Type' => 'text/csv; charset=UTF-8']);
     }
 
     /** Code grants by ids[] (max. 100), in creation order. */
@@ -216,6 +217,6 @@ class GrantController extends Controller
 
     private function date(?string $value): ?Carbon
     {
-        return $value ? Carbon::parse($value) : null;
+        return LocalTime::parse($value);
     }
 }

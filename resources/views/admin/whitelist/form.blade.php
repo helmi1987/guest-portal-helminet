@@ -10,7 +10,7 @@
             <input name="comment" value="{{ old('comment', $entry->comment) }}" required maxlength="255" class="field">
             <span class="text-xs text-slate-500">{{ __('portal.whitelist.comment_help') }}</span></label>
         <label class="label">{{ __('portal.whitelist.expires_at') }}
-            <input type="datetime-local" name="expires_at" value="{{ old('expires_at', $entry->expires_at?->format('Y-m-d\TH:i')) }}" class="field">
+            <input type="datetime-local" name="expires_at" value="{{ old('expires_at', \App\Support\LocalTime::format($entry->expires_at, 'Y-m-d\TH:i')) }}" class="field">
             <span class="text-xs text-slate-500">{{ __('portal.whitelist.expires_help') }}</span></label>
         <label class="flex items-center gap-2 text-sm"><input type="hidden" name="active" value="0">
             <input type="checkbox" name="active" value="1" @checked(old('active', $entry->active ?? true))> {{ __('portal.whitelist.active') }}</label>
@@ -35,7 +35,7 @@
                 <tbody>
                     @forelse ($entry->sessions as $session)
                         <tr><td>{{ $sites[$session->site_id] ?? '–' }}</td><td>{{ $session->ip ?? '–' }}</td>
-                            <td>{{ $session->started_at->format('Y-m-d H:i') }}</td><td>{{ $session->stopped_at?->format('Y-m-d H:i') ?? __('portal.grants.online') }}</td></tr>
+                            <td>{{ \App\Support\LocalTime::format($session->started_at, 'Y-m-d H:i') }}</td><td>{{ \App\Support\LocalTime::format($session->stopped_at, 'Y-m-d H:i') ?? __('portal.grants.online') }}</td></tr>
                     @empty
                         <tr><td colspan="4" class="text-slate-500">{{ __('portal.none') }}</td></tr>
                     @endforelse

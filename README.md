@@ -92,6 +92,11 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   entries mirror the folder: `db/database.sqlite`, `.env`, `certs/`, `branding/`, plus `backup-manifest.json`),
   start the container. The
   `.env` must belong to the database (same `APP_KEY`), otherwise stored secrets cannot be decrypted.
+- Time zone: `TZ` (or `APP_TIMEZONE`, which wins) sets the zone of times shown in the admin UI,
+  notifications ("open until"), entered dates and backup file names; the database, expiry logic
+  and the scheduler (backup 02:45, purge 03:30) stay in UTC.
+- Admin URL (approval links, OIDC redirect URI): admin UI → Settings; while empty, `APP_URL` with
+  `ADMIN_PORT` (default 8443) is used and the settings page shows a warning.
 - `QUEUE_CONNECTION` must stay `database` (image default); `sync` is not supported (SMS would be sent
   inside the request while the send lock is held).
 - Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.

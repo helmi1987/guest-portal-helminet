@@ -35,7 +35,7 @@
                         <td>
                             <div class="font-medium">{{ $guest->last_name }}, {{ $guest->first_name }}</div>
                             @if ($guest->phone_e164)<div class="font-mono text-xs">{{ auth()->user()->displayPhone($guest->phone_e164) }}</div>@endif
-                            <div class="text-xs text-slate-500">{{ $guest->created_at->format('Y-m-d H:i') }}</div>
+                            <div class="text-xs text-slate-500">{{ \App\Support\LocalTime::format($guest->created_at, 'Y-m-d H:i') }}</div>
                         </td>
                         <td>
                             {{ $method ? __('portal.guests.methods.'.$method->value) : '–' }}<br>
@@ -44,7 +44,7 @@
                         <td class="text-xs">
                             @if ($acceptance)
                                 {{ $acceptance->termsVersion ? strtoupper($acceptance->termsVersion->locale).' v'.$acceptance->termsVersion->number : __('portal.guests.generic_terms') }}<br>
-                                {{ $acceptance->accepted_at->format('Y-m-d H:i') }}
+                                {{ \App\Support\LocalTime::format($acceptance->accepted_at, 'Y-m-d H:i') }}
                             @else – @endif
                         </td>
                         <td>
@@ -81,14 +81,14 @@
                                     @else
                                         <span @class(['font-semibold text-green-700' => $online, 'text-slate-500' => ! $online])>{{ $online ? __('portal.grants.online') : __('portal.guests.offline') }}</span>
                                     @endif
-                                    @if ($device->unbound_at) <span class="text-slate-500">({{ __('portal.grants.unbound_at') }} {{ $device->unbound_at->format('Y-m-d H:i') }})</span>@endif
+                                    @if ($device->unbound_at) <span class="text-slate-500">({{ __('portal.grants.unbound_at') }} {{ \App\Support\LocalTime::format($device->unbound_at, 'Y-m-d H:i') }})</span>@endif
                                     @if ($entry = $whitelisted[$device->mac] ?? null)
                                         <a href="{{ route('admin.whitelist.edit', $entry) }}" class="rounded bg-sky-100 px-1 text-sky-800 underline">{{ __('portal.whitelist.badge') }}@unless ($entry->isValid()) ({{ __('portal.whitelist.not_valid') }})@endunless</a>
                                     @else
                                         <a href="{{ route('admin.whitelist.create', ['device' => $device->id]) }}" class="underline">{{ __('portal.whitelist.allow_device') }}</a>
                                     @endif
                                     @if ($session)
-                                        <div>IP {{ $session->ip ?? '–' }} · {{ __('portal.grants.started_at') }} {{ $session->started_at->format('Y-m-d H:i') }}@if ($session->stopped_at) · {{ __('portal.grants.stopped_at') }} {{ $session->stopped_at->format('Y-m-d H:i') }}@endif</div>
+                                        <div>IP {{ $session->ip ?? '–' }} · {{ __('portal.grants.started_at') }} {{ \App\Support\LocalTime::format($session->started_at, 'Y-m-d H:i') }}@if ($session->stopped_at) · {{ __('portal.grants.stopped_at') }} {{ \App\Support\LocalTime::format($session->stopped_at, 'Y-m-d H:i') }}@endif</div>
                                         @if ($session->accounting_sum_bytes_in !== null)
                                             <div>↓ {{ \App\Support\Bytes::format($session->accounting_sum_bytes_out) }} · ↑ {{ \App\Support\Bytes::format($session->accounting_sum_bytes_in) }}</div>
                                         @endif

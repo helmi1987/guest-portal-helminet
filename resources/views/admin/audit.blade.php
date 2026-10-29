@@ -31,7 +31,7 @@
             <tbody>
                 @forelse ($logs as $log)
                     <tr>
-                        <td class="whitespace-nowrap">{{ $log->created_at->format('d.m.Y H:i:s') }}</td>
+                        <td class="whitespace-nowrap">{{ \App\Support\LocalTime::format($log->created_at, 'd.m.Y H:i:s') }}</td>
                         <td>{{ $log->actor ?? $log->user?->name ?? '–' }}</td>
                         <td class="font-mono">{{ $log->action }}</td>
                         <td class="font-mono text-xs">

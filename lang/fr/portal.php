@@ -426,6 +426,7 @@ return [
         'notifications' => 'Notifications',
         'admin_url' => 'URL admin pour les liens',
         'admin_url_help' => 'URL de base du port admin tel que les approbateurs l\'atteignent (VPN ou reverse proxy). Utilisée dans les liens signés d\'approbation.',
+        'admin_url_missing' => 'Non défini : les liens et l\'URI de redirection OIDC utilisent :url (APP_URL avec le port d\'administration). Saisir l\'URL par laquelle les approbateurs et le fournisseur d\'identité atteignent le port d\'administration.',
         'notification_locale' => 'Langue des notifications',
         'telegram_owner' => 'Cette instance reçoit les boutons Telegram (Telegram owner)',
         'telegram_owner_help' => 'Une seule instance peut interroger les mises à jour Telegram.',
