@@ -12,6 +12,7 @@
     "license": "AGPL-3.0-or-later",
     "require": {
         "php": "^8.3",
+        "giggsey/libphonenumber-for-php-lite": "^9.0",
         "laravel/framework": "^13.17",
         "laravel/tinker": "^3.0",
         "livewire/livewire": "^3.8"

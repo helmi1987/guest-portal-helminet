@@ -53,6 +53,19 @@
                 </ul>
             @endif
             <button type="submit" class="btn py-3 text-base">{{ __('portal.guest.connect') }}</button>
+            @if ($smsEnabled)
+                {{-- No access code: get one by SMS (name and terms are checked by the server). --}}
+                <div class="flex flex-col gap-2 border-t border-slate-200 pt-4 text-sm text-slate-600">
+                    <p>{{ __('portal.guest.sms_intro') }}</p>
+                    <label class="label">
+                        <span>{{ __('portal.guest.phone') }}</span>
+                        <input name="phone" type="tel" value="{{ old('phone') }}" maxlength="30" autocomplete="tel"
+                               placeholder="+41 79 000 00 00" class="field text-base">
+                    </label>
+                    <button type="submit" formaction="{{ route('guest.sms.request') }}" formnovalidate
+                            class="btn-light w-full py-3 text-base">{{ __('portal.guest.sms_request') }}</button>
+                </div>
+            @endif
             @if ($approvalEnabled)
                 {{-- No access code: ask an approver instead (name and terms are checked by the server). --}}
                 <div class="border-t border-slate-200 pt-4 text-sm text-slate-600">

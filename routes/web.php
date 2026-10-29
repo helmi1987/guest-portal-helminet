@@ -32,6 +32,13 @@ Route::middleware(['zone:guest', 'locale'])->group(function () {
     Route::post('/portal/approval', [PortalController::class, 'requestApproval'])->name('guest.approval.request')
         ->middleware('throttle:5,1');
     Route::get('/portal/approval', [PortalController::class, 'approval'])->name('guest.approval');
+    Route::post('/portal/sms', [PortalController::class, 'requestSms'])->name('guest.sms.request')
+        ->middleware('throttle:5,1');
+    Route::get('/portal/sms', [PortalController::class, 'sms'])->name('guest.sms');
+    Route::post('/portal/sms/verify', [PortalController::class, 'verifySms'])->name('guest.sms.verify')
+        ->middleware('throttle:20,1');
+    Route::post('/portal/sms/resend', [PortalController::class, 'resendSms'])->name('guest.sms.resend')
+        ->middleware('throttle:5,1');
     Route::get('/status/{grant}/{token}', [PortalController::class, 'status'])->name('guest.status')
         ->whereNumber('token')->middleware('signed:relative');
 });
@@ -67,6 +74,9 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
         Route::middleware('role:admin')->group(function () {
             Route::get('/settings', [SettingsController::class, 'show'])->name('admin.settings');
             Route::post('/settings', [SettingsController::class, 'update'])->name('admin.settings.update');
+            Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('admin.settings.sms');
+            Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('admin.channels.test')
+                ->middleware('throttle:5,1');
             Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('admin.channels.create');
             Route::post('/channels', [SettingsController::class, 'storeChannel'])->name('admin.channels.store');
             Route::get('/channels/{channel}', [SettingsController::class, 'editChannel'])->name('admin.channels.edit');

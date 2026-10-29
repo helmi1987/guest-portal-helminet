@@ -7,9 +7,11 @@ use App\Models\Device;
 use App\Models\Grant;
 use App\Models\Guest;
 use App\Models\LoginAttempt;
+use App\Models\OtpChallenge;
 use App\Models\RadiusToken;
 use App\Models\SessionSummary;
 use App\Models\Setting;
+use App\Models\SmsMessage;
 use App\Models\TermsAcceptance;
 use Illuminate\Console\Command;
 
@@ -34,6 +36,8 @@ class PurgeData extends Command
         LoginAttempt::query()->where('created_at', '<', $cutoff)->delete();
         ApprovalRequest::withTrashed()->where('created_at', '<', $cutoff)->forceDelete();
         TermsAcceptance::withTrashed()->where('accepted_at', '<', $cutoff)->forceDelete();
+        OtpChallenge::withTrashed()->where('created_at', '<', $cutoff)->forceDelete();
+        SmsMessage::query()->where('created_at', '<', $cutoff)->delete();
 
         // Session summaries cascade to raw accounting.
         SessionSummary::withTrashed()->whereNotNull('stopped_at')->where('stopped_at', '<', $cutoff)->forceDelete();

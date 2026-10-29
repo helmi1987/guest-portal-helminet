@@ -10,10 +10,10 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (milestone M4: notifications and push approval). Code login and push
-approval (Telegram group, Gotify, generic webhook, admin UI) via RADIUS with versioned terms of use,
-DE/IT/FR/EN, HTTPS router login with automatic router certificate; SMS and federation follow
-(see CONCEPT.md §14).
+**Status:** early development (milestone M5: SMS login). Code login, SMS one-time password
+(Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
+admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
+router certificate; admin extras and federation follow (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -44,6 +44,13 @@ docker exec -it guest-portal artisan portal:admin   # create the first admin
   notification language, notification channels. Telegram: create a bot with BotFather, add it to the
   approvers' group, enter bot token and group chat id (optionally an allowlist of user ids); button
   presses are received by long polling (s6 service `telegram`), no inbound connection needed.
+- SMS login: admin UI → Settings → SMS login (duration, allowed countries, cost caps) and SMS
+  providers (Clickatell API key, or a generic SMS webhook for an own gateway; test SMS button).
+  Known limit: the cost caps bound the bill, but an attacker who exhausts the site or instance cap
+  (or a number's cap) blocks SMS login for everyone (or that number) until the window passes; cap
+  hits are logged as warnings. Code and approval login keep working.
+- `QUEUE_CONNECTION` must stay `database` (image default); `sync` is not supported (SMS would be sent
+  inside the request while the send lock is held).
 - Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.
 
 ## Development

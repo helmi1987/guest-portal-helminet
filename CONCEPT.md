@@ -215,6 +215,17 @@ CoovaChilli) are future/community work.
 1. Guest enters name, phone number, accepts terms.
 2. Number normalised to E.164 and checked against the country allowlist (default CH, DE, AT, IT,
    FR; configurable). Rate limit per phone/MAC/IP; OTP created (10 min, max 3 tries); SMS queued.
+   Implemented (M5): only an HMAC of challenge id + 6-digit code is stored (key `APP_KEY`), single use; max. 3
+   sends per request (first SMS + resends, 60 s apart; a resend replaces the code, tries are not
+   reset). Cost caps on sent SMS (setting, defaults): per number 3/h and 6/d, per device (MAC)
+   3/h and 6/d, per site 30/h and 200/d, per instance 500/d; checked and recorded under one lock.
+   Over a cap nothing is stored and the guest sees an error page; site/instance cap hits are logged
+   as warnings. Resend and verify share the send lock (a code cannot be replaced while checked); a
+   busy lock shows the same error page. Known limit: exhausting a cap (SMS pumping, or flooding a
+   victim's number) blocks SMS login for that number/site/instance until the window passes; accepted,
+   no captcha. Phone numbers are masked in logs and on the code page; provider errors are logged
+   with the HTTP status only. Sending: queued job (encrypted payload, `QUEUE_CONNECTION=sync` not
+   supported), first enabled SMS provider by name.
 3. Guest enters OTP; a grant is created with the configured SMS duration (setting, default 1 d),
    time running from login.
 4. Step 5 of A.
@@ -249,7 +260,7 @@ CoovaChilli) are future/community work.
 
 | Interface | Drivers (initial) | Notes |
 |---|---|---|
-| `SmsDriver` | Clickatell REST | Outbound only; more providers later. |
+| `SmsDriver` | Clickatell REST, generic SMS webhook | Outbound only; more providers later. Clickatell: API key in `Authorization` header, endpoint configurable; request/response format **(to verify)** with a real account. SMS webhook: JSON `{event, to, text}` signed like the notification webhook. |
 | `NotificationChannel` | Telegram, Gotify, generic webhook | Webhook: JSON + `X-Signature` HMAC-SHA256, timestamp header against replay. |
 
 ## 8. Codes / access grants
@@ -393,7 +404,8 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `session_summaries` R | id, grant_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at |
 | `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |
 | `radius_accounting` | id, session_summary_id, nas_client_id, acct_session_id, username, last_update_at, terminate_cause, bytes_in, bytes_out, disconnect_sent_at |
-| `otp_challenges` | id, guest_id, phone_e164, code_hash, attempts, expires_at, verified_at |
+| `otp_challenges` | id, guest_id, site_id, mac, phone_e164, code_hash, attempts, sends, last_sent_at, expires_at, verified_at, grant_id; local, with replication columns |
+| `sms_messages` | id, otp_challenge_id, site_id, channel_id, mac, phone_e164, status, provider_id, error (local: cost caps, delivery result) |
 | `approval_requests` | id, guest_id, site_id, mac, status, decided_by, decided_via, decided_at, duration_s, grant_id, expires_at, meta (json: channel message ids); local, but with replication columns (origin needed to route decisions, §10.5) |
 | `terms_versions` R | id, locale, number (per locale; `version` is the replication column), body (plain text), published_at |
 | `terms_acceptances` R | id, guest_id, terms_version_id, grant_id, accepted_at, site_id, mac |
@@ -404,9 +416,9 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `federation_events` / `peer_cursors` | outbox (origin, seq, table, record_id, version, payload) / cursor per origin |
 | Laravel defaults | `jobs`, `failed_jobs`, `cache`, `sessions`, `migrations` |
 
-Purge job removes guests, devices, summaries, accounting, attempts, acceptances and audit entries
-older than the retention period (active grants kept); tombstones are purged after all peers have
-acknowledged them.
+Purge job removes guests, devices, summaries, accounting, attempts, acceptances, OTP challenges,
+sent SMS records and audit entries older than the retention period (active grants kept); tombstones
+are purged after all peers have acknowledged them.
 
 ## 12. Security
 
@@ -450,7 +462,7 @@ acknowledged them.
 | MAC randomization | Device binding/roaming breaks. | Rebind with code; same SSID name across sites helps **(to verify per OS)**. |
 | Captive browsers (OS mini browsers) | JS/cookie limits. | Light pages; test polling in M3. |
 | SQLite concurrency | Write locks. | WAL, short transactions; MariaDB option. |
-| SMS cost abuse | Cost. | Country allowlist, rate limits, daily cap. |
+| SMS cost abuse | Cost; an exhausted cap blocks SMS login for all guests of the site/instance. | Country allowlist, rate limits, caps per number/device/site/instance; cap hits logged; code and approval login unaffected. |
 | Telegram owner down | No Telegram approvals. | Manual failover; other channels and admin UI still work. |
 
 ## 14. Milestones
@@ -464,6 +476,8 @@ the application log). M3 implemented (v0.3.0), open: captive browser tests on re
 certificate script on RouterOS; deferred to M6: certificate API pull, guest list with accepted terms.
 M4 implemented (v0.4.0), open: tests with a real Telegram group, Gotify server and captive browsers;
 deferred: Telegram webhook mode, channel test button (§9), forwarding decisions between instances (M7).
+M5 implemented (v0.5.0), open: Clickatell request format and delivery with a real account, SMS in
+captive browsers; test button for SMS providers implemented (notification channels: still deferred).
 
 | # | Content | Acceptance criteria |
 |---|---|---|

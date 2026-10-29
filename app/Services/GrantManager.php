@@ -51,9 +51,15 @@ class GrantManager
     /** Grant for an approved request: time runs from approval, restricted to the request's site. */
     public function createApprovalGrant(Site $site, int $durationS, string $label, ?User $by = null): Grant
     {
-        return DB::transaction(function () use ($site, $durationS, $label, $by) {
+        return $this->createTimedGrant(GrantType::Approval, $site, $durationS, $label, $by);
+    }
+
+    /** Grant whose time runs from now (approval, verified SMS code), restricted to one site. */
+    public function createTimedGrant(GrantType $type, Site $site, int $durationS, string $label, ?User $by = null): Grant
+    {
+        return DB::transaction(function () use ($type, $site, $durationS, $label, $by) {
             $grant = Grant::create([
-                'type' => GrantType::Approval,
+                'type' => $type,
                 'label' => $label,
                 'duration_s' => $durationS,
                 'expiry_mode' => ExpiryMode::Creation,

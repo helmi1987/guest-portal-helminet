@@ -1,4 +1,4 @@
-@php($fields = \App\Approval\Channels\NotificationChannels::fields($channel->driver))
+@php($fields = \App\Models\Channel::fieldsOf($channel->driver))
 <x-layouts.admin :title="__('portal.channels.drivers.'.$channel->driver)">
     <h1 class="mb-4 text-2xl font-semibold">{{ __('portal.channels.drivers.'.$channel->driver) }}</h1>
 
@@ -23,6 +23,17 @@
         @endforeach
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
+
+    @if ($channel->exists && $channel->kind === \App\Models\Channel::KIND_SMS)
+        <form method="POST" action="{{ route('admin.channels.test', $channel) }}" class="card mb-6 flex flex-wrap items-end gap-2">
+            @csrf
+            <label class="label">{{ __('portal.channels.test_phone') }}
+                <input name="phone" type="tel" required maxlength="30" placeholder="+41 79 000 00 00" class="field"></label>
+            <button class="btn-light">{{ __('portal.channels.test') }}</button>
+            @error('phone')<p class="w-full text-sm text-red-700">{{ $message }}</p>@enderror
+            <p class="w-full text-xs text-slate-500">{{ __('portal.channels.test_help') }}</p>
+        </form>
+    @endif
 
     @if ($channel->exists)
         <form method="POST" action="{{ route('admin.channels.destroy', $channel) }}" onsubmit="return confirm(@js(__('portal.confirm')))">

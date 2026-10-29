@@ -11,6 +11,7 @@ use App\Models\ApprovalRequest;
 use App\Models\Channel;
 use App\Models\Grant;
 use App\Models\Guest;
+use App\Models\OtpChallenge;
 use App\Models\RadiusToken;
 use App\Models\Site;
 use App\Models\TermsAcceptance;
@@ -18,7 +19,12 @@ use App\Models\TermsVersion;
 use App\Nas\HotspotContext;
 use App\Services\GrantManager;
 use App\Services\LoginThrottle;
+use App\Sms\OtpService;
+use App\Sms\PhoneNumber;
+use App\Sms\SmsSettings;
+use App\Support\Redact;
 use Carbon\CarbonInterval;
+use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -29,7 +35,7 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
- * Guest login with a code or push approval (CONCEPT.md §7.1, §7.2 A/C), status page and error pages.
+ * Guest login with a code, SMS code or push approval (CONCEPT.md §7.1, §7.2 A-C), status page and error pages.
  */
 class PortalController extends Controller
 {
@@ -58,6 +64,7 @@ class PortalController extends Controller
             'terms' => TermsVersion::current(app()->getLocale()),
             'routerFailed' => $this->previousHandoffFailed($request),
             'approvalEnabled' => Channel::query()->activeNotification()->exists(),
+            'smsEnabled' => OtpService::enabled(),
         ]);
     }
 
@@ -200,14 +207,135 @@ class PortalController extends Controller
         };
     }
 
+    /** Send an SMS code (CONCEPT.md §7.2 B); the guest then enters it on the SMS page. */
+    public function requestSms(Request $request, OtpService $otp, LoginThrottle $throttle): Response|RedirectResponse
+    {
+        $data = $request->validate([
+            'first_name' => ['required', 'string', 'max:100'],
+            'last_name' => ['required', 'string', 'max:100'],
+            'terms' => ['accepted'],
+            'terms_version' => ['nullable', 'string', 'max:26'],
+            'phone' => ['required', 'string', 'max:30'],
+        ]);
+
+        [$site, $context] = $this->current($request);
+        if ($site === null || ! $context->isComplete() || ! OtpService::enabled()) {
+            return redirect()->route('guest.portal');
+        }
+        $terms = TermsVersion::current(app()->getLocale());
+        if (($data['terms_version'] ?? null) !== $terms?->id) {
+            throw ValidationException::withMessages(['terms' => __('portal.guest.errors.terms_changed')]);
+        }
+        [$phone, $error] = PhoneNumber::normalise($data['phone'], SmsSettings::countries());
+        if ($phone === null) {
+            throw ValidationException::withMessages(['phone' => __('portal.guest.errors.phone_'.$error,
+                ['countries' => implode(', ', SmsSettings::countries())])]);
+        }
+
+        if ($throttle->isLocked($context->mac, $request->ip())) {
+            return $this->error('locked', 429);
+        }
+        // Over a cost cap nothing is stored; the guest is asked to try later.
+        $challenge = $otp->start($data, $terms, $site, $context->mac, $phone);
+        if ($challenge === null) {
+            return $this->error('sms_busy', 429);
+        }
+        $request->session()->put('otp_challenge', $challenge->id);
+
+        return redirect()->route('guest.sms');
+    }
+
+    /** Code entry page; after a successful verification it hands off (again) to the router. */
+    public function sms(Request $request, GrantManager $grants): View|Response|RedirectResponse
+    {
+        [$challenge, $site, $context] = $this->currentChallenge($request);
+        if ($challenge === null) {
+            return redirect()->route('guest.portal');
+        }
+        if ($challenge->grant_id !== null) {
+            return $this->grantHandoff($request, $grants, $challenge->grant, $challenge->guest, $site, $context);
+        }
+        if (! $challenge->isOpen()) {
+            return $this->error('sms_failed', 403);
+        }
+
+        return view('guest.sms', [
+            'phone' => Redact::phone($challenge->phone_e164),
+            'canResend' => $challenge->sends < config('portal.sms.max_sends'),
+        ]);
+    }
+
+    public function verifySms(Request $request, OtpService $otp, GrantManager $grants, LoginThrottle $throttle): View|Response|RedirectResponse
+    {
+        $code = preg_replace('/\D/', '', (string) $request->validate(['otp' => ['required', 'string', 'max:20']])['otp']);
+        [$challenge, $site, $context] = $this->currentChallenge($request);
+        if ($challenge === null || $challenge->grant_id !== null) {
+            return redirect()->route('guest.sms');
+        }
+
+        try {
+            $grant = $throttle->attempt($context->mac, $request->ip(), $site->id, 'sms', fn () => $otp->verify($challenge, $code));
+        } catch (LockTimeoutException) {
+            // Busy (many parallel logins); nothing was recorded, the guest can retry.
+            return $this->error('sms_busy', 429);
+        }
+        if ($grant === false) {
+            return $this->error('locked', 429);
+        }
+        if ($grant === null) {
+            if (! $challenge->isOpen()) {
+                return $this->error('sms_failed', 403);
+            }
+            throw ValidationException::withMessages(['otp' => __('portal.guest.errors.invalid_otp',
+                ['tries' => config('portal.sms.max_attempts') - $challenge->attempts])]);
+        }
+
+        return $this->grantHandoff($request, $grants, $grant, $challenge->guest, $site, $context);
+    }
+
+    public function resendSms(Request $request, OtpService $otp): Response|RedirectResponse
+    {
+        [$challenge] = $this->currentChallenge($request);
+        if ($challenge === null || ! $challenge->isOpen()) {
+            return redirect()->route('guest.sms');
+        }
+
+        return match ($otp->resend($challenge)) {
+            'sent' => redirect()->route('guest.sms')->with('status', __('portal.guest.sms_resent')),
+            'closed' => redirect()->route('guest.sms'),
+            'wait' => redirect()->route('guest.sms')->withErrors(['otp' => __('portal.guest.errors.sms_wait',
+                ['seconds' => config('portal.sms.resend_after_s')])]),
+            'limit' => redirect()->route('guest.sms')->withErrors(['otp' => __('portal.guest.errors.sms_limit')]),
+            default => $this->error('sms_busy', 429),
+        };
+    }
+
+    /** @return array{0: ?OtpChallenge, 1: ?Site, 2: HotspotContext} challenge of this session, site and device */
+    private function currentChallenge(Request $request): array
+    {
+        $challenge = OtpChallenge::query()->with(['grant', 'guest'])->find($request->session()->get('otp_challenge'));
+        [$site, $context] = $this->current($request);
+        if ($challenge === null || $site === null || $site->id !== $challenge->site_id || ! $context->isComplete()
+            || $context->mac !== $challenge->mac) {
+            return [null, $site, $context];
+        }
+
+        return [$challenge, $site, $context];
+    }
+
     private function approvedHandoff(Request $request, GrantManager $grants, ApprovalRequest $approval, Site $site, HotspotContext $context): View|Response
     {
-        $grant = $approval->grant;
+        return $this->grantHandoff($request, $grants, $approval->grant, $approval->guest, $site, $context);
+    }
+
+    /** Handoff for a site-bound grant (approval, SMS); the context MAC was checked by the caller. */
+    private function grantHandoff(Request $request, GrantManager $grants, ?Grant $grant, Guest $guest, Site $site, HotspotContext $context): View|Response
+    {
         if ($grant === null || ! $grant->isUsable()) {
             return $this->error($grant?->status() === GrantStatus::Revoked ? 'revoked' : 'expired', 403);
         }
         // Each visit issues fresh one-time credentials, so a failed router login can be retried.
-        [$token, $password] = $grants->issueToken($grant, $approval->guest, $site, $approval->mac);
+        [$token, $password] = $grants->issueToken($grant, $guest, $site, $context->mac);
 
         return $this->handoff($request, $grant, $site, $context, $token, $password);
     }

@@ -58,6 +58,22 @@ return [
         'max_pending_per_site' => (int) env('PORTAL_APPROVAL_MAX_PENDING', 10),
     ],
 
+    // SMS login (CONCEPT.md §7.2 B). Duration, countries and caps are defaults for the replicated
+    // settings sms_duration_s, sms_countries and sms_caps (admin UI).
+    'sms' => [
+        'duration_s' => 86400,
+        'countries' => ['CH', 'DE', 'AT', 'IT', 'FR'],
+        'ttl_minutes' => 10,
+        'max_attempts' => 3,
+        // Sends per code request (first SMS + resends) and minimum gap between them.
+        'max_sends' => 3,
+        'resend_after_s' => 60,
+        // Cost caps: max. SMS (first SMS and resends) per phone number, device (MAC) and site per
+        // hour/day, and per instance per day.
+        'caps' => ['phone_hour' => 3, 'phone_day' => 6, 'mac_hour' => 3, 'mac_day' => 6, 'site_hour' => 30,
+            'site_day' => 200, 'global_day' => 500],
+    ],
+
     // Code duration presets in seconds.
     'duration_presets' => ['8h' => 28800, '1d' => 86400, '1w' => 604800],
 
