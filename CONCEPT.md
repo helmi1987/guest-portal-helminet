@@ -94,7 +94,7 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
   (e.g. `containers`) with an IP on the router; firewall/NAT as needed. No NAT between routers and
   the instance for RADIUS (source IP identifies the NAS).
 - Mounts (`/container/mounts add list=..`, container property `mountlists`; envs via `envlist`):
-  persistent `/data` (SQLite, generated configs, env file, certificates), optional `/backup`.
+  persistent `/data` (SQLite, generated configs, env file, certificates, backups in `/data/backups`).
 - Env: only non-secret bootstrap values via `/container/envs` (visible in config exports);
   secrets in an env file on `/data` (§12).
 - `start-on-boot=yes`, `logging=yes`; memory limit (property name `memory-high`/`memory-max`
@@ -164,9 +164,26 @@ CoovaChilli) are future/community work.
   internal IP (e.g. `portal.example.com` → `10.0.0.10`), issued via DNS-01.
 - Certificate sources: `file` (implemented M3): `/data/certs/portal.crt` + `portal.key` (full chain,
   PEM); legacy fallback `fullchain.pem` + `privkey.pem` mounted at `/certs`; self-signed fallback so
-  setup works. Invalid or non-matching pairs are ignored (logged). An s6 service (`cert-watch`, root)
-  polls the files every 10 s and reloads nginx after `nginx -t`. `api` (periodic pull from a generic
-  certificate API: URL + bearer token, PEM response) is deferred to M6 (`TLS_SOURCE`).
+  setup works. Invalid or non-matching pairs and symlinks in `/data/certs` are ignored (logged);
+  `chown -h`/`chmod` only on regular files. An s6 service (`cert-watch`, root) polls the files every
+  10 s and reloads nginx after `nginx -t`. While no valid pair exists (e.g. during a replacement)
+  cert-watch changes nothing (nginx keeps its loaded certificate) and retries on the next poll; the
+  self-signed fallback is chosen only at container start (M6).
+- Certificate pull (implemented M6; local settings per target instead of the planned env
+  `TLS_SOURCE`): targets `portal` (`portal.crt`/`.key`) and `router` (`router.crt`/`.key`), each with
+  source `none` (files by the operator), `certwarden` (`GET <base>/certwarden/api/v1/download/
+  privatecertchains/<name>`, header `X-API-Key: <cert API key>.<key API key>`, PEM key + cert + chain)
+  or `url` (generic URL returning a PEM bundle, optional bearer token). API key encrypted (APP_KEY),
+  never shown, logged or audited; optional own CA PEM for a private CA, TLS verification always on.
+  Scheduler every 6 h (`portal:cert-pull`) + "pull now" in the admin UI. Validation before writing:
+  exactly one unencrypted key, a certificate matching it (placed first), currently valid; target
+  `portal` must cover `PORTAL_HOSTNAME` (else the `APP_URL` host), otherwise rejected; target `router`
+  only warns about site hotspot host names it does not cover. HTTP redirects are not followed (3xx =
+  error, the key must not reach another host); source URLs without user info, the query is masked in
+  UI, audit and errors. Compared by content (no ETag); changed files are written atomically (temp file
+  + rename in the same folder), cert-watch reloads nginx. The app (user `portal`) needs write access
+  to `/data/certs` (folder `root:portal 770`). Status, warnings and redacted errors in the admin UI and
+  log; subject, SAN, issuer, expiry, fingerprint shown for both targets.
 - No built-in ACME client in v1 (recommendation): keeps the image small; any external ACME client
   can write the files or serve the API. Revisit on demand.
 - Router certificates for `login-by=https` (decided): one wildcard certificate (e.g.
@@ -177,8 +194,10 @@ CoovaChilli) are future/community work.
   {fingerprint|router.crt|router.key}` on the guest port, stateless (no session/cookies), with a
   per-router token in header `X-Portal-Token` (local, encrypted) and only from the router's NAS IP
   (fetch with `src-address`; check off by default behind `TRUSTED_PROXIES`, env
-  `PORTAL_ROUTER_CERT_CHECK_IP`); denied requests are logged. Key files: `portal.key` 600 root,
-  `router.key` 640 root:portal. The generated script is idempotent (removes its own entries named or
+  `PORTAL_ROUTER_CERT_CHECK_IP`); denied requests are logged. Key files (decided M6): all keys in
+  `/data/certs` (`portal.key`, `router.key`, `selfsigned.key`, operator-provided or pulled) are set to
+  `root:portal 640`, certificates `root:portal 644`, so the app can serve the router key, compare
+  pulled files and include them in backups; legacy keys in `/certs` stay 600. The generated script is idempotent (removes its own entries named or
   commented `guest-portal` first, incl. hotspot profile `guest-portal`). The script (scheduler at startup + every `PORTAL_ROUTER_CERT_INTERVAL`,
   default 1d) compares the SHA-256 fingerprint and, when changed, imports the files and sets the
   hotspot profile `ssl-certificate` **(RouterOS script syntax to verify)**.
@@ -319,11 +338,11 @@ Features:
 | Sessions | Active sessions federation-wide (site, MAC, IP, start, remaining), revoke. |
 | Guests | Guest list, accepted terms version, grant history. |
 | Approvals | Pending requests (approve/deny in UI as well). |
-| Channels | Notification channels and SMS provider, test button. |
+| Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login. |
 | Retention | Retention period (default 1 year); nightly purge job. |
-| Backup | Scheduled SQLite backup (`VACUUM INTO`) to `/backup` (e.g. NAS share), keep N copies; manual download. Per instance. |
-| Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create/edit/extend/expiry/revoke, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), settings, sites, routers, setup inputs, terms, channels, users, 2FA enable/disable/reset, login success/failure, logout. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
+| Backup | Implemented M6, per instance: daily `portal:backup` (02:45) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<UTC timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY) and `certs/`; entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. |
+| Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create/edit/extend/expiry/revoke, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
 | Federation | Peers, status, lag, join token, Telegram owner. |
 | RouterOS generator | Per site: copy-paste script (hotspot, RADIUS client, `/radius incoming`, walled garden, cert fetch), `login.html` download and upload instructions. |
 | Setup assistant | Per site (implemented v0.6.0): guided steps with copy buttons, commands generated by the NAS driver from saved inputs (sanitized): 1 RouterOS container (optional, inputs local to the instance; Docker host as alternative), 2 guest network (VLAN, bridge, subnet, gateway, DHCP pool, SSID, Wi-Fi mode CAPsMAN v1 / wifi CAPsMAN / local radio; stored in site setting `setup`, also fill the router script), DHCP option 114, firewall isolation, 3 hotspot + DNS names (no captive check hosts in the walled garden), 4 router script, 5 `login.html` via `/tool fetch` (route `/router-login/{nas}/login.html`, router token + NAS IP like the certificate download), 6 status per router (last RADIUS contact, certificate and `login.html` fetched), 7 diagnostics. |
@@ -486,14 +505,16 @@ real RouterOS router. Deferred from M2: voucher QR, audit log table (M6; M2 logs
 the application log). M3 implemented (v0.3.0), open: captive browser tests on real devices, router
 certificate script on RouterOS; deferred to M6: certificate API pull, guest list with accepted terms.
 M4 implemented (v0.4.0), open: tests with a real Telegram group, Gotify server and captive browsers;
-deferred: Telegram webhook mode, channel test button (§9), forwarding decisions between instances (M7).
+deferred: Telegram webhook mode, channel test button (§9, done in M6), forwarding decisions between instances (M7).
 M5 implemented (v0.5.0), open: Clickatell request format and delivery with a real account, SMS in
-captive browsers; test button for SMS providers implemented (notification channels: still deferred).
+captive browsers; test button for SMS providers implemented (notification channels: M6).
 v0.6.0: setup assistant (§9), open: generated commands tested on real RouterOS (CAPsMAN v1/v2, local
 radio, DHCP option 114, `/tool fetch` of `login.html`), captive API with real devices.
 M6 in progress: part A implemented (roles applied to all admin routes, user management, TOTP 2FA,
-audit log table replacing the M2 log-only grant audit); open: vouchers with QR, sessions/guests,
-backups, TLS sources, certificate API pull and the rest of M6. Grants have no delete (revoke only).
+audit log table replacing the M2 log-only grant audit); part B implemented (backups, certificate pull
+from CertWarden/URL, test button for notification channels); open: vouchers with QR, sessions/guests,
+first-start web setup, CertWarden pull and backups tested on a real setup. Grants have no delete
+(revoke only).
 
 | # | Content | Acceptance criteria |
 |---|---|---|

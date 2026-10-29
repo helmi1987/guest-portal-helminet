@@ -12,6 +12,8 @@ use App\Sms\SmsSettings;
 use App\Support\Audit;
 use App\Support\LocalInstance;
 use App\Support\Redact;
+use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -87,9 +89,15 @@ class SettingsController extends Controller
         return back()->with('status', __('portal.saved'));
     }
 
-    /** Send a test SMS synchronously with this channel (costs one SMS). */
+    /**
+     * Test button: an SMS channel sends a test SMS (costs one SMS), a notification channel posts a
+     * test message. Errors are shown as HTTP status only; the full error is logged redacted.
+     */
     public function testChannel(Request $request, Channel $channel): RedirectResponse
     {
+        if ($channel->kind === Channel::KIND_NOTIFICATION) {
+            return $this->testNotificationChannel($request, $channel);
+        }
         abort_unless($channel->kind === Channel::KIND_SMS, 404);
         $phone = $request->validate(['phone' => ['required', 'string', 'max:30']])['phone'];
         [$e164, $error] = PhoneNumber::normalise($phone, SmsSettings::countries());
@@ -102,13 +110,37 @@ class SettingsController extends Controller
         } catch (Throwable $e) {
             $message = Redact::secrets($e->getMessage(), $channel->secretValues());
             Log::warning('Test SMS failed', ['channel' => $channel->id, 'phone' => Redact::phone($e164), 'error' => $message]);
+            Audit::log('channel.tested', $channel, ['result' => 'failed']);
 
             return back()->withErrors(['phone' => __('portal.channels.test_failed', ['error' => $message])]);
         }
         Log::info('Test SMS sent', ['user' => $request->user()->id, 'channel' => $channel->id, 'phone' => Redact::phone($e164), 'provider_id' => $id]);
-        Audit::log('channel.tested', $channel);
+        Audit::log('channel.tested', $channel, ['result' => 'ok']);
 
         return back()->with('status', __('portal.channels.test_sent', ['id' => $id ?? '–']));
+    }
+
+    private function testNotificationChannel(Request $request, Channel $channel): RedirectResponse
+    {
+        try {
+            $channel->driver()->test($channel, __('portal.channels.test_message', [], ApprovalSettings::locale()));
+        } catch (Throwable $e) {
+            $message = Redact::secrets($e->getMessage(), $channel->secretValues());
+            Log::warning('Test notification failed', ['channel' => $channel->id, 'driver' => $channel->driver, 'error' => $message]);
+            Audit::log('channel.tested', $channel, ['result' => 'failed']);
+            $error = match (true) {
+                $e instanceof RequestException => 'HTTP '.$e->response->status(),
+                (bool) preg_match('/status code (\d{3})/', $message, $m) => 'HTTP '.$m[1],
+                $e instanceof ConnectionException => __('portal.channels.test_connection'),
+                default => __('portal.channels.test_error'),
+            };
+
+            return back()->withErrors(['test' => __('portal.channels.test_notify_failed', ['error' => $error])]);
+        }
+        Log::info('Test notification sent', ['user' => $request->user()->id, 'channel' => $channel->id]);
+        Audit::log('channel.tested', $channel, ['result' => 'ok']);
+
+        return back()->with('status', __('portal.channels.test_notify_sent'));
     }
 
     public function createChannel(Request $request): View

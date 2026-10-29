@@ -55,7 +55,10 @@ sed -e "s/__GUEST_PORT__/${GUEST_PORT:-443}/g" \
     echo "# Managed by the portal. Do not edit." > "$DATA_DIR/radius/clients.conf"
 
 # --- Permissions -------------------------------------------------------------
-chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/backups" "$DATA_DIR/radius"
+chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/radius"
+# Backups contain secrets. The folder may be a bind mount (e.g. NAS share) that refuses chown/chmod.
+{ chown -R portal:portal "$DATA_DIR/backups" && chmod 700 "$DATA_DIR/backups"; } 2>/dev/null \
+    || log "WARNING: cannot set owner/mode of $DATA_DIR/backups (the app user portal must be able to write)"
 chown portal:portal "$DATA_DIR" "$ENV_FILE"
 chmod 600 "$ENV_FILE"
 

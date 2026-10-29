@@ -13,7 +13,8 @@ can be supported via drivers (contributions welcome).
 **Status:** early development (milestone M5: SMS login; v0.6.0: setup assistant). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
-router certificate; M6 (in progress): users with roles admin/manager, TOTP two-factor login, audit log;
+router certificate; M6 (in progress): users with roles admin/manager, TOTP two-factor login, audit log,
+backups, certificate pull from CertWarden or a URL, test button for notification channels;
 remaining admin extras and federation follow (see CONCEPT.md §14).
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
@@ -41,6 +42,11 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   and admin ports (otherwise a self-signed one is generated; legacy: `fullchain.pem` + `privkey.pem`
   mounted at `/certs`), `router.crt` + `router.key` (e.g. a wildcard) for the routers' HTTPS login,
   downloaded by each router's scheduler. Changed files are picked up within ~10 s (nginx reload).
+  Admin UI → Certificates: current certificates and an optional source per certificate (CertWarden
+  private cert chain with `<cert API key>.<key API key>`, or a URL returning key + certificate +
+  chain as PEM with optional bearer token, own CA for a private CA), pulled every 6 h or on demand.
+- Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`; one `.tar.gz`, mode 0600,
+  14 kept by default), admin UI → Backups or `artisan portal:backup`. Backups contain secrets.
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).
   Docker host (Compose, e.g. Unraid): [docs/docker-host.md](docs/docker-host.md).
   RouterOS container: [docs/routeros-container.md](docs/routeros-container.md).
@@ -55,6 +61,11 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   Known limit: the cost caps bound the bill, but an attacker who exhausts the site or instance cap
   (or a number's cap) blocks SMS login for everyone (or that number) until the window passes; cap
   hits are logged as warnings. Code and approval login keep working.
+- Restore: stop the container, delete `<data folder>/db/database.sqlite-wal` and `-shm` if present,
+  extract the backup into the data folder (`tar -xzf portal-backup-….tar.gz -C <data folder>`;
+  entries mirror the folder: `db/database.sqlite`, `.env`, `certs/`, plus `backup-manifest.json`),
+  start the container. The
+  `.env` must belong to the database (same `APP_KEY`), otherwise stored secrets cannot be decrypted.
 - `QUEUE_CONNECTION` must stay `database` (image default); `sync` is not supported (SMS would be sent
   inside the request while the send lock is held).
 - Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.

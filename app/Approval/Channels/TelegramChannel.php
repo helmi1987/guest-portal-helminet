@@ -59,6 +59,11 @@ class TelegramChannel implements NotificationChannel
         ]);
     }
 
+    public function test(Channel $channel, string $text): void
+    {
+        $this->call($channel, 'sendMessage', ['chat_id' => $channel->conf('chat_id'), 'text' => $text]);
+    }
+
     /** Callback data (max 64 bytes): request id, origin instance (federation), choice. */
     public static function callbackData(ApprovalRequest $request, string $choice): string
     {

@@ -20,6 +20,9 @@ interface NotificationChannel
     /** Announce a new request. Returns delivery data stored with the request (e.g. message id). */
     public function requested(ApprovalRequest $request, Channel $channel): ?array;
 
+    /** Send a test message (admin "test" button); throws on delivery errors. */
+    public function test(Channel $channel, string $text): void;
+
     /** The request was decided or expired; $meta is what requested() returned. */
     public function decided(ApprovalRequest $request, Channel $channel, ?array $meta): void;
 }

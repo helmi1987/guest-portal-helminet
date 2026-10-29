@@ -1,5 +1,8 @@
 <?php
 
+// Persistent data folder (container: /data; development: storage/app).
+$dataDir = rtrim((string) env('PORTAL_DATA_DIR', storage_path('app')), '/');
+
 return [
 
     /*
@@ -11,6 +14,10 @@ return [
 
     // Shared secret for the loopback-only internal API (FreeRADIUS -> Laravel).
     'internal_api_token' => env('INTERNAL_API_TOKEN'),
+
+    // Host name of the guest and admin ports (certificate check of the portal certificate pull);
+    // empty: host of APP_URL.
+    'hostname' => env('PORTAL_HOSTNAME'),
 
     // Display name of this instance (federation, later milestones).
     'instance_name' => env('PORTAL_INSTANCE_NAME', 'Portal'),
@@ -44,13 +51,36 @@ return [
     // Router certificate for login-by=https (CONCEPT.md §6), offered to the routers for download.
     // Mounted by the operator (container: /data/certs/router.crt + router.key).
     'router_cert' => [
-        'cert' => env('PORTAL_ROUTER_CERT', rtrim((string) env('PORTAL_DATA_DIR', storage_path('app')), '/').'/certs/router.crt'),
-        'key' => env('PORTAL_ROUTER_KEY', rtrim((string) env('PORTAL_DATA_DIR', storage_path('app')), '/').'/certs/router.key'),
+        'cert' => env('PORTAL_ROUTER_CERT', $dataDir.'/certs/router.crt'),
+        'key' => env('PORTAL_ROUTER_KEY', $dataDir.'/certs/router.key'),
         // Download only from the router's NAS IP. Default: on unless the instance is behind trusted
         // proxies (TRUSTED_PROXIES), where the source address is the proxy's.
         'check_source_ip' => (bool) env('PORTAL_ROUTER_CERT_CHECK_IP', ! env('TRUSTED_PROXIES')),
         // RouterOS scheduler interval for fetching the certificate.
         'fetch_interval' => env('PORTAL_ROUTER_CERT_INTERVAL', '1d'),
+    ],
+
+    // Certificate for the guest and admin ports (CONCEPT.md §6), selected by portal-certs (nginx).
+    'portal_cert' => [
+        'cert' => $dataDir.'/certs/portal.crt',
+        'key' => $dataDir.'/certs/portal.key',
+    ],
+
+    // Certificate pull from CertWarden or a generic URL (CONCEPT.md §6): HTTP timeout, max. size.
+    'cert_pull' => [
+        'timeout' => 20,
+        'max_bytes' => 1048576,
+    ],
+
+    // Backups (CONCEPT.md §9): SQLite snapshot + env file + certificates as one tar.gz, kept N times
+    // (default for the local setting backup_keep). Never inside a web-reachable folder.
+    'backup' => [
+        'dir' => env('PORTAL_BACKUP_DIR', $dataDir.'/backups'),
+        'keep' => 14,
+        'env_file' => env('PORTAL_DATA_DIR') ? $dataDir.'/.env' : base_path('.env'),
+        'certs_dir' => $dataDir.'/certs',
+        // SQLite file to snapshot; null = the sqlite connection's database.
+        'database' => null,
     ],
 
     // Push approval: max. open requests per site (beyond that guests are asked to try later).

@@ -35,6 +35,15 @@
         </form>
     @endif
 
+    @if ($channel->exists && $channel->kind === \App\Models\Channel::KIND_NOTIFICATION)
+        <form method="POST" action="{{ route('admin.channels.test', $channel) }}" class="card mb-6 flex flex-wrap items-end gap-2">
+            @csrf
+            <button class="btn-light">{{ __('portal.channels.test_notify') }}</button>
+            @error('test')<p class="w-full text-sm text-red-700">{{ $message }}</p>@enderror
+            <p class="w-full text-xs text-slate-500">{{ __('portal.channels.test_notify_help') }}</p>
+        </form>
+    @endif
+
     @if ($channel->exists)
         <form method="POST" action="{{ route('admin.channels.destroy', $channel) }}" onsubmit="return confirm(@js(__('portal.confirm')))">
             @csrf @method('DELETE') <button class="btn-danger">{{ __('portal.delete') }}</button></form>

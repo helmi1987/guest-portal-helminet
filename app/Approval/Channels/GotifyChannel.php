@@ -48,6 +48,17 @@ class GotifyChannel implements NotificationChannel
         return null;
     }
 
+    public function test(Channel $channel, string $text): void
+    {
+        Http::asJson()->timeout(10)
+            ->withHeaders(['X-Gotify-Key' => $channel->conf('app_token')])
+            ->post(rtrim($channel->conf('url'), '/').'/message', [
+                'title' => ApprovalMessage::title(),
+                'message' => $text,
+                'priority' => (int) $channel->conf('priority', 8),
+            ])->throw();
+    }
+
     /** Gotify messages cannot be edited. */
     public function decided(ApprovalRequest $request, Channel $channel, ?array $meta): void {}
 }

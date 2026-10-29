@@ -2,6 +2,8 @@
 
 use App\Http\Controllers\Admin\ApprovalController;
 use App\Http\Controllers\Admin\AuditController;
+use App\Http\Controllers\Admin\BackupController;
+use App\Http\Controllers\Admin\CertificateController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\LogoutController;
 use App\Http\Controllers\Admin\ProfileController;
@@ -90,7 +92,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/approvals/{approval}', [ApprovalController::class, 'decide'])->name('approvals.decide');
             });
 
-            // Admin only: settings, channels, terms, sites/routers/setup, users, audit log.
+            // Admin only: settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates.
             Route::middleware('role:admin')->name('admin.')->group(function () {
                 Route::get('/settings', [SettingsController::class, 'show'])->name('settings');
                 Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
@@ -121,6 +123,20 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::resource('users', UserController::class)->except(['show']);
                 Route::post('/users/{user}/reset-two-factor', [UserController::class, 'resetTwoFactor'])->name('users.reset-two-factor');
                 Route::get('/audit', [AuditController::class, 'index'])->name('audit');
+
+                Route::get('/backups', [BackupController::class, 'index'])->name('backups.index');
+                Route::post('/backups', [BackupController::class, 'store'])->name('backups.store')->middleware('throttle:5,1');
+                Route::post('/backups/settings', [BackupController::class, 'settings'])->name('backups.settings');
+                Route::get('/backups/{name}', [BackupController::class, 'download'])->name('backups.download')
+                    ->where('name', 'portal-backup-[0-9-]+\.tar\.gz');
+                Route::delete('/backups/{name}', [BackupController::class, 'destroy'])->name('backups.destroy')
+                    ->where('name', 'portal-backup-[0-9-]+\.tar\.gz');
+
+                Route::get('/certificates', [CertificateController::class, 'index'])->name('certificates.index');
+                Route::put('/certificates/{target}', [CertificateController::class, 'update'])->name('certificates.update')
+                    ->whereIn('target', ['portal', 'router']);
+                Route::post('/certificates/{target}/pull', [CertificateController::class, 'pull'])->name('certificates.pull')
+                    ->whereIn('target', ['portal', 'router'])->middleware('throttle:5,1');
             });
         });
     });

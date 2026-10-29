@@ -1,62 +1,94 @@
 #!/bin/sh
-# Selects the TLS certificate for nginx and fixes permissions of the router certificate.
-# Called by portal-init (every start) and cert-watch (on change). Runs as root.
+# Selects the TLS certificate for nginx and fixes permissions of the certificate files.
+# Called by portal-init (every start) and cert-watch (on change, with --watch). Runs as root.
 #   Portal (guest + admin ports): /data/certs/portal.crt + portal.key
 #     legacy fallback: $TLS_CERT_DIR (default /certs)/fullchain.pem + privkey.pem
-#     otherwise a self-signed certificate in /data/certs/selfsigned.*
+#     otherwise (container start only) a self-signed certificate in /data/certs/selfsigned.*
 #   Router (login-by=https, downloaded by the routers): /data/certs/router.crt + router.key
+# Files may be written by the operator or by the app's certificate pull (portal:cert-pull).
+# Symlinks in /data/certs are ignored. Keys in /data/certs: root:portal 640 (nginx master reads
+# them as root; the app reads them for the router download, the pull comparison and backups).
+# --watch: if no valid pair exists (e.g. a pull is replacing the files), nothing is changed and
+# the exit code is 3, so nginx keeps its loaded certificate and cert-watch retries.
 set -eu
 
 DATA_DIR="${PORTAL_DATA_DIR:-/data}"
 CERTS="$DATA_DIR/certs"
 RUN_DIR=/run/portal
 LEGACY_DIR="${TLS_CERT_DIR:-/certs}"
+WATCH=0
+[ "${1:-}" = "--watch" ] && WATCH=1
 
 log() { echo "[portal-certs] $*"; }
 
-# Certificate and key must parse and belong together.
+# Certificate and key must be regular files (no symlinks in $CERTS), parse and belong together.
 valid_pair() {
-    [ -s "$1" ] && [ -s "$2" ] || return 1
+    case "$1" in "$CERTS"/*)
+        if [ -L "$1" ] || [ -L "$2" ]; then log "WARNING: $1 or $2 is a symlink, ignored"; return 1; fi ;;
+    esac
+    [ -f "$1" ] && [ -f "$2" ] && [ -s "$1" ] && [ -s "$2" ] || return 1
     a="$(openssl x509 -noout -pubkey -in "$1" 2>/dev/null)" || return 1
     b="$(openssl pkey -pubout -in "$2" 2>/dev/null)" || return 1
     [ -n "$a" ] && [ "$a" = "$b" ]
 }
 
+# Owner root:portal and mode for regular files only (never follows symlinks).
+own() {
+    [ -f "$2" ] && [ ! -L "$2" ] || return 0
+    { chown -h root:portal "$2" && chmod "$1" "$2"; } 2>/dev/null \
+        || log "WARNING: cannot set permissions of $2 (read-only mount?)"
+}
+
+if [ -L "$CERTS" ]; then
+    log "WARNING: $CERTS is a symlink, not used"
+    exit 1
+fi
 mkdir -p "$CERTS" "$RUN_DIR"
+kept=0
 
 if valid_pair "$CERTS/portal.crt" "$CERTS/portal.key"; then
     crt="$CERTS/portal.crt"; key="$CERTS/portal.key"
+    own 644 "$crt"; own 640 "$key"
+elif [ "$WATCH" = 1 ] && { [ -e "$CERTS/portal.crt" ] || [ -e "$CERTS/portal.key" ] || [ -L "$CERTS/portal.crt" ]; }; then
+    # Being replaced (or broken): never fall back while running.
+    log "WARNING: $CERTS/portal.crt/.key invalid or not matching, keeping the active certificate"
+    kept=1
 elif valid_pair "$LEGACY_DIR/fullchain.pem" "$LEGACY_DIR/privkey.pem"; then
     crt="$LEGACY_DIR/fullchain.pem"; key="$LEGACY_DIR/privkey.pem"
+    chmod 600 "$key" 2>/dev/null || log "WARNING: cannot chmod 600 $key (read-only mount?)"
+elif [ "$WATCH" = 1 ]; then
+    log "WARNING: no valid portal certificate pair, keeping the active certificate"
+    kept=1
 else
-    [ -e "$CERTS/portal.crt" ] && log "WARNING: $CERTS/portal.crt/.key invalid or not matching, using self-signed"
+    { [ -e "$CERTS/portal.crt" ] || [ -L "$CERTS/portal.crt" ]; } \
+        && log "WARNING: $CERTS/portal.crt/.key invalid or not matching, using self-signed"
     if ! valid_pair "$CERTS/selfsigned.crt" "$CERTS/selfsigned.key"; then
         log "generating self-signed fallback certificate"
+        rm -f "$CERTS/selfsigned.crt" "$CERTS/selfsigned.key"
         openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
             -subj "/CN=${PORTAL_HOSTNAME:-portal.local}" \
             -addext "subjectAltName=DNS:${PORTAL_HOSTNAME:-portal.local}" \
             -keyout "$CERTS/selfsigned.key" -out "$CERTS/selfsigned.crt" 2>/dev/null
-        chmod 600 "$CERTS/selfsigned.key"
     fi
     crt="$CERTS/selfsigned.crt"; key="$CERTS/selfsigned.key"
+    own 644 "$crt"; own 640 "$key"
 fi
-# Private keys: root only (nginx master reads them as root). A read-only mount keeps its own mode.
-chmod 600 "$key" 2>/dev/null || log "WARNING: cannot chmod 600 $key (read-only mount?)"
-ln -sfn "$crt" "$RUN_DIR/fullchain.pem"
-ln -sfn "$key" "$RUN_DIR/privkey.pem"
-log "portal certificate: $crt"
+if [ "$kept" = 0 ]; then
+    ln -sfn "$crt" "$RUN_DIR/fullchain.pem"
+    ln -sfn "$key" "$RUN_DIR/privkey.pem"
+    log "portal certificate: $crt"
+fi
 
-# The app (user portal) serves the router certificate to the routers; nothing else is readable.
-if [ -e "$CERTS/router.crt" ] || [ -e "$CERTS/router.key" ]; then
+# The app (user portal) serves the router certificate to the routers.
+if [ -e "$CERTS/router.crt" ] || [ -e "$CERTS/router.key" ] || [ -L "$CERTS/router.crt" ] || [ -L "$CERTS/router.key" ]; then
     if valid_pair "$CERTS/router.crt" "$CERTS/router.key"; then
-        # Key readable by the app (php-fpm user portal) only: root:portal 640.
-        { chown root:portal "$CERTS/router.key" && chmod 640 "$CERTS/router.key" \
-            && chgrp portal "$CERTS/router.crt" && chmod 644 "$CERTS/router.crt"; } \
-            || log "WARNING: cannot set permissions of the router certificate (read-only mount?)"
+        own 644 "$CERTS/router.crt"; own 640 "$CERTS/router.key"
         log "router certificate: $CERTS/router.crt"
     else
         log "WARNING: $CERTS/router.crt/.key invalid or not matching, not offered to routers"
-        chmod 600 "$CERTS/router.key" 2>/dev/null || true
     fi
 fi
-{ chgrp portal "$CERTS" && chmod 750 "$CERTS"; } 2>/dev/null || true
+# Folder writable by the app (group portal): the certificate pull replaces files atomically by rename.
+{ chown -h root:portal "$CERTS" && chmod 770 "$CERTS"; } 2>/dev/null || true
+
+[ "$kept" = 0 ] || exit 3

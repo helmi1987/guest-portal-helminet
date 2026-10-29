@@ -22,6 +22,8 @@
                         <a href="{{ route('admin.settings') }}">{{ __('portal.admin.settings') }}</a>
                         <a href="{{ route('admin.users.index') }}">{{ __('portal.users.title') }}</a>
                         <a href="{{ route('admin.audit') }}">{{ __('portal.audit.title') }}</a>
+                        <a href="{{ route('admin.certificates.index') }}">{{ __('portal.certificates.title') }}</a>
+                        <a href="{{ route('admin.backups.index') }}">{{ __('portal.backups.title') }}</a>
                     @endif
                 </nav>
                 <div class="flex items-center gap-4 text-sm">

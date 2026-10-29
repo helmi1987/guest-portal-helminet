@@ -93,7 +93,8 @@ Copy PEM files (full chain + key) to `<data folder>/certs/`:
 - `router.crt` + `router.key`: the routers' HTTPS hotspot login (e.g. a wildcard).
 
 Changes are picked up within about 10 s (nginx reload; routers fetch the router certificate via
-their scheduler).
+their scheduler). Instead of copying files, admin UI → Certificates can pull both certificates
+every 6 h from CertWarden or a URL returning a PEM bundle.
 
 ## 6. DNS and firewall
 
@@ -108,9 +109,16 @@ their scheduler).
 ## 7. Next steps
 
 Admin UI → Sites → add site (hotspot host name) and router (NAS IP, as seen by the portal) →
-follow the router configuration / setup assistant. Backups: the data folder
-(contains secrets: keep backups private).
+follow the router configuration / setup assistant. Backups: see section 9.
 
 ## 8. Update
 
 `docker compose pull && docker compose up -d` in the stack folder (Unraid: "Update Stack"). Data stays in `/data`.
+
+## 9. Backups
+
+The portal writes a daily backup to `/data/backups` (database snapshot, `.env`, certificates;
+admin UI → Backups: create, download, delete, number kept). Backups contain secrets (`APP_KEY`
+decrypts stored passwords and tokens): keep them private. To keep them off the host, bind-mount a
+private share there, e.g. `- /mnt/user/backups/guest-portal:/data/backups`; the container user
+`portal` must be able to write to it. Restore: see the README ("Restore").

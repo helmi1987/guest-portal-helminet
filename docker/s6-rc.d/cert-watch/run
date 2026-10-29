@@ -1,23 +1,34 @@
 #!/bin/sh
 # Re-selects the certificates and reloads nginx when certificate files on /data change
-# (e.g. renewed by an external ACME client). Polling: independent of inotify on the volume.
+# (e.g. renewed by an external ACME client or the certificate pull). Polling: independent of
+# inotify on the volume. While no valid pair exists (portal-certs --watch exits 3) nginx keeps its
+# loaded certificate and the check is repeated on every poll (warning logged once per state).
 CERTS="${PORTAL_DATA_DIR:-/data}/certs"
 LEGACY="${TLS_CERT_DIR:-/certs}"
 state() { cat "$CERTS"/portal.crt "$CERTS"/portal.key "$CERTS"/router.crt "$CERTS"/router.key \
     "$LEGACY"/fullchain.pem "$LEGACY"/privkey.pem 2>/dev/null | cksum; }
 last="$(state)"
+warned=""
 while sleep 10; do
     now="$(state)"
-    if [ "$now" != "$last" ]; then
-        echo "[cert-watch] certificate files changed"
-        # Remember the state only after success, so a failed run is retried on the next loop.
-        portal-certs || continue
-        last="$now"
-        if nginx -t -q; then
-            s6-svc -h /run/service/nginx
-            echo "[cert-watch] nginx reloaded"
-        else
-            echo "[cert-watch] nginx config test failed, not reloaded"
-        fi
+    [ "$now" != "$last" ] || continue
+    [ "$now" = "$warned" ] || echo "[cert-watch] certificate files changed"
+    # Remember the state only after success, so a failed or kept run is retried on the next loop.
+    if [ "$now" = "$warned" ]; then
+        portal-certs --watch >/dev/null 2>&1
+    else
+        portal-certs --watch
+    fi
+    rc=$?
+    if [ "$rc" -ne 0 ]; then
+        warned="$now"
+        continue
+    fi
+    last="$now"; warned=""
+    if nginx -t -q; then
+        s6-svc -h /run/service/nginx
+        echo "[cert-watch] nginx reloaded"
+    else
+        echo "[cert-watch] nginx config test failed, not reloaded"
     fi
 done
