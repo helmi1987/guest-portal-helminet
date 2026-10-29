@@ -7,6 +7,7 @@ use App\Http\Middleware\EnsureTwoFactor;
 use App\Http\Middleware\EnsureZone;
 use App\Http\Middleware\InternalApiAuth;
 use App\Http\Middleware\SetLocale;
+use App\Support\Zone;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -24,9 +25,9 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware(['zone:internal', InternalApiAuth::class])
                 ->prefix('internal')
                 ->group(base_path('routes/internal.php'));
-            Route::middleware(['zone:guest', SubstituteBindings::class, 'throttle:30,1'])
+            Route::middleware(['zone:guest', SubstituteBindings::class, 'throttle:30,1,router'])
                 ->group(base_path('routes/router.php'));
-            Route::middleware(['zone:guest,admin', 'throttle:300,1'])
+            Route::middleware(['zone:guest,admin', 'throttle:300,1,branding'])
                 ->group(base_path('routes/branding.php'));
             // Federation API between instances (port 9443, mTLS): no session, cookies or CSRF.
             Route::middleware(['zone:federation', 'throttle:600,1,federation'])
@@ -51,6 +52,7 @@ return Application::configure(basePath: dirname(__DIR__))
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(
-            fn (Request $request) => $request->is('internal/*', 'federation/*') || $request->expectsJson(),
+            fn (Request $request) => $request->is('internal/*', 'federation/*') || $request->expectsJson()
+                || in_array(Zone::of($request), [Zone::INTERNAL, Zone::FEDERATION], true),
         );
     })->create();

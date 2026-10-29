@@ -78,6 +78,12 @@ final class BrandingSettings
         return self::resolve($request->attributes->get(self::SITE_ATTRIBUTE));
     }
 
+    /** Built-in default branding without any database access (error pages when the DB is unavailable). */
+    public static function builtIn(): Branding
+    {
+        return new Branding(self::normalize([], true));
+    }
+
     /** The admin UI always uses the global branding. */
     public static function forAdmin(): Branding
     {

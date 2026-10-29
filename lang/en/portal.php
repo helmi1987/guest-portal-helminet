@@ -835,4 +835,17 @@ return [
         'checklist_radius' => 'RADIUS secrets of the routers (regenerate on the site page and enter on each router)',
         'checklist_certificates' => 'API keys of the certificate sources (CertWarden / URL token)',
     ],
+    'http_errors' => [
+        '403' => ['title' => 'Access denied', 'text' => 'This page is not available.'],
+        '404' => ['title' => 'Page not found', 'text' => 'This page does not exist (anymore).'],
+        '419' => ['title' => 'Session expired', 'text' => 'Your session expired. Please reload the page.'],
+        '429' => ['title' => 'Too many attempts', 'text' => 'Too many attempts. Please wait a moment and try again.'],
+        '500' => ['title' => 'Something went wrong', 'text' => 'An unexpected error occurred. Please try again later.'],
+        '503' => ['title' => 'Temporarily unavailable', 'text' => 'The service is not available at the moment. Please try again shortly.'],
+        'generic' => ['title' => 'Request not possible', 'text' => 'This request could not be completed.'],
+        'retry_after' => '{1} Please try again in :seconds second.|[2,*] Please try again in :seconds seconds.',
+        'back' => 'Back to the start page',
+        'reload' => 'Reload page',
+        'code' => 'Error code :code',
+    ],
 ];

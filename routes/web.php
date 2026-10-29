@@ -35,29 +35,31 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 | A route answers 404 on every other port.
 */
 
+// Every throttle has its own prefix: without one, all throttled routes share one counter per IP
+// (e.g. branding files loaded by each page would use up the 5/min of the approval request).
 Route::middleware(['zone:guest', 'locale'])->group(function () {
     Route::view('/', 'guest.landing')->name('guest.landing');
     Route::get('/lang/{locale}', LocaleController::class)->name('guest.locale');
     Route::get('/portal', [PortalController::class, 'show'])->name('guest.portal');
     Route::post('/portal/code', [PortalController::class, 'redeem'])->name('guest.redeem')
-        ->middleware('throttle:20,1');
+        ->middleware('throttle:20,1,guest-code');
     Route::post('/portal/approval', [PortalController::class, 'requestApproval'])->name('guest.approval.request')
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:5,1,guest-approval');
     Route::get('/portal/approval', [PortalController::class, 'approval'])->name('guest.approval');
     Route::post('/portal/sms', [PortalController::class, 'requestSms'])->name('guest.sms.request')
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:5,1,guest-sms');
     Route::get('/portal/sms', [PortalController::class, 'sms'])->name('guest.sms');
     Route::post('/portal/sms/verify', [PortalController::class, 'verifySms'])->name('guest.sms.verify')
-        ->middleware('throttle:20,1');
+        ->middleware('throttle:20,1,guest-sms-verify');
     Route::post('/portal/sms/resend', [PortalController::class, 'resendSms'])->name('guest.sms.resend')
-        ->middleware('throttle:5,1');
+        ->middleware('throttle:5,1,guest-sms-resend');
     Route::get('/status/{grant}/{token}', [PortalController::class, 'status'])->name('guest.status')
         ->whereNumber('token')->middleware('signed:relative');
 });
 
 // Signed approve/deny links (Gotify, webhook): no login and no session, so opening a link does not
 // replace an admin session cookie; the signature authorizes GET (show) and POST (decide).
-Route::middleware(['zone:admin', 'signed:relative', 'throttle:30,1'])
+Route::middleware(['zone:admin', 'signed:relative', 'throttle:30,1,approval-link'])
     ->withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class])
     ->prefix('admin/approval-link')->group(function () {
         Route::get('/{approval}', [ApprovalLinkController::class, 'show'])->name('approval.link');
@@ -67,8 +69,8 @@ Route::middleware(['zone:admin', 'signed:relative', 'throttle:30,1'])
 Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () {
     Route::middleware('guest')->group(function () {
         Route::get('/login', Login::class)->name('login');
-        Route::get('/oidc/redirect', [OidcController::class, 'redirect'])->name('oidc.redirect')->middleware('throttle:10,1');
-        Route::get('/oidc/callback', [OidcController::class, 'callback'])->name('oidc.callback')->middleware('throttle:20,1');
+        Route::get('/oidc/redirect', [OidcController::class, 'redirect'])->name('oidc.redirect')->middleware('throttle:10,1,oidc-redirect');
+        Route::get('/oidc/callback', [OidcController::class, 'callback'])->name('oidc.callback')->middleware('throttle:20,1,oidc-callback');
     });
 
     Route::middleware('auth')->group(function () {
@@ -80,11 +82,11 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
             Route::post('/password', [ProfileController::class, 'updatePassword'])->name('profile.password');
             Route::post('/two-factor', [ProfileController::class, 'beginTwoFactor'])->name('profile.two-factor');
             Route::post('/two-factor/confirm', [ProfileController::class, 'confirmTwoFactor'])->name('profile.two-factor.confirm')
-                ->middleware('throttle:10,1');
+                ->middleware('throttle:10,1,two-factor-confirm');
             Route::post('/two-factor/recovery-codes', [ProfileController::class, 'regenerateRecoveryCodes'])
-                ->name('profile.two-factor.recovery')->middleware('throttle:10,1');
+                ->name('profile.two-factor.recovery')->middleware('throttle:10,1,two-factor-recovery');
             Route::delete('/two-factor', [ProfileController::class, 'disableTwoFactor'])->name('profile.two-factor.disable')
-                ->middleware('throttle:10,1');
+                ->middleware('throttle:10,1,two-factor-disable');
         });
 
         Route::middleware('two_factor')->group(function () {
@@ -100,9 +102,9 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/approvals/{approval}', [ApprovalController::class, 'decide'])->name('approvals.decide');
                 Route::get('/guests', [GuestController::class, 'index'])->name('guests.index');
                 Route::post('/sessions/{session}/disconnect', [GuestController::class, 'disconnect'])->name('sessions.disconnect')
-                    ->middleware('throttle:30,1');
+                    ->middleware('throttle:30,1,session-disconnect');
                 Route::post('/instances/{instance}/sessions/{session}/disconnect', [GuestController::class, 'disconnectRemote'])
-                    ->name('sessions.disconnect-remote')->middleware('throttle:30,1');
+                    ->name('sessions.disconnect-remote')->middleware('throttle:30,1,session-disconnect-remote');
                 Route::resource('whitelist', MacWhitelistController::class)->except(['show']);
                 Route::post('/whitelist/{whitelist}/toggle', [MacWhitelistController::class, 'toggle'])->name('whitelist.toggle');
                 Route::get('/site-codes', [SiteCodeController::class, 'index'])->name('site-codes.index');
@@ -126,7 +128,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/settings/oidc', [SettingsController::class, 'updateOidc'])->name('settings.oidc');
                 Route::post('/settings/branding', [BrandingController::class, 'updateGlobal'])->name('settings.branding');
                 Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('channels.test')
-                    ->middleware('throttle:5,1');
+                    ->middleware('throttle:5,1,channel-test');
                 Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('channels.create');
                 Route::post('/channels', [SettingsController::class, 'storeChannel'])->name('channels.store');
                 Route::get('/channels/{channel}', [SettingsController::class, 'editChannel'])->name('channels.edit');
@@ -154,7 +156,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/audit', [AuditController::class, 'index'])->name('audit');
 
                 Route::get('/backups', [BackupController::class, 'index'])->name('backups.index');
-                Route::post('/backups', [BackupController::class, 'store'])->name('backups.store')->middleware('throttle:5,1');
+                Route::post('/backups', [BackupController::class, 'store'])->name('backups.store')->middleware('throttle:5,1,backup');
                 Route::post('/backups/settings', [BackupController::class, 'settings'])->name('backups.settings');
                 Route::get('/backups/{name}', [BackupController::class, 'download'])->name('backups.download')
                     ->where('name', 'portal-backup-[0-9-]+\.tar\.gz');
@@ -167,7 +169,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/certificates/{target}/copy', [CertificateController::class, 'copy'])->name('certificates.copy')
                     ->whereIn('target', ['portal', 'router']);
                 Route::post('/certificates/{target}/pull', [CertificateController::class, 'pull'])->name('certificates.pull')
-                    ->whereIn('target', ['portal', 'router'])->middleware('throttle:5,1');
+                    ->whereIn('target', ['portal', 'router'])->middleware('throttle:5,1,certificate-pull');
 
                 Route::prefix('/federation')->name('federation')->group(function () {
                     Route::get('/', [FederationController::class, 'show']);

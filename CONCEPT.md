@@ -371,6 +371,12 @@ All login methods produce a **grant**; a code is a grant created in advance.
   "HQ unreachable → SMS only" rule; no offline logic yet.
 - Brute force: rate limit per MAC and IP, global rate limit, lockout after N failures
   (configurable, e.g. 5 per 15 min per MAC), OTP 10 min / 3 tries. Trivial codes excluded.
+  Route throttles (decision 2026-10-29, v0.12.2): every `throttle:` middleware has its own key prefix,
+  otherwise all throttled routes share one counter per IP (page assets used up the 5/min of the approval
+  request).
+- Error pages (decision 2026-10-29, v0.12.2): HTTP errors render a translated page in the guest or admin
+  look by zone (`resources/views/errors`, `gp-error-page`), Retry-After shown for 429, never exception
+  details; 5xx use the built-in look without database access. Internal and federation zones keep JSON.
 
 ## 9. Admin
 

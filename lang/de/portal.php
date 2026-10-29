@@ -835,4 +835,17 @@ return [
         'checklist_radius' => 'RADIUS-Secrets der Router (auf der Standortseite neu erzeugen und auf jedem Router eintragen)',
         'checklist_certificates' => 'API-Schlüssel der Zertifikatsquellen (CertWarden / URL-Token)',
     ],
+    'http_errors' => [
+        '403' => ['title' => 'Kein Zugriff', 'text' => 'Diese Seite ist nicht verfügbar.'],
+        '404' => ['title' => 'Seite nicht gefunden', 'text' => 'Diese Seite gibt es nicht (mehr).'],
+        '419' => ['title' => 'Sitzung abgelaufen', 'text' => 'Deine Sitzung ist abgelaufen. Bitte lade die Seite neu.'],
+        '429' => ['title' => 'Zu viele Versuche', 'text' => 'Zu viele Versuche. Bitte warte einen Moment und versuche es dann erneut.'],
+        '500' => ['title' => 'Etwas ist schiefgelaufen', 'text' => 'Ein unerwarteter Fehler ist aufgetreten. Bitte versuche es später erneut.'],
+        '503' => ['title' => 'Vorübergehend nicht verfügbar', 'text' => 'Der Dienst ist im Moment nicht erreichbar. Bitte versuche es in Kürze erneut.'],
+        'generic' => ['title' => 'Anfrage nicht möglich', 'text' => 'Diese Anfrage konnte nicht ausgeführt werden.'],
+        'retry_after' => '{1} Bitte versuche es in :seconds Sekunde erneut.|[2,*] Bitte versuche es in :seconds Sekunden erneut.',
+        'back' => 'Zurück zur Startseite',
+        'reload' => 'Seite neu laden',
+        'code' => 'Fehlercode :code',
+    ],
 ];

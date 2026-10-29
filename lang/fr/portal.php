@@ -835,4 +835,17 @@ return [
         'checklist_radius' => 'Secrets RADIUS des routeurs (régénérer sur la page du site et saisir sur chaque routeur)',
         'checklist_certificates' => 'Clés API des sources de certificats (CertWarden / jeton URL)',
     ],
+    'http_errors' => [
+        '403' => ['title' => 'Accès refusé', 'text' => 'Cette page n\'est pas disponible.'],
+        '404' => ['title' => 'Page introuvable', 'text' => 'Cette page n\'existe pas (ou plus).'],
+        '419' => ['title' => 'Session expirée', 'text' => 'Votre session a expiré. Veuillez recharger la page.'],
+        '429' => ['title' => 'Trop de tentatives', 'text' => 'Trop de tentatives. Veuillez patienter un instant et réessayer.'],
+        '500' => ['title' => 'Une erreur est survenue', 'text' => 'Une erreur inattendue s\'est produite. Veuillez réessayer plus tard.'],
+        '503' => ['title' => 'Temporairement indisponible', 'text' => 'Le service n\'est pas joignable pour le moment. Veuillez réessayer dans un instant.'],
+        'generic' => ['title' => 'Demande impossible', 'text' => 'Cette demande n\'a pas pu être traitée.'],
+        'retry_after' => '{1} Veuillez réessayer dans :seconds seconde.|[2,*] Veuillez réessayer dans :seconds secondes.',
+        'back' => 'Retour à la page d\'accueil',
+        'reload' => 'Recharger la page',
+        'code' => 'Code d\'erreur :code',
+    ],
 ];

@@ -835,4 +835,17 @@ return [
         'checklist_radius' => 'Segreti RADIUS dei router (rigenera nella pagina della sede e inseriscili su ogni router)',
         'checklist_certificates' => 'Chiavi API delle fonti dei certificati (CertWarden / token URL)',
     ],
+    'http_errors' => [
+        '403' => ['title' => 'Accesso negato', 'text' => 'Questa pagina non è disponibile.'],
+        '404' => ['title' => 'Pagina non trovata', 'text' => 'Questa pagina non esiste (più).'],
+        '419' => ['title' => 'Sessione scaduta', 'text' => 'La tua sessione è scaduta. Ricarica la pagina.'],
+        '429' => ['title' => 'Troppi tentativi', 'text' => 'Troppi tentativi. Attendi un momento e riprova.'],
+        '500' => ['title' => 'Qualcosa è andato storto', 'text' => 'Si è verificato un errore imprevisto. Riprova più tardi.'],
+        '503' => ['title' => 'Temporaneamente non disponibile', 'text' => 'Il servizio al momento non è raggiungibile. Riprova tra poco.'],
+        'generic' => ['title' => 'Richiesta non possibile', 'text' => 'Non è stato possibile eseguire questa richiesta.'],
+        'retry_after' => '{1} Riprova tra :seconds secondo.|[2,*] Riprova tra :seconds secondi.',
+        'back' => 'Torna alla pagina iniziale',
+        'reload' => 'Ricarica la pagina',
+        'code' => 'Codice di errore :code',
+    ],
 ];
