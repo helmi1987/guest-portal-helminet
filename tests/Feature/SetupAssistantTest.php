@@ -377,4 +377,26 @@ class SetupAssistantTest extends TestCase
         $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
             ->assertDontSee(__('portal.setup.hotspot.portal_address_warning'));
     }
+
+    public function test_regenerate_rotates_secret_and_token_and_old_token_is_rejected(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $oldSecret = $this->nas->radius_secret;
+        $oldToken = $this->nas->cert_token;
+        $url = "/router-cert/{$this->nas->id}/fingerprint";
+
+        $this->onZone('admin')->actingAs($admin)
+            ->post("/admin/sites/{$this->site->id}/routers/{$this->nas->id}/secret")->assertRedirect();
+
+        $fresh = NasClient::find($this->nas->id);
+        $this->assertNotSame($oldSecret, $fresh->radius_secret);
+        $this->assertNotSame($oldToken, $fresh->cert_token);
+        $this->assertSame(32, strlen($fresh->cert_token));
+
+        $this->withServerVariables(['PORTAL_ZONE' => 'guest', 'REMOTE_ADDR' => '10.0.1.1'])
+            ->withHeader('X-Portal-Token', $oldToken)->get($url)->assertForbidden();
+        // The new token passes the token check (no certificate is stored here, so not 403).
+        $this->assertNotSame(403, $this->withServerVariables(['PORTAL_ZONE' => 'guest', 'REMOTE_ADDR' => '10.0.1.1'])
+            ->withHeader('X-Portal-Token', $fresh->cert_token)->get($url)->getStatusCode());
+    }
 }

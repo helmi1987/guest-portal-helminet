@@ -83,7 +83,7 @@
                             <td>{{ $router->coa_port }}</td>
                             <td class="flex flex-wrap gap-2">
                                 <a href="{{ route('admin.sites.routers.config', [$site, $router]) }}" class="btn-light">{{ __('portal.sites.config') }}</a>
-                                <form method="POST" action="{{ route('admin.sites.routers.secret', [$site, $router]) }}" onsubmit="return confirm(@js(__('portal.confirm')))">
+                                <form method="POST" action="{{ route('admin.sites.routers.secret', [$site, $router]) }}" onsubmit="return confirm(@js(__('portal.sites.regenerate_secret_confirm')))">
                                     @csrf <button class="btn-light">{{ __('portal.sites.regenerate_secret') }}</button></form>
                                 <form method="POST" action="{{ route('admin.sites.routers.destroy', [$site, $router]) }}" onsubmit="return confirm(@js(__('portal.confirm')))">
                                     @csrf @method('DELETE') <button class="btn-danger">{{ __('portal.delete') }}</button></form>

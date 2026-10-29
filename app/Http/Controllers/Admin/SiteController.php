@@ -104,9 +104,12 @@ class SiteController extends Controller
 
     public function regenerateSecret(Site $site, NasClient $router): RedirectResponse
     {
+        // Rotates the RADIUS secret and the download token; the router script must be applied again.
         $router->radius_secret = NasClient::generateSecret();
+        $router->cert_token = NasClient::generateSecret();
         $router->save();
-        Audit::log('router.secret_regenerated', $router, ['site' => $site->slug, 'name' => $router->name]);
+        // Audit::clean() strips keys containing "token"/"secret", so the flag is named cert_rotated.
+        Audit::log('router.secret_regenerated', $router, ['site' => $site->slug, 'name' => $router->name, 'cert_rotated' => true]);
 
         return back()->with('status', __('portal.sites.secret_regenerated'));
     }
