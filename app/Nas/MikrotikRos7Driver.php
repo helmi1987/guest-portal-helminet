@@ -342,7 +342,7 @@ class MikrotikRos7Driver implements NasDriver
                 # Optional: Captive Portal API URI (RFC 8910/8908) via DHCP option 114.
                 # Device support for option 114 varies (to verify per client OS).
                 # Only if guests reach the portal with their own IP (no source NAT of guests).
-                /ip dhcp-server option add code=114 name=captive-portal value="'{$captiveUrl}'"
+                /ip dhcp-server option add code=114 name=captive-portal value="'{$captiveUrl}'" comment="{$n}"
                 /ip dhcp-server network set [find where address="{$g['subnet']}"] dhcp-option=captive-portal
                 RSC,
                 'firewall' => <<<RSC
@@ -423,12 +423,20 @@ class MikrotikRos7Driver implements NasDriver
                 # /radius incoming set accept=no
                 # Certificates imported by the certificate script (comment) and of older versions (names)
                 /certificate remove [find where comment="{$n}"]
-                /certificate remove [find where name~"^{$n}"]
+                /certificate remove [find where name="{$n}" || name~"^{$n}-ca-" || name~"^{$n}-import" || name="{$n}-new" || name~"^{$n}-new_"]
                 /file remove [find where name="{$n}.crt" || name="{$n}.key"]
                 /ip dns static remove [find where comment="{$n}"]
-                # DHCP option 114: first remove the reference (clears all DHCP options of this network)
-                /ip dhcp-server network set [find where dhcp-option~"captive-portal"] dhcp-option=""
-                /ip dhcp-server option remove [find where name="captive-portal"]
+                # DHCP option 114 of the guest network: the reference is cleared only if it is the network's
+                # only option; otherwise a hint is printed (remove captive-portal from dhcp-option manually).
+                :foreach i in=[/ip dhcp-server network find where address="{$g['subnet']}"] do={
+                    :local opts [/ip dhcp-server network get \$i dhcp-option]
+                    :if ([:len \$opts] = 1 && [:tostr \$opts] = "captive-portal") do={
+                        /ip dhcp-server network set \$i dhcp-option=""
+                    } else={
+                        :if ([:len \$opts] > 1) do={ :put "{$n}: network {$g['subnet']} has more DHCP options, remove captive-portal from dhcp-option manually" }
+                    }
+                }
+                /ip dhcp-server option remove [find where name="captive-portal" && comment="{$n}"]
                 # Firewall rules and address lists of the assistant (comment starts with "{$n}")
                 /ip firewall filter remove [find where comment~"^{$n}"]
                 /ip firewall nat remove [find where comment~"^{$n}"]
@@ -590,9 +598,10 @@ class MikrotikRos7Driver implements NasDriver
                 /tool fetch url=($base . "/router.key") http-header-field=$hdr src-address=$src check-certificate=yes dst-path=($name . ".key")
                 :delay 2s
                 :set step "cleanup before import"
-                # Leftovers of an aborted run, legacy names of older script versions without comment
+                # Leftovers of an aborted run; exact legacy names of older script versions (guest-portal,
+                # guest-portal-new, guest-portal-new_*, guest-portal-ca-*) without comment get the comment
                 /certificate remove [find where name~("^" . $tmp)]
-                /certificate set [find where name~("^" . $name) && comment=""] comment=$name
+                /certificate set [find where (name=$name || name~("^" . $name . "-ca-") || name=($name . "-new") || name~("^" . $name . "-new_")) && comment=""] comment=$name
                 # Previous CA certificates of this script (all except the certificate in use); the chain
                 # is imported again below. Certificates without this comment are never touched.
                 /certificate remove [find where comment=$name && name!=$sc]

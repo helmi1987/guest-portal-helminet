@@ -178,6 +178,8 @@ class CertificatePullTest extends TestCase
             $this->assertSame('https://certs.example.com', CertificateSources::normalizeCertwardenUrl($input));
         }
         $this->assertSame('https://certwarden.example.com', CertificateSources::normalizeCertwardenUrl('https://certwarden.example.com/'));
+        $this->assertSame('https://certwarden', CertificateSources::normalizeCertwardenUrl('https://certwarden'));
+        $this->assertSame('https://certwarden:4055', CertificateSources::normalizeCertwardenUrl('https://certwarden:4055/certwarden/app'));
 
         $this->onZone('admin')->actingAs($admin)->put('/admin/certificates/router', ['type' => 'certwarden',
             'url' => 'https://certs.example.com/certwarden/app/', 'name' => 'wildcard', 'api_key_cert' => 'certapikey0123',
@@ -219,6 +221,13 @@ class CertificatePullTest extends TestCase
         $this->assertSame('oldcert.newkey', CertificateSources::apiKey('portal'));
         $put(['api_key_cert' => 'newcert'])->assertSessionHasNoErrors();
         $this->assertSame('newcert.newkey', CertificateSources::apiKey('portal'));
+
+        // Type change from URL: a stored bearer token is not reused, both keys are required.
+        CertificateSources::put('portal', 'url', 'https://pem.example.com/p.pem', null, null, 'bearer-old');
+        $put(['api_key_key' => 'onlykey'])->assertSessionHasErrors('api_key_cert');
+        $put([])->assertSessionHasErrors(['api_key_cert', 'api_key_key']);
+        $put(['api_key_cert' => 'c1', 'api_key_key' => 'k1'])->assertSessionHasNoErrors();
+        $this->assertSame('c1.k1', CertificateSources::apiKey('portal'));
 
         // URL source keeps its single bearer token field.
         $this->onZone('admin')->actingAs($admin)->put('/admin/certificates/router', ['type' => 'url',

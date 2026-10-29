@@ -221,6 +221,10 @@ class SetupAssistantTest extends TestCase
         $base = ['name' => 'Site A', 'slug' => 'site-a', 'driver' => 'mikrotik_ros7'];
         $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['hotspot_hosts' => 'hotspot-a.guest.example.com, Portal.example.com'])
             ->assertSessionHasErrors(['hotspot_hosts' => __('portal.sites.hotspot_is_portal', ['host' => 'portal.example.com'])]);
+        $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['hotspot_hosts' => 'portal.example.com.'])
+            ->assertSessionHasErrors('hotspot_hosts');
+        $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['portal_url' => 'https://Guest.Example.com./',
+            'hotspot_hosts' => 'guest.example.com'])->assertSessionHasErrors('hotspot_hosts');
         $this->onZone('admin')->actingAs($admin)->put("/admin/sites/{$this->site->id}", $base + ['portal_url' => 'https://guest.example.com',
             'hotspot_hosts' => 'guest.example.com'])->assertSessionHasErrors('hotspot_hosts');
         $this->assertSame(['hotspot-a.guest.example.com'], $this->site->fresh()->setting('hotspot_hosts'));
@@ -261,8 +265,10 @@ class SetupAssistantTest extends TestCase
             '/ip hotspot remove [find where name="guest-portal"]', '/ip hotspot profile remove [find where name="guest-portal"]',
             '/ip hotspot walled-garden remove [find where comment="guest-portal"]', '/ip hotspot walled-garden ip remove [find where comment="guest-portal"]',
             '/radius remove [find where comment="guest-portal"]', '# /radius incoming set accept=no',
-            '/certificate remove [find where comment="guest-portal"]', '/certificate remove [find where name~"^guest-portal"]',
-            '/ip dns static remove [find where comment="guest-portal"]', 'dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal"]',
+            '/certificate remove [find where comment="guest-portal"]',
+            '/certificate remove [find where name="guest-portal" || name~"^guest-portal-ca-" || name~"^guest-portal-import" || name="guest-portal-new" || name~"^guest-portal-new_"]',
+            '/ip dns static remove [find where comment="guest-portal"]', '/ip dhcp-server network find where address="10.30.0.0/24"',
+            '/ip dhcp-server network set $i dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal" && comment="guest-portal"]',
             '/ip firewall filter remove [find where comment~"^guest-portal"]', '/ip firewall address-list remove [find where comment~"^guest-portal"]'] as $line) {
             $this->assertStringContainsString($line, $script);
         }
@@ -270,6 +276,11 @@ class SetupAssistantTest extends TestCase
         $this->assertLessThan(strpos($script, '/ip hotspot profile remove'), strpos($script, '/ip hotspot remove'));
         $this->assertLessThan(strpos($script, '/certificate remove'), strpos($script, '/ip hotspot profile remove'));
         $this->assertLessThan(strpos($script, '/ip dhcp-server option remove'), strpos($script, 'dhcp-option=""'));
+        // Never a prefix match that would hit user certificates like "guest-portal.example.com".
+        $this->assertStringNotContainsString('name~"^guest-portal"', $script);
+        $this->assertStringNotContainsString('dhcp-option~', $script);
+        $this->assertStringContainsString('name=captive-portal value="\'https://portal.example.com/captive/site-a\'" comment="guest-portal"',
+            $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['network']['captive_option']);
         $this->assertStringContainsString('/interface/veth remove', str_replace('/interface veth', '/interface/veth', $u['uninstall_container']));
         foreach (['/interface wifi configuration remove [find where name=cfg-guest]', '/ip dhcp-server remove [find where name=guest-dhcp]',
             '/ip pool remove [find where name=guest-pool]', '/interface vlan remove [find where name=vlan30-guest]',
@@ -300,7 +311,9 @@ class SetupAssistantTest extends TestCase
         }
         // No name-based comparison any more (chain imports create several certificates).
         $this->assertStringNotContainsString('find where name=$name] do={ :set cur', $script);
-        $this->assertStringNotContainsString('guest-portal-new', $script);
+        $this->assertStringNotContainsString('name=guest-portal-new ', $script);
+        $this->assertStringNotContainsString('name~("^" . $name) ', $script);
+        $this->assertStringContainsString('(name=$name || name~("^" . $name . "-ca-") || name=($name . "-new") || name~("^" . $name . "-new_")) && comment=""', $script);
         $this->assertStringContainsString('logins of the portal CANNOT work yet', $script);
     }
 }

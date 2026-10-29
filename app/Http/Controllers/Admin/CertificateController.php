@@ -61,6 +61,8 @@ class CertificateController extends Controller
             $request->merge(['url' => $current['url']]);
         }
         $certwarden = $request->input('type') === 'certwarden';
+        // A stored key counts for CertWarden only if the source already was CertWarden (no bearer token reuse).
+        $storedCertwarden = $current['has_api_key'] && $current['type'] === 'certwarden';
         $data = $request->validate([
             'type' => ['required', Rule::in(CertificateSources::TYPES)],
             'url' => ['nullable', 'required_unless:type,none', 'url:https', 'max:500'],
@@ -68,8 +70,8 @@ class CertificateController extends Controller
             'api_key' => ['nullable', 'string', 'max:500'],
             // CertWarden: two keys, combined as "<certificate API key>.<private key API key>"
             // (a combined value in api_key is still accepted, e.g. from scripts using the old form field)
-            'api_key_cert' => ['nullable', ...($certwarden && ! $current['has_api_key'] ? ['required_without:api_key'] : []), 'string', 'max:250', 'regex:/^[^\s.]*$/'],
-            'api_key_key' => ['nullable', ...($certwarden && ! $current['has_api_key'] ? ['required_without:api_key'] : []), 'string', 'max:250', 'regex:/^[^\s.]*$/'],
+            'api_key_cert' => ['nullable', ...($certwarden && ! $storedCertwarden ? ['required_without:api_key'] : []), 'string', 'max:250', 'regex:/^[^\s.]*$/'],
+            'api_key_key' => ['nullable', ...($certwarden && ! $storedCertwarden ? ['required_without:api_key'] : []), 'string', 'max:250', 'regex:/^[^\s.]*$/'],
             'remove_api_key' => ['boolean'],
             'ca_pem' => ['nullable', 'string', 'max:20000'],
         ], [
@@ -109,7 +111,8 @@ class CertificateController extends Controller
         if ($cert === '' && $key === '') {
             return trim((string) ($data['api_key'] ?? ''));
         }
-        [$storedCert, $storedKey] = CertificateSources::splitCertwardenKey($current['has_api_key'] ? CertificateSources::apiKey($target) : null);
+        [$storedCert, $storedKey] = CertificateSources::splitCertwardenKey($current['has_api_key'] && $current['type'] === 'certwarden'
+            ? CertificateSources::apiKey($target) : null);
         $cert = $cert !== '' ? $cert : $storedCert;
         $key = $key !== '' ? $key : $storedKey;
         if ($cert === '' || $key === '') {

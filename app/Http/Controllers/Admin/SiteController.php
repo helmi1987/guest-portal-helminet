@@ -147,17 +147,18 @@ class SiteController extends Controller
             'hotspot_hosts' => ['nullable', 'string', 'max:500', 'regex:/^([A-Za-z0-9.\-]+(\s*,\s*[A-Za-z0-9.\-]+)*)?$/D'],
             'home_instance_id' => ['nullable', Rule::exists('instances', 'id')->whereNull('deleted_at')],
         ]);
-        $hosts = array_values(array_filter(array_map('trim', explode(',', strtolower($data['hotspot_hosts'] ?? '')))));
+        $host = fn (mixed $h) => is_string($h) ? rtrim(strtolower(trim($h)), '.') : '';
+        $hosts = array_values(array_unique(array_filter(array_map($host, explode(',', (string) ($data['hotspot_hosts'] ?? ''))))));
         // The hotspot name is the router's own HTTPS login name (resolves to the guest gateway); it must
         // never be the portal host, otherwise the static DNS entry points the portal name at the router.
-        $portalHosts = array_filter(array_map(fn ($h) => is_string($h) && $h !== '' ? strtolower($h) : null, [
+        $portalHosts = array_filter(array_map($host, [
             parse_url((string) ($data['portal_url'] ?? ''), PHP_URL_HOST),
             parse_url((string) config('app.url'), PHP_URL_HOST),
             config('portal.hostname'),
         ]));
-        foreach ($hosts as $host) {
-            if (in_array($host, $portalHosts, true)) {
-                throw ValidationException::withMessages(['hotspot_hosts' => __('portal.sites.hotspot_is_portal', ['host' => $host])]);
+        foreach ($hosts as $hotspot) {
+            if (in_array($hotspot, $portalHosts, true)) {
+                throw ValidationException::withMessages(['hotspot_hosts' => __('portal.sites.hotspot_is_portal', ['host' => $hotspot])]);
             }
         }
 

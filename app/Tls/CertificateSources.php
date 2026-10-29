@@ -129,8 +129,12 @@ final class CertificateSources
     public static function normalizeCertwardenUrl(string $url): string
     {
         $url = rtrim(trim($url), '/');
+        // Only the path part: a host named "certwarden..." must stay untouched.
+        if (! preg_match('#^([a-z][a-z0-9+.-]*://[^/?\#]*)(.*)$#i', $url, $m)) {
+            return $url;
+        }
 
-        return rtrim((string) preg_replace('#/certwarden(/.*)?$#i', '', $url), '/');
+        return $m[1].rtrim((string) preg_replace('#/certwarden(/.*)?$#i', '', $m[2]), '/');
     }
 
     /** Full download URL (without key) of a source, null for type none or a missing URL. */

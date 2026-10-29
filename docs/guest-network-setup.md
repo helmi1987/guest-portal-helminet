@@ -332,7 +332,8 @@ block: leaf + intermediate/root CAs):
   the leaf is the one whose fingerprint matches (fallback: the one with the private key). The profile
   is switched to it, previous certificates with that comment are removed, then the leaf is renamed to
   `guest-portal` and the CAs to `guest-portal-ca-<n>`. Certificates without the comment are never
-  touched; old certificates named `guest-portal*` (older script versions) get the comment once.
+  touched; certificates of older script versions with the exact names `guest-portal`, `guest-portal-new`,
+  `guest-portal-new_*` or `guest-portal-ca-*` get the comment once.
 - Errors are logged with the failing step (`:onerror`, RouterOS >= 7.13 **(to verify)**):
   `/log print where message~"guest-portal"`.
 
@@ -617,8 +618,11 @@ Findings from a first real setup; the setup assistant shows the same checklist.
 
 Setup assistant, step 8 "Remove everything again", generates the script. It removes, by name or comment
 `guest-portal`, in this order: certificate script + scheduler, hotspot server, hotspot profile, walled
-garden (host + IP), `/radius` entry, imported certificates (comment and legacy names `guest-portal*`),
-static DNS entries, DHCP option 114 (reference in the DHCP network first), firewall rules and address
+garden (host + IP), `/radius` entry, imported certificates (comment `guest-portal`, plus the exact names
+`guest-portal`, `guest-portal-ca-*`, `guest-portal-import*`, `guest-portal-new`, `guest-portal-new_*`
+of older versions; other certificates such as `guest-portal.example.com` stay), static DNS entries,
+DHCP option 114 (only option `captive-portal` with comment `guest-portal`; its reference in the guest
+network is cleared only if it is the only option, otherwise a hint is printed), firewall rules and address
 lists of the assistant. It is safe when entries do not exist and logs out connected guests.
 - `/radius incoming set accept=no` is only a commented hint (no comment on that menu; other uses).
 - `login.html` is not removed automatically (the html directory may be shared with other hotspots).
