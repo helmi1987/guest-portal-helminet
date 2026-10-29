@@ -332,6 +332,27 @@ All login methods produce a **grant**; a code is a grant created in advance.
   is unused by design), so the guest types the printed code. CSV export (admin only; code, label,
   status, duration, expiry mode, validity, sites, created; formula prefixes neutralised; audited
   `grant.exported` with count).
+- **Site code** (decision 2026-10-29, v0.12.0): per site at most one active shared 6-digit code for any
+  number of devices (`site_codes` R, site-scoped: valid only at its own site). Fields: duration per
+  device (presets or custom hours), optional `valid_until` (no new logins afterwards), optional max.
+  concurrent devices (empty = unlimited; when reached the guest sees "currently full, use SMS login"),
+  active flag, created/deactivated at/by. Generating a new code deactivates the previous one (rows kept
+  as history with login counts); no reactivation. Unique among usable grant codes and active site codes;
+  the guest uses the normal code field (normal code is looked up first). Login: same form (name +
+  terms); each device gets its own grant (type `site_code`, `site_code_id`, code copied, restricted to
+  the site, time from its login), so Session-Timeout, accounting, guest list, extend/revoke and
+  disconnect work per device; the single-device rule does not apply. The same MAC with a running grant of
+  the code reuses it (no second slot, time not restarted). Running device grants count against the
+  limit. **(Assumption)** deactivation and expiry do not end running devices; "disconnect all devices"
+  revokes the running grants of a code (Disconnect-Request). Admin + manager; audited
+  `site_code.created/updated/deactivated/disconnect_all/printed` (never the code). Notice (A4/A6, light):
+  logo, site name, text DE/IT/FR/EN, QR 1 Wi-Fi join (site SSID), QR 2 sign-in =
+  `https://<first hotspot host>/login?dst=<portal URL>/portal?site=<slug>&code=<code>` (without hotspot
+  host: the portal URL); the portal prefills the code from `?code=` or from such a URL in `link-orig`
+  (prefill only, no auto-submit) **(to verify: RouterOS passes `dst` of a direct `/login` as
+  `link-orig`)**. This differs from the voucher QR decision above (vouchers unchanged). M7 hook:
+  `isAllowedWhileOffline()` (true for site codes/their grants, false for normal codes) for the planned
+  "HQ unreachable → SMS only" rule; no offline logic yet.
 - Brute force: rate limit per MAC and IP, global rate limit, lockout after N failures
   (configurable, e.g. 5 per 15 min per MAC), OTP 10 min / 3 tries. Trivial codes excluded.
 
@@ -387,7 +408,7 @@ Roles:
 | Role | UI label (DE) | Permissions |
 |---|---|---|
 | `admin` | Admin | Everything. |
-| `manager` | Verwaltung | Create/print/extend/shorten/revoke codes and grants, approve requests, view sessions and guests (phone numbers masked), MAC whitelist. No settings, sites, setup, terms, channels, users, audit log, federation. |
+| `manager` | Verwaltung | Create/print/extend/shorten/revoke codes and grants, site codes, approve requests, view sessions and guests (phone numbers masked), MAC whitelist. No settings, sites, setup, terms, channels, users, audit log, federation. |
 
 User management (admin only, M6): create/edit/delete users, password min. 12 characters; nobody can
 delete or demote themselves, the last admin cannot be removed.
@@ -462,7 +483,7 @@ Features:
 
 | Replicated | Local only |
 |---|---|
-| Grants/codes, site restrictions, revocations, device (MAC) bindings, MAC whitelist + its site restriction, guests, terms versions + acceptances, users/roles, sites (catalog, incl. site branding overrides), shared config (Telegram, Clickatell, Gotify, webhook, languages, retention, SMS duration, country allowlist, branding incl. colours/CSS and logo/favicon references), audit log | RADIUS tokens, OTP challenges, approval requests, login attempts/rate limits, NAS clients + secrets, raw accounting, TLS/ports/backup settings, local env, branding files (`/data/branding`) |
+| Grants/codes, site codes, site restrictions, revocations, device (MAC) bindings, MAC whitelist + its site restriction, guests, terms versions + acceptances, users/roles, sites (catalog, incl. site branding overrides), shared config (Telegram, Clickatell, Gotify, webhook, languages, retention, SMS duration, country allowlist, branding incl. colours/CSS and logo/favicon references), audit log | RADIUS tokens, OTP challenges, approval requests, login attempts/rate limits, NAS clients + secrets, raw accounting, TLS/ports/backup settings, local env, branding files (`/data/branding`) |
 | Session summaries (grant, MAC, site, serving instance, start, stop) | Accounting details (interim updates, counters) |
 
 ### 10.4 Roaming and remote actions
@@ -500,7 +521,8 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json) |
 | `nas_clients` | id, site_id, name, nas_ip, nas_identifier, radius_secret (enc), coa_port, cert_token (enc), last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
-| `grants` R | id, type (code/sms/approval), code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
+| `grants` R | id, type (code/sms/approval/site_code), site_code_id, code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
+| `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
 | `session_summaries` R | id, grant_id (null for whitelist sessions), mac_whitelist_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at |
@@ -601,7 +623,7 @@ login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authe
 `email_verified`, groups mapping). Part E: MAC whitelist (§5, §9), v0.8.0; open: MAC authentication
 (User-Name format, `login-by=mac` before the certificate, reject handling) tested on real RouterOS. Open: first-start web setup, CertWarden pull, backups, voucher QR
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
-(revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; open: captive browsers with custom logos/CSS, file replication (M7).
+(revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
 
 | # | Content | Acceptance criteria |
 |---|---|---|

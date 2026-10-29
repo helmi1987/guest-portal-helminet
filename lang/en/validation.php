@@ -46,6 +46,8 @@ return [
         'label' => 'label',
         'note' => 'note',
         'max_extensions' => 'maximum extensions',
+        'valid_until' => 'valid until',
+        'max_devices' => 'maximum devices',
         'rate_limit' => 'bandwidth',
         'site_ids' => 'sites',
         'site_ids.*' => 'site',

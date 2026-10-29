@@ -51,6 +51,9 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
 - Vouchers: admin UI → Codes → create 1-100 codes at once; the print view is an A4 sheet (10 cards)
   with the code, duration and a Wi-Fi join QR for the guest SSID entered in the setup assistant
   (shown when the code's sites share one SSID); admins can export the codes as CSV.
+- Site codes: admin UI → Site codes → one shared code per site for any number of devices (each device
+  gets its own access for the set duration; optional expiry and device limit), with history and a
+  printable notice (A4/A6, Wi-Fi QR + sign-in QR, DE/IT/FR/EN). `/portal?code=123456` prefills the code.
 - MAC whitelist: admin UI → MAC whitelist (or "allow this device permanently" in the guest list).
   Needs `login-by=https,mac` on the hotspot profile (set by the generated router script). MAC
   addresses can be spoofed: whitelist only trusted devices.

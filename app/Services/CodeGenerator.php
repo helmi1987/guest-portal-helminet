@@ -3,10 +3,12 @@
 namespace App\Services;
 
 use App\Models\Grant;
+use App\Models\SiteCode;
 use RuntimeException;
 
 /**
- * Random 6-digit codes, unique among grants that are still usable; trivial codes excluded.
+ * Random 6-digit codes, unique among grants that are still usable and active site codes (one guest
+ * input field for both); trivial codes excluded.
  */
 class CodeGenerator
 {
@@ -37,6 +39,7 @@ class CodeGenerator
     {
         return Grant::query()->where('code', $code)->whereNull('revoked_at')
             ->where(fn ($q) => $q->whereNull('expires_at')->orWhere('expires_at', '>', now()))
-            ->exists();
+            ->exists()
+            || SiteCode::query()->active()->where('code', $code)->exists();
     }
 }

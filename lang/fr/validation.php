@@ -110,6 +110,8 @@ return [
         'label' => 'libellé',
         'note' => 'note',
         'max_extensions' => 'prolongations maximales',
+        'valid_until' => 'valable jusqu\'au',
+        'max_devices' => 'appareils maximum',
         'rate_limit' => 'bande passante',
         'site_ids' => 'sites',
         'site_ids.*' => 'site',

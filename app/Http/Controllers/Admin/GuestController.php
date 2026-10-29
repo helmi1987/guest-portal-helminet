@@ -33,6 +33,7 @@ class GuestController extends Controller
             ->when($filters['site'] ?? null, fn ($q, $site) => $q->whereHas('acceptances', fn ($a) => $a->where('site_id', $site)))
             ->when($filters['method'] ?? null, fn ($q, $method) => match (GrantType::from($method)) {
                 GrantType::Code => $q->whereHas('acceptances.grant', fn ($g) => $g->where('type', GrantType::Code)),
+                GrantType::SiteCode => $q->whereHas('acceptances.grant', fn ($g) => $g->where('type', GrantType::SiteCode)),
                 GrantType::Sms => $q->has('otpChallenges'),
                 GrantType::Approval => $q->has('approvalRequests'),
             })

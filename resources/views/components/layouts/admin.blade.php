@@ -19,6 +19,7 @@
                 <nav class="gp-nav flex flex-wrap items-center gap-4">
                     <a href="{{ route('admin.dashboard') }}" class="gp-title flex items-center gap-2 font-semibold"><x-branding.logo :branding="$branding" size="h-6" class="text-(--gp-header-text)" />{{ __('portal.admin.title') }}</a>
                     <a href="{{ route('admin.grants.index') }}">{{ __('portal.grants.title') }}</a>
+                    <a href="{{ route('admin.site-codes.index') }}">{{ __('portal.site_codes.title') }}</a>
                     <a href="{{ route('admin.approvals.index') }}">{{ __('portal.approvals.title') }}</a>
                     <a href="{{ route('admin.guests.index') }}">{{ __('portal.guests.title') }}</a>
                     <a href="{{ route('admin.whitelist.index') }}">{{ __('portal.whitelist.title') }}</a>

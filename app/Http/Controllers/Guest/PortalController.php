@@ -15,11 +15,13 @@ use App\Models\Guest;
 use App\Models\OtpChallenge;
 use App\Models\RadiusToken;
 use App\Models\Site;
+use App\Models\SiteCode;
 use App\Models\TermsAcceptance;
 use App\Models\TermsVersion;
 use App\Nas\HotspotContext;
 use App\Services\GrantManager;
 use App\Services\LoginThrottle;
+use App\Services\SiteCodeManager;
 use App\Sms\OtpService;
 use App\Sms\PhoneNumber;
 use App\Sms\SmsSettings;
@@ -51,6 +53,10 @@ class PortalController extends Controller
             $request->session()->put('portal_misconfigured', $site === null
                 || ($request->filled('link-login-only') && $context->loginUrl === null));
         }
+        // Prefill only (?code=, also inside the router's link-orig); name and terms are still required.
+        if (($prefill = $this->prefillCode($request)) !== null) {
+            $request->session()->put('portal_code', $prefill);
+        }
 
         [$site, $context] = $this->current($request);
         if ($site === null || ! $context->isComplete()) {
@@ -66,10 +72,11 @@ class PortalController extends Controller
             'routerFailed' => $this->previousHandoffFailed($request),
             'approvalEnabled' => Channel::query()->activeNotification()->exists(),
             'smsEnabled' => OtpService::enabled(),
+            'prefillCode' => $request->session()->get('portal_code'),
         ]);
     }
 
-    public function redeem(Request $request, GrantManager $grants, LoginThrottle $throttle): View|Response|RedirectResponse
+    public function redeem(Request $request, GrantManager $grants, SiteCodeManager $siteCodes, LoginThrottle $throttle): View|Response|RedirectResponse
     {
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:100'],
@@ -94,9 +101,16 @@ class PortalController extends Controller
         $ip = $request->ip();
         $code = preg_replace('/\D/', '', $data['code']);
 
-        // Check, lookup and record atomically so parallel guesses cannot exceed the limits.
-        $grant = $throttle->attempt($mac, $ip, $site->id, 'code',
-            fn () => strlen($code) === 6 ? $grants->findByCode($code, $site) : null);
+        // Check, lookup and record atomically so parallel guesses cannot exceed the limits. One input
+        // for both: a normal code first, else the valid site code of this site.
+        $grant = $throttle->attempt($mac, $ip, $site->id, 'code', function () use ($code, $site, $grants, $siteCodes) {
+            if (strlen($code) !== 6) {
+                return null;
+            }
+            $siteCode = $siteCodes->find($code, $site);
+
+            return $grants->findByCode($code, $site) ?? ($siteCode?->isValid() ? $siteCode : null);
+        });
 
         if ($grant === false) {
             return $this->error('locked', 429);
@@ -108,6 +122,13 @@ class PortalController extends Controller
                 return $this->error($ended->value, 403);
             }
             throw ValidationException::withMessages(['code' => __('portal.guest.errors.invalid_code')]);
+        }
+        if ($grant instanceof SiteCode) {
+            // Each device gets its own grant; the single-device rule of normal codes does not apply.
+            $grant = $siteCodes->grantForDevice($grant, $site, $mac, trim($data['first_name']).' '.trim($data['last_name']));
+            if ($grant === null) {
+                return $this->error('site_code_full', 403);
+            }
         }
 
         [$token, $password] = DB::transaction(function () use ($data, $grants, $grant, $site, $mac, $terms) {
@@ -128,7 +149,8 @@ class PortalController extends Controller
             return $grants->issueToken($grant, $guest, $site, $mac);
         });
         Log::info('Guest code redeemed', ['grant' => $grant->id, 'site' => $site->slug, 'mac' => $mac,
-            'terms_version' => $terms?->number]);
+            'terms_version' => $terms?->number, 'site_code' => $grant->site_code_id !== null]);
+        $request->session()->forget('portal_code');
 
         return $this->handoff($request, $grant, $site, $context, $token, $password);
     }
@@ -388,7 +410,10 @@ class PortalController extends Controller
         return response()->view('guest.error', ['kind' => $kind], $status);
     }
 
-    /** Status of an ended code grant for this site (expired/revoked), null if unknown or usable. */
+    /**
+     * Status of an ended code grant for this site (expired/revoked), null if unknown or usable. A site
+     * code of this site that expired or was deactivated (replaced) counts as expired.
+     */
     private function endedStatus(string $code, Site $site): ?GrantStatus
     {
         $statuses = Grant::query()->with('siteLinks')->where('type', GrantType::Code)->where('code', $code)->get()
@@ -396,7 +421,24 @@ class PortalController extends Controller
             ->map(fn (Grant $g) => $g->status());
 
         return $statuses->first(fn (GrantStatus $s) => $s === GrantStatus::Revoked)
-            ?? $statuses->first(fn (GrantStatus $s) => $s === GrantStatus::Expired);
+            ?? $statuses->first(fn (GrantStatus $s) => $s === GrantStatus::Expired)
+            ?? (SiteCode::query()->where('site_id', $site->id)->where('code', $code)->get()
+                ->contains(fn (SiteCode $c) => ! $c->isValid()) ? GrantStatus::Expired : null);
+    }
+
+    /** 6-digit code from ?code= or from a portal URL with ?code= in the router's link-orig (prefill only). */
+    private function prefillCode(Request $request): ?string
+    {
+        $code = $request->query('code');
+        if (! is_string($code)) {
+            $orig = $request->query('link-orig');
+            $path = is_string($orig) ? (string) parse_url($orig, PHP_URL_PATH) : '';
+            parse_str(is_string($orig) && str_ends_with($path, '/portal') ? (string) parse_url($orig, PHP_URL_QUERY) : '', $query);
+            $code = $query['code'] ?? null;
+        }
+        $code = is_string($code) ? preg_replace('/\D/', '', $code) : '';
+
+        return strlen($code) === 6 ? $code : null;
     }
 
     /** True once if the last handed-off credentials were never accepted by RADIUS (router login failed). */

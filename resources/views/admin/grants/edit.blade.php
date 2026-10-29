@@ -1,7 +1,11 @@
 <x-layouts.admin :title="__('portal.grants.code').' '.$grant->code">
     <div class="mb-4 flex items-center justify-between">
         <h1 class="text-2xl font-semibold">{{ __('portal.grants.code') }} <span class="font-mono">{{ $grant->code }}</span> · {{ $grant->status()->label() }}</h1>
-        <a href="{{ route('admin.grants.print', ['ids' => [$grant->id]]) }}" class="btn-light">{{ __('portal.grants.print') }}</a>
+        @if ($grant->type === \App\Enums\GrantType::Code)
+            <a href="{{ route('admin.grants.print', ['ids' => [$grant->id]]) }}" class="btn-light">{{ __('portal.grants.print') }}</a>
+        @elseif ($grant->site_code_id)
+            <a href="{{ route('admin.site-codes.show', $grant->siteCode->site_id) }}" class="btn-light">{{ __('portal.site_codes.title') }}</a>
+        @endif
     </div>
 
     <section class="card mb-6 grid gap-2 text-sm md:grid-cols-3">
@@ -11,7 +15,7 @@
             @if ($grant->remainingSeconds()) ({{ __('portal.grants.remaining') }} {{ \App\Support\Duration::format($grant->remainingSeconds()) }}) @endif</div>
         <div>{{ __('portal.grants.extensions') }}: {{ $grant->extensions_used }}{{ $grant->max_extensions !== null ? ' / '.$grant->max_extensions : '' }}</div>
         <div>{{ __('portal.grants.revoked_at') }}: {{ \App\Support\LocalTime::format($grant->revoked_at, 'Y-m-d H:i') ?? '–' }}</div>
-        @if ($grant->code && ($ssid = $qr->ssidFor($grant)))
+        @if ($grant->type === \App\Enums\GrantType::Code && $grant->code && ($ssid = $qr->ssidFor($grant)))
             <div class="flex items-center gap-3 md:col-span-3">
                 <div class="h-28 w-28 shrink-0 bg-white">{!! $qr->wifiSvg($ssid, 112) !!}</div>
                 <div>{{ __('portal.grants.wifi_qr', ['ssid' => $ssid]) }}</div>

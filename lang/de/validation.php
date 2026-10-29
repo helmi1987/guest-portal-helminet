@@ -110,6 +110,8 @@ return [
         'label' => 'Bezeichnung',
         'note' => 'Notiz',
         'max_extensions' => 'Maximale Verlängerungen',
+        'valid_until' => 'Gültig bis',
+        'max_devices' => 'Maximale Geräte',
         'rate_limit' => 'Bandbreite',
         'site_ids' => 'Standorte',
         'site_ids.*' => 'Standort',

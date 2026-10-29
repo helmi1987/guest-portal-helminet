@@ -10,6 +10,7 @@ use App\Models\Concerns\Replicated;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Carbon;
 
@@ -17,7 +18,7 @@ use Illuminate\Support\Carbon;
  * Access grant (CONCEPT.md §8). A code is a grant created in advance.
  */
 #[Fillable(['type', 'code', 'label', 'note', 'duration_s', 'expiry_mode', 'valid_from', 'redeem_until',
-    'expires_at', 'first_login_at', 'revoked_at', 'max_extensions', 'extensions_used', 'rate_limit', 'created_by'])]
+    'expires_at', 'first_login_at', 'revoked_at', 'max_extensions', 'extensions_used', 'rate_limit', 'created_by', 'site_code_id'])]
 class Grant extends Model
 {
     use HasSiteLinks, Replicated;
@@ -41,6 +42,21 @@ class Grant extends Model
     public function siteLinks(): HasMany
     {
         return $this->hasMany(GrantSite::class);
+    }
+
+    /** Site code this per-device grant was created from (type site_code only). */
+    public function siteCode(): BelongsTo
+    {
+        return $this->belongsTo(SiteCode::class)->withTrashed();
+    }
+
+    /**
+     * Hook for the federation "HQ unreachable -> SMS login only" rule (M7): logins with a site code
+     * stay allowed while the instance is cut off, other codes do not. No offline logic yet.
+     */
+    public function isAllowedWhileOffline(): bool
+    {
+        return $this->type === GrantType::SiteCode;
     }
 
     public function devices(): HasMany

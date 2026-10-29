@@ -110,6 +110,8 @@ return [
         'label' => 'etichetta',
         'note' => 'nota',
         'max_extensions' => 'proroghe massime',
+        'valid_until' => 'valido fino al',
+        'max_devices' => 'dispositivi massimi',
         'rate_limit' => 'larghezza di banda',
         'site_ids' => 'sedi',
         'site_ids.*' => 'sede',

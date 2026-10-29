@@ -33,6 +33,15 @@
     </form>
 
     @if ($site->exists)
+        @php($siteCode = \App\Services\SiteCodeManager::current($site))
+        <section class="card mb-6 flex flex-wrap items-center justify-between gap-4">
+            <div>
+                <h2 class="text-lg font-semibold">{{ __('portal.site_codes.title') }}</h2>
+                <p class="text-sm">@if ($siteCode)<span class="font-mono text-xl tracking-widest">{{ $siteCode->code }}</span> · {{ \App\Support\Duration::format($siteCode->duration_s) }}@else<span class="text-slate-500">{{ __('portal.site_codes.none_active') }}</span>@endif</p>
+            </div>
+            <a href="{{ route('admin.site-codes.show', $site) }}" class="btn-light">{{ __('portal.site_codes.manage') }}</a>
+        </section>
+
         @include('admin.branding.site', ['overrides' => \App\Branding\BrandingSettings::siteOverrides($site),
             'global' => \App\Branding\BrandingSettings::global()])
 

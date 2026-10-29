@@ -26,7 +26,7 @@
             </div>
             <label class="gp-label label">
                 <span>{{ __('portal.guest.code') }}</span>
-                <input name="code" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" required autocomplete="one-time-code"
+                <input name="code" value="{{ old('code', $prefillCode ?? null) }}" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" required autocomplete="one-time-code"
                        class="gp-input gp-code-input field text-center text-2xl tracking-widest">
             </label>
 

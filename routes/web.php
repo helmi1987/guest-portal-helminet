@@ -13,6 +13,7 @@ use App\Http\Controllers\Admin\OidcController;
 use App\Http\Controllers\Admin\ProfileController;
 use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SetupController;
+use App\Http\Controllers\Admin\SiteCodeController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\TermsController;
 use App\Http\Controllers\Admin\UserController;
@@ -86,7 +87,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
         });
 
         Route::middleware('two_factor')->group(function () {
-            // Admin + manager (CONCEPT.md §9): codes/grants, approvals, guests and sessions, MAC whitelist.
+            // Admin + manager (CONCEPT.md §9): codes/grants, site codes, approvals, guests and sessions, MAC whitelist.
             Route::middleware('role:admin,manager')->name('admin.')->group(function () {
                 Route::view('/', 'admin.dashboard')->name('dashboard');
                 Route::get('/grants/print', [GrantController::class, 'print'])->name('grants.print');
@@ -101,6 +102,15 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     ->middleware('throttle:30,1');
                 Route::resource('whitelist', MacWhitelistController::class)->except(['show']);
                 Route::post('/whitelist/{whitelist}/toggle', [MacWhitelistController::class, 'toggle'])->name('whitelist.toggle');
+                Route::get('/site-codes', [SiteCodeController::class, 'index'])->name('site-codes.index');
+                Route::prefix('/sites/{site}/site-code')->name('site-codes.')->group(function () {
+                    Route::get('/', [SiteCodeController::class, 'show'])->name('show');
+                    Route::post('/', [SiteCodeController::class, 'store'])->name('store');
+                    Route::put('/', [SiteCodeController::class, 'update'])->name('update');
+                    Route::post('/deactivate', [SiteCodeController::class, 'deactivate'])->name('deactivate');
+                    Route::post('/end-devices', [SiteCodeController::class, 'endDevices'])->name('end-devices');
+                    Route::get('/print', [SiteCodeController::class, 'print'])->name('print');
+                });
             });
 
             // Admin only: code CSV export, settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates.
