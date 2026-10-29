@@ -41,7 +41,9 @@ return [
             'busy_timeout' => env('DB_BUSY_TIMEOUT', 5000),
             'journal_mode' => env('DB_JOURNAL_MODE', 'wal'),
             'synchronous' => env('DB_SYNCHRONOUS', 'normal'),
-            'transaction_mode' => 'DEFERRED',
+            // IMMEDIATE: a transaction takes the write lock at BEGIN, so reads inside it (HLC state, outbox
+            // sequence, data key ring) cannot go stale before the write (no SQLITE_BUSY_SNAPSHOT under WAL).
+            'transaction_mode' => 'IMMEDIATE',
         ],
 
         'mysql' => [

@@ -133,6 +133,9 @@ return [
     'federation' => [
         // Remote HLC versions further ahead of the local clock than this are rejected (clock skew).
         'max_future_ms' => (int) env('PORTAL_FEDERATION_MAX_FUTURE_MS', 300000),
+        // An event waiting for a missing parent row pauses its origin after this many attempts or minutes.
+        'max_wait_attempts' => (int) env('PORTAL_FEDERATION_MAX_WAIT_ATTEMPTS', 50),
+        'max_wait_minutes' => (int) env('PORTAL_FEDERATION_MAX_WAIT_MINUTES', 1440),
     ],
 
     'version' => trim((string) @file_get_contents(base_path('VERSION'))) ?: 'dev',

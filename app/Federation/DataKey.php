@@ -6,12 +6,14 @@ use App\Models\LocalSetting;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Encryption\Encrypter;
 use Illuminate\Support\Facades\Crypt;
+use Illuminate\Support\Facades\DB;
 
 /**
  * Federation data key ring (CONCEPT.md §10.2): shared by all instances, encrypts replicated secrets
  * (cast `federated`). Stored in local_settings, each key encrypted with the local APP_KEY. Values are
  * prefixed with the key id; reading accepts every known key, writing uses the current one. The first
- * key is generated on first use; pairing (later part) replaces the ring with the federation's.
+ * key is created by a migration (fallback: first use, under the write lock); pairing (later part)
+ * imports the federation's key. Ring changes are read-check-write inside one transaction.
  */
 class DataKey
 {
@@ -60,14 +62,16 @@ class DataKey
         return strstr(substr($value, strlen(self::PREFIX)), ':', true) ?: null;
     }
 
+    /** Current key id; creates the first key if the ring is empty (normally done by the migration). */
     public function currentId(): string
     {
-        $ring = $this->ring();
-        if ($ring['current'] === null) {
-            return $this->rotate();
+        $current = $this->ring()['current'];
+        if ($current !== null) {
+            return $current;
         }
 
-        return $ring['current'];
+        // Read-check-write under the write lock: concurrent first use must not create two keys.
+        return DB::transaction(fn () => $this->ring()['current'] ?? $this->rotate());
     }
 
     /** New key becomes current; older keys stay readable. Returns the new key id. */
@@ -85,12 +89,14 @@ class DataKey
         if (! preg_match('/^[0-9a-f]{8}$/', $kid) || strlen($key) !== 32) {
             throw new \InvalidArgumentException('Invalid data key.');
         }
-        $ring = $this->ring();
-        $ring['keys'][$kid] = Crypt::encryptString(base64_encode($key));
-        if ($makeCurrent || $ring['current'] === null) {
-            $ring['current'] = $kid;
-        }
-        LocalSetting::put(self::SETTING, $ring);
+        DB::transaction(function () use ($kid, $key, $makeCurrent) {
+            $ring = $this->ring();
+            $ring['keys'][$kid] = Crypt::encryptString(base64_encode($key));
+            if ($makeCurrent || $ring['current'] === null) {
+                $ring['current'] = $kid;
+            }
+            LocalSetting::put(self::SETTING, $ring);
+        });
         unset($this->encrypters[$kid]);
     }
 

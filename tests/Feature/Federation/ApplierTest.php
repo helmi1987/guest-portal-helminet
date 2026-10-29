@@ -248,7 +248,7 @@ class ApplierTest extends TestCase
             $this->assertSame('admin@example.com', $this->rowOn($name, 'users', $userWin->id)['email']);
             $this->assertSame('admin'.$suffix($userLose->id).'@example.com', $this->rowOn($name, 'users', $userLose->id)['email']);
             $this->assertSame('iss sub', $this->rowOn($name, 'users', $userWin->id)['oidc_subject']);
-            $this->assertNull($this->rowOn($name, 'users', $userLose->id)['oidc_subject']);
+            $this->assertSame('iss sub'.$suffix($userLose->id), $this->rowOn($name, 'users', $userLose->id)['oidc_subject']);
             // One audit entry per conflict, same id on every instance.
             $this->assertSame(3, $this->on($name, fn () => AuditLog::where('action', 'federation.conflict')->count()));
         }

@@ -22,25 +22,40 @@ trait Replicated
 {
     use HasUlids, SoftDeletes;
 
+    /** @var \WeakMap<object, bool>|null models whose current save() is a real write */
+    private static ?\WeakMap $pendingEvent = null;
+
     public static function bootReplicated(): void
     {
+        self::$pendingEvent ??= new \WeakMap;
+
         static::creating(function ($model) {
             $model->origin_instance_id ??= app(LocalInstance::class)->id();
         });
 
+        // Federated tables only: a new version (HLC, reads the stored clock state) and an outbox event
+        // per real write. Local tables with replication columns pay nothing (accounting hot path).
         static::saving(function ($model) {
-            $model->version = app(Hlc::class)->now();
+            $write = $model->isFederated() && (! $model->exists || $model->isDirty());
+            self::$pendingEvent[$model] = $write;
+            if ($write) {
+                $model->version = app(Hlc::class)->now();
+            }
         });
 
         static::deleting(function ($model) {
             // Soft delete (tombstone) must carry a new version as well (written by runSoftDelete()).
-            if (! $model->isForceDeleting()) {
+            if ($model->isFederated() && ! $model->isForceDeleting()) {
                 $model->version = app(Hlc::class)->now();
             }
         });
 
         static::saved(function ($model) {
-            $model->recordFederationEvent();
+            // No event for a save without changes.
+            if (self::$pendingEvent[$model] ?? false) {
+                $model->recordFederationEvent();
+            }
+            unset(self::$pendingEvent[$model]);
         });
 
         static::deleted(function ($model) {

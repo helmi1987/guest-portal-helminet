@@ -473,7 +473,7 @@ implemented; transport, pairing, hooks and UI follow (§14).
   `POST /federation/sessions/{id}/disconnect`, `POST /federation/approvals/{id}/decide`.
 - Federation data key (implemented part B): replicated secrets use the cast `federated`
   (`fdk1:<key id>:<ciphertext>`, AES-256-GCM): TOTP secrets, channel config, OIDC client secret. The key
-  ring lives in `local_settings` (each key encrypted with the local `APP_KEY`); reading accepts every known
+  ring lives in `local_settings` (each key encrypted with the local `APP_KEY`), the first key is created by a migration; reading accepts every known
   key, writing uses the current one. Rotation: new key becomes current, old keys stay readable;
   affected fields are re-encrypted as normal events. Removing a peer rotates the key automatically and
   shows a checklist of channel/SMS/OIDC secrets to renew (a removed peer knew them).
@@ -486,7 +486,7 @@ implemented; transport, pairing, hooks and UI follow (§14).
 - **Change log** (implemented part A): `federation_events` (origin, seq, table, record_id, version,
   payload = full row, proto, sig), unique (origin, seq). Every write of a replicated row records an event
   in the same DB transaction (model events saved = create/update/restore, deleted = tombstone; a force
-  delete is a local purge without event). Query-builder writes of replicated tables are not allowed
+  delete is a local purge without event; a save without changes writes nothing). Query-builder writes of replicated tables are not allowed
   without recording the row (`Outbox::record()`); a test guard fails on such writes. Foreign events are
   stored as well (relay, catch-up). `peer_cursors` (origin, last_seq, pause state); ack state per peer
   follows with the transport.
@@ -496,20 +496,26 @@ implemented; transport, pairing, hooks and UI follow (§14).
   `portal.federation.max_future_ms` (5 min) ahead are rejected.
 - **Apply** (implemented part C): events of an origin are applied raw in seq order (DB upsert, no model
   events, no new version, no re-emit), inside one transaction with deferred foreign keys; a missing
-  parent row or a sequence gap stops the batch until the rest arrived; unknown table or higher protocol
-  pause the origin; table hooks run after commit.
+  parent row or a sequence gap stops the batch until the rest arrived (missing parent: paused after
+  `max_wait_attempts`/`max_wait_minutes`; dropped if the event is older than the purge horizon); unknown
+  table, higher protocol or an event that cannot be applied (savepoint per event) pause the origin; table
+  hooks run after commit. SQLite transactions are `IMMEDIATE` (write lock at BEGIN), so HLC state, outbox
+  sequence and data key ring are read and written atomically across processes.
 - Conflicts: **last-writer-wins per row** by `version`. Grants: field merge, `revoked_at` earliest
   non-null (sticky, there is no un-revoke), `first_login_at` earliest (with it the earlier `expires_at`),
   `extensions_used` maximum, other fields LWW. Duplicate 6-digit codes created concurrently stay valid as
   separate grants; redemption picks the unredeemed one allowed at the site.
-- Natural keys: settings have an id derived from the key; `sites.slug`, `users.email` and
-  `users.oidc_subject`: the older ULID wins, the loser's slug/email gets the suffix `-dup-<id tail>`
-  (OIDC subject cleared) + audit entry + UI warning; `terms_versions` has no unique (locale, number);
-  MAC whitelist: newer version wins, the other entry is tombstoned; active device per grant ("1 code =
-  1 active device"): the device with the newer `bound_at` wins, the older one is unbound (and
-  disconnected by its serving instance); site codes: one active per site, the newer version wins, the
-  other is deactivated. Resolutions are deterministic, so every instance reaches the same state without
-  extra events.
+- Natural keys: settings have an id derived from the key; `terms_versions` has no unique (locale,
+  number). Uniqueness rules are a pure function of the rows' own states (the payload of the event of
+  their current version), re-evaluated for every group an applied row leaves or joins, so the result does
+  not depend on the event order and needs no extra events; the rule only overlays the loser (version
+  kept): `sites.slug`, `users.email`, `users.oidc_subject`: the smallest ULID keeps the value, the others
+  get the suffix `-dup-<id tail>` + audit entry + UI warning; MAC whitelist: among the non-deleted
+  entries of a MAC the highest version wins, the others are tombstoned; site codes: among the active
+  codes of a site the highest version wins, the others are deactivated; devices ("1 code = 1 active
+  device"): among the active devices of a grant the newest binding (`bound_at`, then id) wins, the others
+  are unbound (and disconnected by their serving instance). If a winner later stops qualifying, the next
+  candidate qualifies again.
 - Same code redeemed at two sites with different devices during a partition: allowed; after the merge
   the rule above unbinds the older device.
 - Deletes: tombstones only; hard delete after all peers acknowledged + retention; events for unknown rows

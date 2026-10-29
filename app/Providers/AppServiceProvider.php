@@ -2,12 +2,14 @@
 
 namespace App\Providers;
 
+use App\Database\SQLiteConnection;
 use App\Federation\ApplyHooks;
 use App\Federation\DataKey;
 use App\Federation\Outbox;
 use App\Http\Middleware\EnsureZone;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
+use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
@@ -17,6 +19,7 @@ class AppServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        Connection::resolverFor('sqlite', fn ($pdo, $database, $prefix, $config) => new SQLiteConnection($pdo, $database, $prefix, $config));
         $this->app->singleton(LocalInstance::class);
         $this->app->singleton(Hlc::class);
         $this->app->singleton(DataKey::class);

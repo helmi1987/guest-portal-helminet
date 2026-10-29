@@ -11,10 +11,15 @@ use RuntimeException;
  * Hybrid logical clock used for the `version` column of replicated rows (CONCEPT.md §10.3).
  * Format: <13-digit unix ms>.<5-digit counter>.<instance ULID>, sortable as a string; the instance
  * id breaks ties. Persistent: every issued or received version is stored with its event in
- * `federation_events`, so the clock resumes from the highest stored version (also across processes).
+ * `federation_events`, so the clock resumes from the highest stored version. now() is called inside
+ * the write transaction (IMMEDIATE on SQLite, i.e. serialised across processes), so two processes of
+ * one instance never issue the same version.
  */
 class Hlc
 {
+    /** Five digits in the version string. */
+    public const MAX_COUNTER = 99999;
+
     private int $lastMs = 0;
 
     private int $counter = 0;
@@ -28,6 +33,10 @@ class Hlc
 
         if ($ms > $this->lastMs) {
             $this->lastMs = $ms;
+            $this->counter = 0;
+        } elseif ($this->counter >= self::MAX_COUNTER) {
+            // Counter exhausted within one millisecond: move the logical time on by 1 ms.
+            $this->lastMs++;
             $this->counter = 0;
         } else {
             $this->counter++;

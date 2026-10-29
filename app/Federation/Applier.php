@@ -7,10 +7,12 @@ use App\Models\Setting;
 use App\Support\DeterministicId;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use RuntimeException;
+use Throwable;
 
 /**
  * Apply engine for remote events (CONCEPT.md §10.3).
@@ -56,12 +58,19 @@ class Applier
             return $result;
         }
 
-        $batch = [];
-        foreach ($events as $event) {
-            $event = $this->normalise($event);
-            if ($event['origin'] === $origin) {
-                $batch[] = $event;
+        try {
+            $batch = [];
+            foreach ($events as $event) {
+                $event = $this->normalise($event);
+                if ($event['origin'] === $origin) {
+                    $batch[] = $event;
+                }
             }
+        } catch (Throwable $e) {
+            DB::transaction(fn () => $this->pause($origin, 'malformed event: '.$e->getMessage(), $result));
+            Log::error('Federation apply paused', ['origin' => $origin, 'reason' => $result->reason]);
+
+            return $result;
         }
         usort($batch, fn ($a, $b) => $a['seq'] <=> $b['seq']);
 
@@ -106,9 +115,19 @@ class Applier
                     break;
                 }
 
-                $outcome = $this->applyEvent($event, $snapshot);
+                // Savepoint per event: a poison event (wrong types, missing NOT NULL value, ...) is rolled
+                // back alone and pauses the origin instead of failing the batch forever.
+                $changeCount = count($this->changes);
+                try {
+                    $outcome = DB::transaction(fn () => $this->applyEvent($event, $snapshot));
+                } catch (Throwable $e) {
+                    array_splice($this->changes, $changeCount);
+                    $this->pause($origin, "failed to apply seq {$event['seq']} ({$event['table']}#{$event['record_id']}): "
+                        .mb_substr($e->getMessage(), 0, 150), $result);
+                    break;
+                }
                 if ($outcome === 'waiting') {
-                    $result->stop('stopped', "missing parent row for {$event['table']}#{$event['record_id']} at seq {$event['seq']}");
+                    $this->waitForParent($origin, $cursor, $event, $result);
                     break;
                 }
                 $result->{$outcome}++;
@@ -127,7 +146,8 @@ class Applier
         });
 
         if ($result->status !== 'ok') {
-            Log::warning('Federation apply '.$result->status, ['origin' => $origin, 'reason' => $result->reason]);
+            Log::log($result->status === 'paused' ? 'error' : 'warning', 'Federation apply '.$result->status,
+                ['origin' => $origin, 'reason' => $result->reason]);
         }
 
         return $result;
@@ -135,7 +155,31 @@ class Applier
 
     public function unpause(string $origin): void
     {
-        DB::table('peer_cursors')->where('origin', $origin)->update(['paused_at' => null, 'pause_reason' => null, 'updated_at' => now()]);
+        DB::table('peer_cursors')->where('origin', $origin)->update(['paused_at' => null, 'pause_reason' => null,
+            'blocked_seq' => null, 'blocked_since' => null, 'blocked_attempts' => 0, 'updated_at' => now()]);
+    }
+
+    /**
+     * A missing parent normally arrives with another origin's events. Waiting too long (attempts or
+     * time, e.g. parent purged here) pauses the origin with the reason instead of retrying forever.
+     */
+    private function waitForParent(string $origin, ?object $cursor, array $event, ApplyResult $result): void
+    {
+        $reason = "missing parent row for {$event['table']}#{$event['record_id']} at seq {$event['seq']}";
+        $same = $cursor !== null && (int) $cursor->blocked_seq === $event['seq'];
+        $attempts = $same ? (int) $cursor->blocked_attempts + 1 : 1;
+        $since = $same && $cursor->blocked_since !== null ? Carbon::parse($cursor->blocked_since) : now();
+        DB::table('peer_cursors')->upsert([['origin' => $origin, 'blocked_seq' => $event['seq'], 'blocked_since' => $since,
+            'blocked_attempts' => $attempts, 'created_at' => now(), 'updated_at' => now()]], ['origin'],
+            ['blocked_seq', 'blocked_since', 'blocked_attempts', 'updated_at']);
+
+        if ($attempts >= (int) config('portal.federation.max_wait_attempts', 50)
+            || $since->lte(now()->subMinutes((int) config('portal.federation.max_wait_minutes', 1440)))) {
+            $this->pause($origin, "$reason (waited $attempts attempts)", $result);
+
+            return;
+        }
+        $result->stop('stopped', $reason);
     }
 
     /** @return 'applied'|'ignored'|'dropped'|'waiting' */
@@ -143,6 +187,11 @@ class Applier
     {
         $table = $event['table'];
         $id = $event['record_id'];
+        foreach ($event['payload'] as $column => $value) {
+            if (is_array($value) || is_object($value)) {
+                throw new RuntimeException("column $column is not a scalar");
+            }
+        }
         $incoming = array_intersect_key($event['payload'], array_flip($this->columns($table)));
         $incoming['version'] = $event['version'];
         if ($table === 'settings' && isset($incoming['key'])) {
@@ -151,40 +200,109 @@ class Applier
         $incoming['id'] = $id;
 
         $local = $this->row($table, $id);
+        $before = null;
         if ($local === null) {
             if (! $snapshot && $this->beyondHorizon($event['version'])) {
                 return 'dropped'; // purged here: no resurrection
             }
-            if (! $this->parentsExist($table, $incoming)) {
-                // A tombstone of an unknown row without its parent carries no information.
-                return ($incoming['deleted_at'] ?? null) !== null ? 'dropped' : 'waiting';
+            $row = $incoming;
+        } else {
+            if ($event['version'] === $local['version']) {
+                return 'ignored';
             }
-            $row = $this->resolveConflicts($table, $incoming);
-            DB::table($table)->insert($row);
-            $this->changes[] = new AppliedChange($table, $id, null, $row, $event['origin']);
-
-            return 'applied';
+            $incomingWins = strcmp($event['version'], (string) $local['version']) > 0;
+            // Last writer wins on the rows' own states (conflict overlays are derived again below).
+            $before = Constraints::has($table) ? (new Constraints)->baseOf($table, $local) : $local;
+            $row = $incomingWins ? array_merge($before, $incoming) : $before;
+            if ($table === 'grants') {
+                $row = self::mergeGrant($local, $incoming, $incomingWins ? array_merge($local, $incoming) : $local);
+            }
         }
 
-        if ($event['version'] === $local['version']) {
-            return 'ignored';
-        }
-        $incomingWins = strcmp($event['version'], (string) $local['version']) > 0;
-        $row = $incomingWins ? array_merge($local, $incoming) : $local;
-        if ($table === 'grants') {
-            $row = self::mergeGrant($local, $incoming, $row);
-        }
-        if ($row == $local) {
-            return 'ignored';
-        }
         if (! $this->parentsExist($table, $row)) {
+            // Parent purged here (old event) or a tombstone of an unknown row: nothing to wait for.
+            if ($this->beyondHorizon($event['version']) || ($local === null && ($row['deleted_at'] ?? null) !== null)) {
+                return 'dropped';
+            }
+
             return 'waiting';
         }
-        $row = $this->resolveConflicts($table, $row);
-        DB::table($table)->where('id', $id)->update(array_diff_key($row, ['id' => true]));
-        $this->changes[] = new AppliedChange($table, $id, $local, $row, $event['origin']);
 
-        return 'applied';
+        return $this->write($table, $row, $local, $before, $event['origin']) ? 'applied' : 'ignored';
+    }
+
+    /**
+     * Write a row state; for tables with uniqueness rules also every other row of the affected groups,
+     * in two phases (collision-free values first, then the final states) so values can move between rows.
+     */
+    private function write(string $table, array $row, ?array $local, ?array $before, string $origin): bool
+    {
+        $id = $row['id'];
+        if (! Constraints::has($table)) {
+            if ($local !== null && $row == $local) {
+                return false;
+            }
+            $this->put($table, $row, $local === null);
+            $this->changes[] = new AppliedChange($table, $id, $local, $row, $origin);
+
+            return true;
+        }
+
+        [$desired, $current] = (new Constraints)->resolve($table, $row, $before);
+        $current[$id] = $local;
+        $changed = array_filter($desired, fn (array $state, string $rowId) => $current[$rowId] === null
+            || array_intersect_key($state, $current[$rowId]) != array_intersect_key($current[$rowId], $state), ARRAY_FILTER_USE_BOTH);
+        if ($changed === []) {
+            return false;
+        }
+
+        self::$resolving = true;
+        try {
+            if (count($changed) > 1) {
+                foreach ($changed as $rowId => $state) {
+                    $this->put($table, Constraints::safe($table, $state), $current[$rowId] === null);
+                    $current[$rowId] ??= $state;
+                }
+            }
+            foreach ($changed as $rowId => $state) {
+                $this->put($table, $state, $current[$rowId] === null);
+            }
+        } finally {
+            self::$resolving = false;
+        }
+
+        foreach ($changed as $rowId => $state) {
+            $previous = $rowId === $id ? $local : $current[$rowId];
+            $this->changes[] = new AppliedChange($table, $rowId, $previous, $state, $rowId === $id ? $origin
+                : (string) ($state['origin_instance_id'] ?? ''), $rowId === $id ? 'event' : 'conflict');
+            if ($rowId !== $id) {
+                $this->result->conflicts[] = "$table#$rowId changed by conflict rule";
+            }
+            $this->auditRenames($table, $rowId, $state, $previous);
+        }
+
+        return isset($changed[$id]);
+    }
+
+    private function put(string $table, array $row, bool $insert): void
+    {
+        if ($insert) {
+            DB::table($table)->insert($row);
+        } else {
+            DB::table($table)->where('id', $row['id'])->update(array_diff_key($row, ['id' => true]));
+        }
+    }
+
+    /** Audit entry when a row newly carries a renamed (suffixed) unique value. */
+    private function auditRenames(string $table, string $id, array $state, ?array $previous): void
+    {
+        foreach (Constraints::RULES[$table] as $column => $rule) {
+            $value = $state[$column] ?? null;
+            if ($rule === 'older_id' && is_string($value) && str_contains($value, '-dup-'.strtolower(substr($id, -6)))
+                && ($previous[$column] ?? null) !== $value) {
+                $this->conflict($table, $id, $column);
+            }
+        }
     }
 
     /**
@@ -226,147 +344,18 @@ class Applier
         return $row;
     }
 
-    /**
-     * Uniqueness rules (CONCEPT.md §10.3). Returns the row to write; other local rows are changed
-     * directly (version kept, deterministic on every instance).
-     *
-     * @param  array<string, mixed>  $row
-     * @return array<string, mixed>
-     */
-    private function resolveConflicts(string $table, array $row): array
-    {
-        return match ($table) {
-            'sites' => $this->olderIdWins($table, $row, 'slug', fn (string $v, string $id) => $this->suffix($v, $id, 64)),
-            'users' => $this->olderIdWins($table,
-                $this->olderIdWins($table, $row, 'email', fn (string $v, string $id) => $this->suffixEmail($v, $id)),
-                'oidc_subject', fn () => null),
-            'mac_whitelist' => $this->newerVersionWins($row, 'mac_whitelist', ['mac' => $row['mac'] ?? null],
-                fn (array $r) => ($r['deleted_at'] ?? null) === null,
-                fn (array $loser, array $winner) => ['deleted_at' => $winner['created_at'] ?? $winner['updated_at']]),
-            'site_codes' => $this->newerVersionWins($row, 'site_codes', ['site_id' => $row['site_id'] ?? null],
-                fn (array $r) => ($r['deleted_at'] ?? null) === null && (bool) ($r['active'] ?? true) && ($r['deactivated_at'] ?? null) === null,
-                fn (array $loser, array $winner) => ['active' => false, 'deactivated_at' => $winner['created_at']]),
-            'devices' => $this->newerDeviceWins($row),
-            default => $row,
-        };
-    }
-
-    /**
-     * Unique column (all rows incl. tombstones): the row with the older (smaller) ULID keeps the value,
-     * the other gets $rename (suffix or null) + audit entry.
-     */
-    private function olderIdWins(string $table, array $row, string $column, callable $rename): array
-    {
-        $value = $row[$column] ?? null;
-        if ($value === null) {
-            return $row;
-        }
-        $other = DB::table($table)->where($column, $value)->where('id', '!=', $row['id'])->first();
-        if ($other === null) {
-            return $row;
-        }
-        $other = (array) $other;
-        if (strcmp($row['id'], $other['id']) < 0) {
-            $this->resolveLocal($table, $other, [$column => $rename($value, $other['id'])]);
-            $this->conflict($table, $other['id'], $column, $row['id']);
-        } else {
-            $row[$column] = $rename($value, $row['id']);
-            $this->conflict($table, $row['id'], $column, $other['id']);
-        }
-
-        return $row;
-    }
-
-    /**
-     * At most one "active" row per group: the newer version wins; the loser gets $loserChanges.
-     *
-     * @param  array<string, mixed>  $where  group columns
-     */
-    private function newerVersionWins(array $row, string $table, array $where, callable $active, callable $loserChanges): array
-    {
-        if (in_array(null, $where, true) || ! $active($row)) {
-            return $row;
-        }
-        $others = DB::table($table)->where($where)->where('id', '!=', $row['id'])->get()
-            ->map(fn ($r) => (array) $r)->filter($active);
-        foreach ($others as $other) {
-            if (strcmp((string) $row['version'], (string) $other['version']) > 0) {
-                $this->resolveLocal($table, $other, $loserChanges($other, $row));
-            } else {
-                $row = array_merge($row, $loserChanges($row, $other));
-                $this->result->conflicts[] = "$table#{$row['id']} lost against #{$other['id']}";
-
-                return $row;
-            }
-        }
-
-        return $row;
-    }
-
-    /** "1 code = 1 active device": the newer binding (bound_at, then id) wins, the older one is unbound. */
-    private function newerDeviceWins(array $row): array
-    {
-        if (($row['grant_id'] ?? null) === null || ($row['unbound_at'] ?? null) !== null || ($row['deleted_at'] ?? null) !== null) {
-            return $row;
-        }
-        $others = DB::table('devices')->where('grant_id', $row['grant_id'])->where('id', '!=', $row['id'])
-            ->whereNull('unbound_at')->whereNull('deleted_at')->get()->map(fn ($r) => (array) $r);
-        foreach ($others as $other) {
-            $rowNewer = [$row['bound_at'], $row['id']] > [$other['bound_at'], $other['id']];
-            if ($rowNewer) {
-                $this->resolveLocal('devices', $other, ['unbound_at' => $row['bound_at']]);
-            } else {
-                $row['unbound_at'] = $other['bound_at'];
-                $this->result->conflicts[] = "devices#{$row['id']} unbound by newer #{$other['id']}";
-
-                return $row;
-            }
-        }
-
-        return $row;
-    }
-
-    /** Change a local row because of a conflict rule; the version stays (same result everywhere). */
-    private function resolveLocal(string $table, array $before, array $changes): void
-    {
-        self::$resolving = true;
-        try {
-            DB::table($table)->where('id', $before['id'])->update($changes);
-        } finally {
-            self::$resolving = false;
-        }
-        $this->result->conflicts[] = "$table#{$before['id']} changed: ".implode(', ', array_keys($changes));
-        $this->changes[] = new AppliedChange($table, $before['id'], $before, array_merge($before, $changes),
-            (string) $before['origin_instance_id'], 'conflict');
-    }
-
     /** Audit entry with a deterministic id: every instance resolving the same conflict writes one row. */
-    private function conflict(string $table, string $loserId, string $column, string $winnerId): void
+    private function conflict(string $table, string $loserId, string $column): void
     {
-        $this->result->conflicts[] = "$table#$loserId.$column renamed, kept by #$winnerId";
-        Log::warning('Federation natural key conflict', compact('table', 'loserId', 'column', 'winnerId'));
+        $this->result->conflicts[] = "$table#$loserId.$column renamed";
+        Log::warning('Federation natural key conflict', compact('table', 'loserId', 'column'));
         $id = DeterministicId::for("federation.conflict:$table:$loserId:$column");
         if (AuditLog::withTrashed()->whereKey($id)->exists()) {
             return;
         }
         (new AuditLog(['actor' => 'federation', 'action' => 'federation.conflict', 'subject_type' => $table === 'users' ? 'user' : 'site',
-            'subject_id' => $loserId, 'data' => ['column' => $column, 'kept_by' => $winnerId]]))
+            'subject_id' => $loserId, 'data' => ['column' => $column]]))
             ->forceFill(['id' => $id])->save();
-    }
-
-    private function suffix(string $value, string $id, int $max): string
-    {
-        $suffix = '-dup-'.strtolower(substr($id, -6));
-
-        return mb_substr($value, 0, $max - strlen($suffix)).$suffix;
-    }
-
-    private function suffixEmail(string $email, string $id): string
-    {
-        $at = strrpos($email, '@');
-
-        return $at === false ? $this->suffix($email, $id, 255)
-            : $this->suffix(substr($email, 0, $at), $id, 200).substr($email, $at);
     }
 
     private function parentsExist(string $table, array $row): bool
