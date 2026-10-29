@@ -11,7 +11,7 @@
                     @if ($list->isEmpty())
                         {{ __('portal.terms.none') }}
                     @else
-                        {{ __('portal.terms.current') }}: {{ $list->first()->number }} ({{ $list->first()->published_at->format('Y-m-d H:i') }})
+                        {{ __('portal.terms.current') }}: {{ $list->first()->number }} ({{ \App\Support\LocalTime::format($list->first()->published_at) }})
                     @endif
                 </p>
                 <form method="POST" action="{{ route('admin.terms.update', $locale) }}" class="flex flex-col gap-3">

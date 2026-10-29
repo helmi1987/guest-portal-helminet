@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Branding\BrandingAssets;
 use App\Branding\BrandingSettings;
 use App\Models\AuditLog;
 use App\Models\Site;
@@ -91,10 +92,14 @@ class BrandingTest extends TestCase
         $this->onZone('internal')->get($url)->assertNotFound();
         $this->onZone('guest')->get('/branding/files/'.str_repeat('0', 64).'.png')->assertNotFound();
 
-        // Remove: default logo again, unreferenced file deleted.
+        // Remove: default logo again; the unreferenced file is kept during the grace period, then deleted.
+        $path = config('portal.branding.dir').'/'.$logo['hash'].'.png';
         $this->save('/admin/settings/branding', ['logo_remove' => '1'])->assertSessionHasNoErrors();
         $this->assertNull(BrandingSettings::global()['logo']);
-        $this->assertFileDoesNotExist(config('portal.branding.dir').'/'.$logo['hash'].'.png');
+        $this->assertFileExists($path);
+        touch($path, time() - BrandingAssets::PRUNE_GRACE - 1);
+        $this->save('/admin/settings/branding', [])->assertSessionHasNoErrors();
+        $this->assertFileDoesNotExist($path);
         $this->assertStringContainsString('gp-logo-default', $this->enterPortal()->getContent());
     }
 
@@ -135,6 +140,12 @@ class BrandingTest extends TestCase
             'css_url' => $this->svg('<rect width="1" height="1" style="fill: url(https://example.com/a.svg)"/>'),
             'entity' => UploadedFile::fake()->createWithContent('logo.svg', '<?xml version="1.0"?><!DOCTYPE svg [<!ENTITY x "y">]>'
                 .'<svg xmlns="http://www.w3.org/2000/svg"><text>&x;</text></svg>'),
+            'utf16_bom' => UploadedFile::fake()->createWithContent('logo.svg', "\xFF\xFE".mb_convert_encoding(
+                '<!DOCTYPE svg [<!ENTITY x "y">]><svg xmlns="http://www.w3.org/2000/svg"><text>&x;</text></svg>', 'UTF-16LE', 'UTF-8')),
+            'utf16_no_bom' => UploadedFile::fake()->createWithContent('logo.svg', mb_convert_encoding(
+                '<!DOCTYPE svg><svg xmlns="http://www.w3.org/2000/svg"/>', 'UTF-16LE', 'UTF-8')),
+            'utf7' => UploadedFile::fake()->createWithContent('logo.svg', '<?xml version="1.0" encoding="UTF-7"?>'
+                .'+ADw-!DOCTYPE svg+AD4-<svg xmlns="http://www.w3.org/2000/svg"/>'),
             'not_svg_root' => UploadedFile::fake()->createWithContent('logo.svg', '<html><body>x</body></html>'),
         ];
         foreach ($cases as $case => $file) {
@@ -231,6 +242,11 @@ class BrandingTest extends TestCase
             'body { background: u\72l(//example.com/x.png); }' => 'css_external',
             'body { background-image: image-set("https://example.com/x.png" 1x); }' => 'css_external',
             'body { width: expression(alert(1)); }' => 'css_unsafe',
+            "a { background: image-set(\"ht\\\ntp://e.com/x.png\" 1x); }" => 'css_external',
+            'a { background: image-set("\\1 https://e.com/x.png" 1x); }' => 'css_external',
+            'a { background: image-set("ht\\9 tps://e.com/a.png" 1x); }' => 'css_external',
+            'a { background: image-set("https:e.com/a.png" 1x); }' => 'css_external',
+            'a { background: url(\\\\\\\\e.com/x.png); }' => 'css_external',
         ] as $css => $error) {
             $this->save('/admin/settings/branding', ['css' => $css])
                 ->assertSessionHasErrors(['css' => __('portal.branding.errors.'.$error)]);

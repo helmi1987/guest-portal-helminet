@@ -12,6 +12,9 @@ namespace App\Branding;
  */
 final class CssPolicy
 {
+    /** Schemes a URL parser resolves to another host even without "//" (e.g. "https:host/x"). */
+    private const SPECIAL_SCHEME = '/^(https?|ftp|wss?|file):/';
+
     /** url(...) / src(...) with a double-quoted, single-quoted or unquoted target. */
     private const URL_PATTERN = '/\b(?:url|src)\s*\(\s*(?:"([^"]*)"|\'([^\']*)\'|([^)"\']*))\s*\)?/i';
 
@@ -30,28 +33,29 @@ final class CssPolicy
             return 'css_unsafe';
         }
         foreach (self::urls($text) as $url) {
-            $url = (string) preg_replace('/[\x00-\x20]+/', '', $url);
-            if (str_starts_with($url, 'data:')) {
-                continue;
-            }
-            if (str_starts_with($url, '//') || str_starts_with($url, '\\') || preg_match('/^[a-z][a-z0-9+.-]*:/', $url)) {
+            if (! self::isLocal(self::normalize($url))) {
                 return 'css_external';
             }
         }
-        // Absolute URLs in plain strings (e.g. image-set("https://...")); url()/src() were checked above
-        // (an inline data: SVG may contain xmlns="http://...").
-        $strings = (string) preg_replace(self::URL_PATTERN, '', $text);
-        if (preg_match('/["\']\s*(?:[a-z][a-z0-9+.-]*:)?\/\//', $strings)) {
-            return 'css_external';
+        // Strings (e.g. image-set("https://...")): tokenized on the raw text so escaped quotes keep the
+        // string boundaries, then decoded and normalized like a URL parser would.
+        $raw = (string) preg_replace('#/\*.*?(\*/|$)#s', '', $css);
+        preg_match_all('/"((?:[^"\\\\]|\\\\.)*)"|\'((?:[^\'\\\\]|\\\\.)*)\'/s', $raw, $m, PREG_SET_ORDER);
+        foreach ($m as $string) {
+            $value = self::normalize(self::decode(($string[1] ?? '').($string[2] ?? '')));
+            if (! str_starts_with($value, 'data:') && (str_contains($value, '//') || preg_match(self::SPECIAL_SCHEME, $value))) {
+                return 'css_external';
+            }
         }
 
         return null;
     }
 
-    /** Text without comments and with CSS escapes (\72, \u) decoded. */
+    /** Text without comments and with CSS escapes (\72, \u) decoded; escaped newlines are line continuations. */
     public static function decode(string $css): string
     {
         $css = (string) preg_replace('#/\*.*?(\*/|$)#s', '', $css);
+        $css = (string) preg_replace('/\\\\(\r\n|\n|\r|\f)/', '', $css);
 
         return (string) preg_replace_callback('/\\\\(?:([0-9a-fA-F]{1,6})\s?|(.))/su', function (array $m): string {
             if (($m[1] ?? '') !== '') {
@@ -62,6 +66,18 @@ final class CssPolicy
 
             return $m[2] ?? '';
         }, $css);
+    }
+
+    /** As a URL parser sees it: no whitespace/control characters, lower case, backslash = slash. */
+    private static function normalize(string $value): string
+    {
+        return str_replace('\\', '/', strtolower((string) preg_replace('/[\x00-\x20\x7f]+/', '', $value)));
+    }
+
+    /** data: URL or a same-origin path (no scheme, not protocol-relative). */
+    private static function isLocal(string $url): bool
+    {
+        return str_starts_with($url, 'data:') || (! str_starts_with($url, '//') && ! preg_match('/^[a-z][a-z0-9+.-]*:/', $url));
     }
 
     /**

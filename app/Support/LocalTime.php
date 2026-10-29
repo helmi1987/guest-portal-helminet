@@ -42,4 +42,16 @@ final class LocalTime
     {
         return $value === null || $value === '' ? null : Carbon::parse($value, self::zone())->utc();
     }
+
+    /** Start of the given day (date input) in the display zone, as UTC. */
+    public static function startOfDay(string $date): Carbon
+    {
+        return Carbon::parse($date, self::zone())->startOfDay()->utc();
+    }
+
+    /** End of the given day (date input) in the display zone, as UTC. */
+    public static function endOfDay(string $date): Carbon
+    {
+        return Carbon::parse($date, self::zone())->endOfDay()->utc();
+    }
 }

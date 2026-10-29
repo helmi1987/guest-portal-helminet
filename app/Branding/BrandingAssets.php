@@ -25,6 +25,9 @@ final class BrandingAssets
         self::FAVICON => ['png' => 'image/png', 'ico' => 'image/x-icon', 'svg' => 'image/svg+xml'],
     ];
 
+    /** Unreferenced files younger than this (seconds) are kept by prune(). */
+    public const PRUNE_GRACE = 300;
+
     public const FILE_PATTERN = '/^([a-f0-9]{64})\.(png|jpg|webp|svg|ico)$/';
 
     /** MIME types finfo may report per raster type. */
@@ -114,7 +117,7 @@ final class BrandingAssets
     }
 
     /**
-     * Deletes stored files no setting references any more.
+     * Deletes stored files no setting references any more (older than PRUNE_GRACE).
      *
      * @param  list<string>  $keep  file names still referenced
      * @return list<string> deleted file names
@@ -124,7 +127,9 @@ final class BrandingAssets
         $dir = $this->dir();
         $deleted = [];
         foreach (is_dir($dir) ? (scandir($dir) ?: []) : [] as $file) {
-            if (preg_match(self::FILE_PATTERN, $file) && ! in_array($file, $keep, true) && @unlink("$dir/$file")) {
+            // Grace period: a file uploaded by a concurrent request may not be referenced yet.
+            if (preg_match(self::FILE_PATTERN, $file) && ! in_array($file, $keep, true)
+                && (int) @filemtime("$dir/$file") < now()->getTimestamp() - self::PRUNE_GRACE && @unlink("$dir/$file")) {
                 $deleted[] = $file;
             }
         }

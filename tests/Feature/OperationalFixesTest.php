@@ -9,8 +9,10 @@ use App\Auth\Oidc\OidcSettings;
 use App\Backup\BackupManager;
 use App\Enums\ExpiryMode;
 use App\Models\ApprovalRequest;
+use App\Models\AuditLog;
 use App\Models\Channel;
 use App\Models\Setting;
+use App\Models\TermsVersion;
 use App\Models\User;
 use App\Services\GrantManager;
 use App\Support\LocalTime;
@@ -23,7 +25,7 @@ use Illuminate\Support\Facades\Log;
 use Tests\TestCase;
 
 /**
- * v0.10.0 fixes from the container test: display time zone, admin URL fallback, Telegram backoff.
+ * v0.10.0 fixes from the container test and review: display time zone, admin URL fallback, Telegram backoff.
  */
 class OperationalFixesTest extends TestCase
 {
@@ -67,6 +69,22 @@ class OperationalFixesTest extends TestCase
         // Unknown zone names fall back to UTC.
         config(['portal.display_timezone' => 'Mars/Olympus']);
         $this->assertSame('UTC', LocalTime::zone());
+    }
+
+    public function test_audit_filter_and_terms_use_the_display_zone(): void
+    {
+        config(['portal.display_timezone' => 'Europe/Zurich']);
+        $admin = User::factory()->admin()->create();
+        // 23:30 UTC on the 15th is 00:30 local on the 16th.
+        $log = AuditLog::create(['action' => 'settings.zone_probe']);
+        $log->forceFill(['created_at' => Carbon::parse('2030-01-15 23:30:00', 'UTC')])->save();
+
+        $this->onZone('admin')->actingAs($admin)->get('/admin/audit?from=2030-01-16&to=2030-01-16')->assertSee('settings.zone_probe')
+            ->assertSee('16.01.2030 00:30:00');
+        $this->onZone('admin')->actingAs($admin)->get('/admin/audit?to=2030-01-15')->assertDontSee('settings.zone_probe');
+
+        TermsVersion::create(['locale' => 'de', 'number' => 1, 'body' => 'Text', 'published_at' => Carbon::parse('2030-01-15 23:30:00', 'UTC')]);
+        $this->onZone('admin')->actingAs($admin)->get('/admin/terms')->assertSee('(2030-01-16 00:30)', false);
     }
 
     public function test_admin_url_falls_back_to_app_url_with_admin_port_and_settings_warn(): void

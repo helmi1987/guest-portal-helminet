@@ -36,6 +36,12 @@ final class SvgSanitizer
      */
     public static function sanitize(string $svg): string
     {
+        // UTF-8 only: other encodings (UTF-16/32, UTF-7 via the XML declaration) would hide the
+        // DOCTYPE from the byte check below.
+        if (! mb_check_encoding($svg, 'UTF-8') || str_contains($svg, "\0")
+            || preg_match('/^\s*(\xEF\xBB\xBF)?\s*<\?xml[^>]*encoding\s*=\s*["\'](?!utf-?8["\'])/i', $svg)) {
+            throw new BrandingException('invalid_type');
+        }
         if (preg_match('/<!DOCTYPE|<!ENTITY|<\?xml-stylesheet/i', $svg)) {
             throw new BrandingException('svg_unsafe');
         }
@@ -48,6 +54,9 @@ final class SvgSanitizer
         } finally {
             libxml_clear_errors();
             libxml_use_internal_errors($previous);
+        }
+        if ($loaded && $doc->doctype !== null) {
+            throw new BrandingException('svg_unsafe');
         }
         $root = $doc->documentElement;
         if (! $loaded || $root === null || $root->namespaceURI !== self::SVG_NS || $root->localName !== 'svg') {

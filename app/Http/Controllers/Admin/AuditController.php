@@ -6,8 +6,8 @@ use App\Http\Controllers\Controller;
 use App\Models\AuditLog;
 use App\Models\User;
 use App\Support\Audit;
+use App\Support\LocalTime;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\View\View;
 
 /**
@@ -29,8 +29,8 @@ class AuditController extends Controller
             ->when($filters['group'] ?? null, fn ($q, $group) => $q->where('action', 'like', $group.'.%'))
             ->when($filters['user'] ?? null, fn ($q, $user) => $q->where('user_id', $user))
             ->when($filters['subject'] ?? null, fn ($q, $id) => $q->where('subject_id', $id))
-            ->when($filters['from'] ?? null, fn ($q, $from) => $q->where('created_at', '>=', Carbon::parse($from)->startOfDay()))
-            ->when($filters['to'] ?? null, fn ($q, $to) => $q->where('created_at', '<=', Carbon::parse($to)->endOfDay()))
+            ->when($filters['from'] ?? null, fn ($q, $from) => $q->where('created_at', '>=', LocalTime::startOfDay($from)))
+            ->when($filters['to'] ?? null, fn ($q, $to) => $q->where('created_at', '<=', LocalTime::endOfDay($to)))
             ->latest()->orderByDesc('id')
             ->paginate(50)->withQueryString();
 

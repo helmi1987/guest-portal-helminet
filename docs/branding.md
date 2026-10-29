@@ -31,7 +31,7 @@ use the global branding. The admin UI always uses the global branding.
   built-in default. Remove (site): uncheck "Override" to inherit again.
 - Files are stored as `<sha256>.<ext>` in `/data/branding` and included in backups. URLs contain
   the content hash (`/branding/files/<hash>.<ext>`), so browsers cache them for a year and a new
-  upload is picked up at once. Files no longer referenced are deleted on save.
+  upload is picked up at once. Files no longer referenced are deleted on a later save (after 5 minutes).
 
 ### Built-in default
 
@@ -45,7 +45,7 @@ Without an upload the portal shows a built-in logo (shield with Wi-Fi arcs, inli
 
 ### SVG rules
 
-SVG files are parsed and re-serialized. **Rejected** (error message, nothing stored): DOCTYPE or
+SVG files must be UTF-8; they are parsed and re-serialized. **Rejected** (error message, nothing stored): other encodings (UTF-16, UTF-7, ...), DOCTYPE or
 entity declarations, `script`, `foreignObject`, `iframe`, `embed`, `object` and similar
 elements, any `on*` event attribute, `href`/`xlink:href` other than `#id` or an embedded
 `data:image/(png|jpeg|gif|webp);base64,...`, `javascript:` anywhere, `@import` or `url()` to anything
@@ -84,6 +84,9 @@ Rules (checked on save, after removing comments and decoding CSS escapes):
   (`/...` or relative). Absolute URLs (`https://...`) and protocol-relative URLs (`//host/...`) are
   rejected: guest devices are behind the hotspot walled garden (only the portal host is reachable),
   and guest pages must not leak visits to third parties.
+- Strings must not contain URLs to other hosts either: after decoding escapes and line continuations
+  and removing whitespace/control characters, a string (other than a `data:` URL) must not contain
+  `//` or start with `http:`, `https:`, `ftp:`, `ws:`, `wss:` or `file:` (backslashes count as `/`).
 - `expression()`, `behavior:`, `-moz-binding` and `javascript:` are rejected.
 
 Broken custom CSS in the admin UI: open any admin page with `?plain=1` (e.g.
