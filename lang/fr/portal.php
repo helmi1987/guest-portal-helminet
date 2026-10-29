@@ -35,6 +35,12 @@ return [
         'remaining' => 'Temps restant',
         'online_hint' => 'Vous pouvez fermer cette fenêtre et utiliser Internet.',
         'router_failed_notice' => 'La dernière connexion n\'a pas abouti sur le routeur. Veuillez réessayer.',
+        'access_ended' => [
+            'disconnected' => 'Votre session a pris fin.',
+            'revoked' => 'Votre accès a été bloqué.',
+            'expired' => 'Votre accès a expiré.',
+            'sign_in_again' => 'Se reconnecter',
+        ],
         'try_again' => 'Réessayer',
         'approval_intro' => 'Pas de code d\'accès ? Demandez l\'accès à votre hôte.',
         'approval_request' => 'Demander l\'accès',

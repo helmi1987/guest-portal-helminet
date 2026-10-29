@@ -3,13 +3,20 @@
         <h1 class="gp-card-title mb-1 text-xl font-semibold sm:text-2xl">{{ __('portal.guest.heading') }}</h1>
         <p class="gp-intro mb-4 opacity-80">{{ __('portal.guest.code_intro') }}</p>
 
+        @if ($endedNotice ?? null)
+            <div class="gp-notice gp-access-ended mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+                <p class="gp-access-ended-text font-medium">{{ __('portal.guest.access_ended.'.$endedNotice) }}</p>
+                <a href="#gp-login-form" class="gp-access-ended-button btn-light">{{ __('portal.guest.access_ended.sign_in_again') }}</a>
+            </div>
+        @endif
+
         @if ($routerFailed)
             <p class="gp-notice mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
                 {{ __('portal.guest.router_failed_notice') }}
             </p>
         @endif
 
-        <form method="POST" action="{{ route('guest.redeem') }}" class="gp-form flex flex-col gap-4">
+        <form id="gp-login-form" method="POST" action="{{ route('guest.redeem') }}" class="gp-form flex flex-col gap-4">
             @csrf
             <input type="hidden" name="terms_version" value="{{ $terms?->id }}">
             <div class="gp-name-fields grid grid-cols-1 gap-3 min-[360px]:grid-cols-2">

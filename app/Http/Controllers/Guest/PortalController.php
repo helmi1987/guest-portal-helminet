@@ -20,6 +20,7 @@ use App\Models\SiteCode;
 use App\Models\TermsAcceptance;
 use App\Models\TermsVersion;
 use App\Nas\HotspotContext;
+use App\Services\AccessEndedNotice;
 use App\Services\GrantManager;
 use App\Services\LoginThrottle;
 use App\Services\SiteCodeManager;
@@ -76,6 +77,8 @@ class PortalController extends Controller
             'approvalEnabled' => ! $limited && Channel::query()->activeNotification()->exists(),
             'smsEnabled' => OtpService::enabled(),
             'prefillCode' => $request->session()->get('portal_code'),
+            // Returning device whose access ended (expired, revoked, disconnected); reason only.
+            'endedNotice' => AccessEndedNotice::for($context->mac, $site),
         ]);
     }
 

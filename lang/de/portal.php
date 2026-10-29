@@ -35,6 +35,12 @@ return [
         'remaining' => 'Verbleibende Zeit',
         'online_hint' => 'Du kannst dieses Fenster schliessen und das Internet jetzt nutzen.',
         'router_failed_notice' => 'Die letzte Anmeldung wurde vom Router nicht abgeschlossen. Bitte versuche es erneut.',
+        'access_ended' => [
+            'disconnected' => 'Deine Sitzung wurde beendet.',
+            'revoked' => 'Dein Zugang wurde gesperrt.',
+            'expired' => 'Dein Zugang ist abgelaufen.',
+            'sign_in_again' => 'Erneut anmelden',
+        ],
         'try_again' => 'Erneut versuchen',
         'approval_intro' => 'Kein Zugangscode? Frage den Gastgeber um Zugang.',
         'approval_request' => 'Zugang anfragen',

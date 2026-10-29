@@ -239,6 +239,12 @@ CoovaChilli) are future/community work.
 
 - Entry: `login.html` redirect → `GET /portal?site=<id>&mac=..&ip=..&link-login-only=..&link-orig=..`.
   URL parameters are untrusted UX hints; the binding MAC is the one RADIUS reports.
+- Access-ended notice (decision 2026-10-29, v0.12.1): when a device returns via the router redirect,
+  the login page shows "session ended" (last session of the MAC at this site disconnected by an admin),
+  "access blocked" (latest grant of the MAC for this site revoked) or "access expired", only within
+  `PORTAL_ENDED_NOTICE_HOURS` (default 24, 0 = off), not for unknown MACs or when another usable grant
+  is bound to the MAC. Reason only, no name or code; "sign in again" jumps to the normal login form.
+  The MAC is a UX hint (spoofing reveals only one of three generic reasons).
 - Required for all methods: first name, last name, acceptance of current terms version.
 - Languages DE, IT, FR, EN (Laravel lang files); auto-detect via `Accept-Language`, switcher.
 - After success: one-time RADIUS credentials → auto-submit to router → status page (implemented M3:

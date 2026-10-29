@@ -35,6 +35,12 @@ return [
         'remaining' => 'Tempo rimanente',
         'online_hint' => 'Puoi chiudere questa finestra e usare Internet.',
         'router_failed_notice' => 'L\'ultimo accesso non è stato completato dal router. Riprova.',
+        'access_ended' => [
+            'disconnected' => 'La tua sessione è terminata.',
+            'revoked' => 'Il tuo accesso è stato bloccato.',
+            'expired' => 'Il tuo accesso è scaduto.',
+            'sign_in_again' => 'Accedi di nuovo',
+        ],
         'try_again' => 'Riprova',
         'approval_intro' => 'Nessun codice di accesso? Chiedi l\'accesso all\'host.',
         'approval_request' => 'Richiedi accesso',

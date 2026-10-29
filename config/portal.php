@@ -57,6 +57,10 @@ return [
         'global' => (int) env('PORTAL_LOGIN_MAX_GLOBAL', 200),
     ],
 
+    // Notice on the login page when a returning device's access ended (expired, revoked, disconnected)
+    // within this many hours (CONCEPT.md §7.1).
+    'ended_notice_hours' => (int) env('PORTAL_ENDED_NOTICE_HOURS', 24),
+
     // Router certificate for login-by=https (CONCEPT.md §6), offered to the routers for download.
     // Mounted by the operator (container: /data/certs/router.crt + router.key).
     'router_cert' => [

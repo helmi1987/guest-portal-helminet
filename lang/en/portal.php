@@ -35,6 +35,12 @@ return [
         'remaining' => 'Remaining time',
         'online_hint' => 'You can close this window and use the internet now.',
         'router_failed_notice' => 'The last login did not complete at the router. Please try again.',
+        'access_ended' => [
+            'disconnected' => 'Your session has ended.',
+            'revoked' => 'Your access was blocked.',
+            'expired' => 'Your access has expired.',
+            'sign_in_again' => 'Sign in again',
+        ],
         'try_again' => 'Try again',
         'approval_intro' => 'No access code? Ask the host for access.',
         'approval_request' => 'Ask for approval',
