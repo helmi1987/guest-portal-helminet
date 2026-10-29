@@ -7,6 +7,7 @@ use App\Federation\Applier;
 use App\Federation\FederatedSecrets;
 use App\Federation\Outbox;
 use App\Federation\Pairing;
+use App\Federation\PairingException;
 use App\Federation\PeerCertificate;
 use App\Federation\Topology;
 use App\Http\Controllers\Controller;
@@ -19,6 +20,7 @@ use App\Support\Audit;
 use App\Support\LocalInstance;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\View\View;
@@ -75,6 +77,43 @@ class FederationController extends Controller
             'limitedMode' => $topology->limitedMode(),
             'joinedAt' => LocalSetting::get(Pairing::JOINED_SETTING),
         ]);
+    }
+
+    /**
+     * Join page of a new instance (CONCEPT.md §10.2): opened by the local bootstrap admin (created with
+     * `artisan portal:admin`); hidden once joined.
+     */
+    public function joinForm(Pairing $pairing, LocalInstance $local): View
+    {
+        abort_if(LocalSetting::get(Pairing::JOINED_SETTING) !== null, 404);
+
+        return view('admin.federation-join', ['self' => Instance::query()->findOrFail($local->id()),
+            'notFresh' => $pairing->isFresh(), 'localPin' => PeerCertificate::localPin()]);
+    }
+
+    /** Join: on success the bootstrap admin is gone, so the session ends and the hub's accounts apply. */
+    public function join(Request $request, Pairing $pairing, LocalInstance $local): RedirectResponse
+    {
+        abort_if(LocalSetting::get(Pairing::JOINED_SETTING) !== null, 404);
+        $data = $request->validate([
+            'url' => ['required', 'url:https', 'max:255'],
+            'token' => ['required', 'string', 'max:100'],
+            'fingerprint' => ['required', 'string', 'regex:#^sha256//[A-Za-z0-9+/]{43}=$#'],
+            'name' => ['required', 'string', 'max:100'],
+            'federation_url' => ['required', 'url:https', 'max:255'],
+        ]);
+        Instance::query()->findOrFail($local->id())->update(['name' => $data['name'], 'federation_url' => rtrim($data['federation_url'], '/')]);
+        $actor = (string) $request->user()->name;
+        try {
+            $pairing->join($data['url'], $data['token'], $data['fingerprint'], $actor);
+        } catch (PairingException $e) {
+            return back()->withInput($request->except('token'))->withErrors(['join' => $e->getMessage()]);
+        }
+        Auth::guard('web')->logout();
+        $request->session()->invalidate();
+        $request->session()->regenerateToken();
+
+        return redirect()->route('login')->with('status', __('portal.federation.joined_login'));
     }
 
     /** Name and URLs of this instance (replicated: the other instances use them). */

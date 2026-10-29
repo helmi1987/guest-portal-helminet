@@ -168,6 +168,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
 
                 Route::prefix('/federation')->name('federation')->group(function () {
                     Route::get('/', [FederationController::class, 'show']);
+                    Route::get('/join', [FederationController::class, 'joinForm'])->name('.join');
+                    Route::post('/join', [FederationController::class, 'join'])->name('.join.store')->middleware('throttle:10,1');
                     Route::put('/instance', [FederationController::class, 'updateInstance'])->name('.instance');
                     Route::put('/settings', [FederationController::class, 'updateSettings'])->name('.settings');
                     Route::post('/tokens', [FederationController::class, 'createToken'])->name('.token')->middleware('throttle:10,1');

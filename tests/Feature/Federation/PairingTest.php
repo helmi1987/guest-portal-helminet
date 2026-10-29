@@ -5,6 +5,7 @@ namespace Tests\Feature\Federation;
 use App\Enums\ExpiryMode;
 use App\Enums\GrantType;
 use App\Federation\DataKey;
+use App\Federation\EventCodec;
 use App\Federation\Outbox;
 use App\Federation\Pairing;
 use App\Federation\Topology;
@@ -109,17 +110,69 @@ class PairingTest extends TestCase
         $this->assertNull($this->on('hub', fn () => Instance::find($this->idOf('third'))));
     }
 
+    private function bootstrapAdmin(string $name, string $email = 'local@example.com'): void
+    {
+        $this->on($name, fn () => Artisan::call('portal:admin', ['--email' => $email, '--name' => 'Local',
+            '--password' => 'a-long-password-1', '--no-interaction' => true]));
+    }
+
     public function test_only_fresh_instances_can_join(): void
     {
-        $this->on('new', fn () => Artisan::call('portal:admin', ['--email' => 'local@example.com', '--name' => 'Local',
-            '--password' => 'a-long-password-1', '--no-interaction' => true]));
+        // One local bootstrap admin is tolerated, a second user is not.
+        $this->bootstrapAdmin('new');
+        $this->assertNull($this->on('new', fn () => app(Pairing::class)->isFresh()));
+        $this->bootstrapAdmin('new', 'second@example.com');
         $this->assertSame(1, $this->join('new', $this->token()));
-        $this->assertStringContainsString('table users is not empty', Artisan::output());
+        $this->assertStringContainsString('more than one user', Artisan::output());
 
         $this->on('third', fn () => Site::create(['slug' => 'x', 'name' => 'X', 'driver' => 'mikrotik_ros7']));
         $this->assertSame('table sites is not empty', $this->on('third', fn () => app(Pairing::class)->isFresh()));
         $this->assertSame(1, $this->join('third', $this->token(), 'not-a-pin'));
         $this->assertNull($this->on('hub', fn () => Instance::find($this->idOf('new'))));
+    }
+
+    public function test_web_join_by_the_bootstrap_admin_replaces_it_with_the_hub_accounts(): void
+    {
+        $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'hq@example.com']));
+        $this->bootstrapAdmin('new');
+        $newId = $this->idOf('new');
+        $token = $this->token();
+
+        $this->on('new', function () use ($token) {
+            $bootstrap = User::sole();
+            $this->actingAs($bootstrap);
+            $this->onZone('admin')->get('/admin/federation')->assertOk()->assertSee(__('portal.federation.join_title'));
+            $this->onZone('admin')->get('/admin/federation/join')->assertOk()->assertSee(__('portal.federation.join_submit'));
+            $form = ['url' => 'https://hub.example.com:9443', 'token' => $token, 'name' => 'New',
+                'federation_url' => 'https://new.example.com:9443'];
+            // Refused (wrong token): message, nothing changed, still logged in.
+            $this->onZone('admin')->post('/admin/federation/join', ['token' => 'wrong'] + $form + ['fingerprint' => $this->hubPin])
+                ->assertSessionHasErrors('join');
+            $this->assertAuthenticated();
+            $this->onZone('admin')->post('/admin/federation/join', $form + ['fingerprint' => 'not-a-pin'])->assertSessionHasErrors('fingerprint');
+
+            $this->onZone('admin')->post('/admin/federation/join', $form + ['fingerprint' => $this->hubPin])
+                ->assertRedirect(route('login'))->assertSessionHas('status', __('portal.federation.joined_login'));
+            $this->assertGuest();
+            $this->assertNull(User::find($bootstrap->id));
+            $this->assertTrue(User::where('email', 'hq@example.com')->exists());
+            $this->onZone('admin')->get('/admin/federation/join')->assertRedirect();
+        });
+
+        // The bootstrap admin never leaves the new instance: own events contiguous, signed, without users.
+        $events = $this->on('new', fn () => DB::table(Outbox::TABLE)->where('origin', $newId)->orderBy('seq')->get());
+        $this->assertSame(range(1, $events->count()), $events->pluck('seq')->map(fn ($s) => (int) $s)->all());
+        $this->assertFalse($events->contains(fn ($e) => $e->table === 'users'));
+        $key = $this->on('new', fn () => Instance::find($newId)->signing_public_key);
+        foreach ($events as $event) {
+            $this->assertTrue(EventCodec::verify(EventCodec::toWire($event), $key));
+        }
+        $this->on('new', fn () => Artisan::call('portal:federation:sync'));
+        $this->assertFalse($this->on('hub', fn () => User::where('email', 'local@example.com')->exists()));
+        $this->on('new', function () {
+            $this->actingAs(User::where('email', 'hq@example.com')->sole());
+            $this->onZone('admin')->get('/admin/federation/join')->assertNotFound();
+        });
     }
 
     public function test_join_endpoint_rejects_wrong_protocol_and_known_certificates(): void

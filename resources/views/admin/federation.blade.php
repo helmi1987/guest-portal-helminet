@@ -2,6 +2,13 @@
     <h1 class="mb-4 text-2xl font-semibold">{{ __('portal.federation.title') }}</h1>
     <p class="mb-4 text-sm text-slate-600">{{ __('portal.federation.help') }}</p>
 
+    @if (! $joinedAt && $peers->isEmpty())
+        <section class="card mb-6 flex flex-wrap items-center justify-between gap-4">
+            <p class="text-sm">{{ __('portal.federation.join_intro') }}</p>
+            <a href="{{ route('admin.federation.join') }}" class="btn-light">{{ __('portal.federation.join_title') }}</a>
+        </section>
+    @endif
+
     @if ($limitedMode)
         <p class="mb-4 rounded bg-amber-100 px-4 py-2 text-sm text-amber-800">{{ __('portal.federation.limited_mode_active') }}</p>
     @endif

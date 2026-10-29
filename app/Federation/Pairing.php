@@ -2,6 +2,7 @@
 
 namespace App\Federation;
 
+use App\Enums\Role;
 use App\Models\Instance;
 use App\Models\LocalSetting;
 use App\Models\MacWhitelist;
@@ -11,7 +12,9 @@ use App\Support\Audit;
 use App\Support\LocalInstance;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 /**
@@ -45,8 +48,9 @@ class Pairing
     }
 
     /**
-     * Fresh instance (may join): never joined, no users (also deleted ones), no rows in any
-     * replicated table except its own instance row, and no events of other origins.
+     * Fresh instance (may join): never joined, no rows in any replicated table except its own instance
+     * row and the local bootstrap admin (created with `artisan portal:admin` to open the join page)
+     * with its audit entries, and no events of other origins.
      */
     public function isFresh(): ?string
     {
@@ -54,9 +58,25 @@ class Pairing
         if (LocalSetting::get(self::JOINED_SETTING) !== null) {
             return 'already joined';
         }
+        $users = DB::table('users')->get(['id', 'role', 'origin_instance_id']);
+        if ($users->count() > 1) {
+            return 'more than one user';
+        }
+        $bootstrap = $users->first();
+        if ($bootstrap !== null && ($bootstrap->role !== Role::Admin->value || $bootstrap->origin_instance_id !== $local)) {
+            return 'the user is not a local admin';
+        }
         foreach (array_keys(Federation::TABLES) as $table) {
-            $rows = DB::table($table)->when($table === 'instances', fn ($q) => $q->where('id', '!=', $local))->exists();
-            if ($rows) {
+            $rows = match ($table) {
+                'instances' => DB::table($table)->where('id', '!=', $local),
+                'users' => null,
+                // Audit entries of the bootstrap admin (and of login attempts) only.
+                'audit_logs' => DB::table($table)->where(fn ($q) => $q->whereNull('user_id')->orWhere('user_id', '!=', $bootstrap?->id ?? ''))
+                    ->where(fn ($q) => $q->whereNull('subject_id')->orWhere('subject_type', '!=', 'user')->orWhere('subject_id', '!=', $bootstrap?->id ?? ''))
+                    ->where('action', 'not like', 'auth.%'),
+                default => DB::table($table),
+            };
+            if ($rows?->exists()) {
                 return "table $table is not empty";
             }
         }
@@ -65,6 +85,36 @@ class Pairing
         }
 
         return null;
+    }
+
+    /**
+     * Remove the local bootstrap admin before the federation's state arrives: users and audit rows are
+     * deleted (hard, local, no event), their events leave the outbox and the remaining own events are
+     * numbered again without gaps and signed again (nothing has been replicated yet).
+     */
+    private function dropBootstrap(): void
+    {
+        $local = $this->instance->id();
+        $ids = DB::table('users')->pluck('id')->all();
+        DB::table('users')->delete();
+        DB::table('audit_logs')->delete();
+        if ($ids !== [] && Schema::hasTable('sessions')) {
+            DB::table('sessions')->whereIn('user_id', $ids)->delete();
+        }
+        DB::table('federation_join_tokens')->delete();
+        DB::table(Outbox::TABLE)->where('origin', $local)->whereIn('table', ['users', 'audit_logs'])->delete();
+
+        $signer = new SigningKey;
+        $seq = 0;
+        foreach (DB::table(Outbox::TABLE)->where('origin', $local)->orderBy('seq')->get() as $event) {
+            $seq++;
+            if ((int) $event->seq === $seq) {
+                continue;
+            }
+            DB::table(Outbox::TABLE)->where('id', $event->id)->update(['seq' => $seq,
+                'sig' => $signer->sign(EventCodec::message($local, $seq, $event->table, $event->record_id, $event->version,
+                    (int) $event->proto, $event->payload))]);
+        }
     }
 
     /**
@@ -163,7 +213,7 @@ class Pairing
      *
      * @throws PairingException
      */
-    public function join(string $url, string $token, string $expectedPin): array
+    public function join(string $url, string $token, string $expectedPin, string $actor = 'cli'): array
     {
         if (($reason = $this->isFresh()) !== null) {
             throw new PairingException("This instance is not fresh ($reason). Only a new instance without data can join.");
@@ -200,13 +250,18 @@ class Pairing
             throw new PairingException('Invalid join response.');
         }
 
-        $rows = DB::transaction(function () use ($data, $url) {
+        $rows = DB::transaction(function () use ($data, $url, $actor) {
+            $this->dropBootstrap();
             $this->keys->importRing($data['data_keys'], adoptCurrent: true);
             $rows = $this->applier->applySnapshot($data['snapshot']);
             LocalSetting::put(self::JOINED_SETTING, now()->toIso8601String());
             // A local write after the snapshot persists the clock position (versions after the hub's).
             Instance::query()->findOrFail($this->instance->id())->touch();
-            Audit::log('federation.joined', null, ['member' => $data['instance_id'], 'url' => $url], actor: 'cli');
+            // The acting bootstrap admin no longer exists.
+            if (Auth::hasUser()) {
+                Auth::forgetUser();
+            }
+            Audit::log('federation.joined', null, ['member' => $data['instance_id'], 'url' => $url], actor: $actor);
 
             return $rows;
         });

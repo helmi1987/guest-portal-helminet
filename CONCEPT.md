@@ -478,12 +478,15 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
   (admin only, audited): own identity (id, name, federation URL, admin URL, pin, signing key, hub), hub
   setting (`federation_hub`, set to the member on the first pairing), setting "offline: SMS only", join
   token (40 characters, sha256 stored, single use, 15 min, shown once with the member's URL and pin as a
-  ready command), instances with last contact, lag, skew, pause state, resume and remove. Joining is a
-  CLI command on the new instance: `artisan portal:federation:join <url> <token> <pin> [--name
-  --federation-url --admin-url]` (no web form: the first admin is created by CLI too, and an
-  unauthenticated join form would let anyone reaching a fresh admin port take it over). **Fresh** means:
-  never joined, no rows in any replicated table (users including deleted ones, sites, settings, ...) except
-  its own instance row, no events of other origins. The member registers the instance with the pin of its
+  ready command), instances with last contact, lag, skew, pause state, resume and remove. Joining on the
+  new instance (decision 2026-10-31): create a local bootstrap admin with `artisan portal:admin`, sign in,
+  page "Join a federation" (admin only, hidden once joined: hub URL, token, hub pin, own name and URL), or
+  the CLI `artisan portal:federation:join <url> <token> <pin> [--name --federation-url --admin-url]`.
+  **Fresh** means: never joined, at most one user and that one a local admin (the bootstrap admin), audit
+  rows only of that admin or of login attempts, no rows in any other replicated table except its own
+  instance row, no events of other origins. On success the bootstrap admin, its audit rows, sessions and
+  outbox events are deleted locally (no events; the remaining own events are renumbered and signed again,
+  nothing was replicated yet), the browser session ends and the login page asks for a hub account. The member registers the instance with the pin of its
   TLS client certificate, answers with the data key ring (adopted as is), a snapshot (rows of all replicated
   tables in parent order, the stored events of the current versions of rows with uniqueness rules, highest
   sequence per origin as cursors) read in the registration transaction. Removing an instance tombstones it
