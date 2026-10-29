@@ -169,10 +169,13 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::prefix('/federation')->name('federation')->group(function () {
                     Route::get('/', [FederationController::class, 'show']);
                     Route::get('/join', [FederationController::class, 'joinForm'])->name('.join');
-                    Route::post('/join', [FederationController::class, 'join'])->name('.join.store')->middleware('throttle:10,1');
+                    Route::post('/join', [FederationController::class, 'join'])->name('.join.store')->middleware('throttle:10,1,federation-join');
+                    Route::get('/repair', [FederationController::class, 'repairForm'])->name('.repair');
+                    Route::post('/repair', [FederationController::class, 'repair'])->name('.repair.store')->middleware('throttle:10,1,federation-repair');
+                    Route::post('/promote', [FederationController::class, 'promote'])->name('.promote')->middleware('throttle:5,1,federation-promote');
                     Route::put('/instance', [FederationController::class, 'updateInstance'])->name('.instance');
                     Route::put('/settings', [FederationController::class, 'updateSettings'])->name('.settings');
-                    Route::post('/tokens', [FederationController::class, 'createToken'])->name('.token')->middleware('throttle:10,1');
+                    Route::post('/tokens', [FederationController::class, 'createToken'])->name('.token')->middleware('throttle:10,1,federation-token');
                     Route::post('/peers/{instance}/unpause', [FederationController::class, 'unpause'])->name('.unpause');
                     Route::delete('/peers/{instance}', [FederationController::class, 'destroy'])->name('.destroy');
                 });

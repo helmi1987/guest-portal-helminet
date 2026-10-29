@@ -3,6 +3,7 @@
 namespace App\Federation;
 
 use App\Enums\Role;
+use App\Models\FederationPeer;
 use App\Models\Instance;
 use App\Models\LocalSetting;
 use App\Models\MacWhitelist;
@@ -27,6 +28,9 @@ use Illuminate\Support\Str;
 class Pairing
 {
     public const JOINED_SETTING = 'federation_joined_at';
+
+    /** Set when a peer answered that this instance was removed (e.g. replaced as hub). */
+    public const REMOVED_SETTING = 'federation_removed_at';
 
     public function __construct(
         private LocalInstance $instance,
@@ -268,5 +272,122 @@ class Pairing
         MacWhitelist::flushCache();
 
         return ['instance_id' => $data['instance_id'], 'rows' => $rows];
+    }
+
+    /**
+     * Hub takeover (CONCEPT.md §10.1): a non-hub instance makes itself the hub when the hub is lost for
+     * good. Its own change of the hub setting is the one exception to "only the hub changes the hub";
+     * the other instances accept it only when their admin re-pairs with this instance. The old hub's row
+     * is tombstoned (this instance is the hub now).
+     */
+    public function promote(): void
+    {
+        $local = $this->instance->id();
+        $old = $this->topology->hubId();
+        if ($old === null || $old === $local) {
+            throw new PairingException('This instance is already the hub.');
+        }
+        DB::transaction(function () use ($local, $old) {
+            Setting::put(Topology::HUB_SETTING, $local);
+            Instance::query()->find($old)?->delete();
+            FederationPeer::query()->whereKey($old)->delete();
+            Audit::log('federation.promoted', Instance::withTrashed()->find($local), ['old_hub' => $old]);
+        });
+    }
+
+    /**
+     * Hub side of POST /federation/repair: an instance known here (pin of its TLS client certificate =
+     * its registered pin) presents a join token; a removed instance (e.g. the former hub) is restored.
+     * Answers the membership state: instance rows, hub setting, data key ring.
+     *
+     * @throws PairingException
+     */
+    public function acceptRepair(array $data, string $pin): array
+    {
+        if ((int) $data['protocol'] !== Federation::FEDERATION_PROTOCOL) {
+            throw new PairingException('protocol mismatch: '.$data['protocol'].' != '.Federation::FEDERATION_PROTOCOL, 409);
+        }
+        if (! $this->topology->isHub()) {
+            throw new PairingException('this instance is not the hub', 409);
+        }
+
+        return DB::transaction(function () use ($data, $pin) {
+            $instance = Instance::withTrashed()->find((string) $data['instance_id']);
+            if ($instance === null || $instance->id === $this->instance->id() || $instance->cert_fingerprint !== $pin) {
+                throw new PairingException('unknown instance or certificate', 403);
+            }
+            $this->consumeToken((string) $data['token'], $instance->id);
+            if ($instance->trashed()) {
+                $instance->restore();
+            }
+            FederationPeer::query()->whereKey($instance->id)->update(['paused_at' => null, 'pause_reason' => null]);
+            Audit::log('federation.peer_repaired', $instance, ['name' => $instance->name], actor: 'federation');
+
+            return [
+                'protocol' => Federation::FEDERATION_PROTOCOL,
+                'instance_id' => $this->instance->id(),
+                'data_keys' => $this->keys->export(),
+                'instances' => DB::table('instances')->get()->map(fn ($row) => (array) $row)->all(),
+                'hub_setting' => (array) DB::table('settings')->where('key', Topology::HUB_SETTING)->first(),
+            ];
+        });
+    }
+
+    /**
+     * Instance side: re-pair a joined instance (or a removed former hub) with the (new) hub at $url,
+     * confirmed by its certificate pin. Data stays; the membership state of the hub is taken over and
+     * replication continues from the cursors.
+     *
+     * @throws PairingException
+     */
+    public function repair(string $url, string $token, string $expectedPin, string $actor = 'cli'): string
+    {
+        if (LocalSetting::get(self::JOINED_SETTING) === null && ! $this->topology->isFederated()) {
+            throw new PairingException('This instance is not in a federation: join instead.');
+        }
+        $self = Instance::withTrashed()->findOrFail($this->instance->id());
+        try {
+            $response = $this->client->pinned($url, $expectedPin, 60)->post('/federation/repair', [
+                'token' => $token, 'protocol' => Federation::FEDERATION_PROTOCOL, 'instance_id' => $self->id]);
+        } catch (ConnectionException $e) {
+            throw new PairingException('Connection failed (URL, port or certificate pin wrong?): '.$e->getMessage());
+        }
+        if (! $response->successful()) {
+            throw new PairingException('Re-pairing refused ('.$response->status().'): '.($response->json('error') ?? $response->json('message') ?? 'unknown'));
+        }
+        $data = $response->json();
+        $hub = is_array($data) ? ($data['instance_id'] ?? null) : null;
+        $hubRow = is_array($data['hub_setting'] ?? null) ? $data['hub_setting'] : [];
+        if (! is_string($hub) || json_decode((string) ($hubRow['value'] ?? 'null'), true) !== $hub
+            || ! is_array($data['instances'] ?? null) || ! is_array($data['data_keys'] ?? null)) {
+            throw new PairingException('Invalid re-pairing response.');
+        }
+
+        DB::transaction(function () use ($data, $hub, $hubRow, $url, $actor) {
+            $this->keys->importRing($data['data_keys']);
+            $this->applier->applyTrusted('instances', $data['instances']);
+            $this->applier->applyTrusted('settings', [$hubRow]);
+            FederationPeer::query()->whereKeyNot($hub)->delete();
+            FederationPeer::query()->whereKey($hub)->update(['paused_at' => null, 'pause_reason' => null]);
+            $this->applier->unpause($hub);
+            LocalSetting::query()->whereKey(self::REMOVED_SETTING)->delete();
+            if (LocalSetting::get(self::JOINED_SETTING) === null) {
+                LocalSetting::put(self::JOINED_SETTING, now()->toIso8601String());
+            }
+            Audit::log('federation.repaired', null, ['hub' => $hub, 'url' => $url], actor: $actor);
+        });
+
+        return $hub;
+    }
+
+    /** @throws PairingException */
+    private function consumeToken(string $token, string $instanceId): void
+    {
+        $consumed = DB::table('federation_join_tokens')->where('token_hash', hash('sha256', $token))->whereNull('used_at')
+            ->where('expires_at', '>', now())
+            ->update(['used_at' => now(), 'used_by_instance_id' => $instanceId, 'updated_at' => now()]);
+        if ($consumed !== 1) {
+            throw new PairingException('invalid or expired join token', 403);
+        }
     }
 }

@@ -17,4 +17,8 @@ Route::middleware('federation.peer')->group(function () {
 // Pairing: the joining instance is not registered yet; the one-time join token authorizes, its
 // certificate (pin) is taken from the TLS handshake.
 Route::post('/join', [FederationApiController::class, 'join'])->name('federation.join')
-    ->middleware(['federation.peer:join', 'throttle:10,1']);
+    ->middleware(['federation.peer:join', 'throttle:10,1,federation-pairing']);
+
+// Re-pairing (new hub after a takeover): the instance is known by its pin; a join token authorizes.
+Route::post('/repair', [FederationApiController::class, 'repair'])->name('federation.repair')
+    ->middleware(['federation.peer:repair', 'throttle:10,1,federation-pairing']);

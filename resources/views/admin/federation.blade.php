@@ -9,6 +9,11 @@
         </section>
     @endif
 
+    @if ($removed)
+        <p class="mb-4 rounded bg-red-100 px-4 py-2 text-sm text-red-800">{{ $isHub ? __('portal.federation.replaced_as_hub') : __('portal.federation.removed_here') }}
+            <a href="{{ route('admin.federation.repair') }}" class="underline">{{ __('portal.federation.repair_title') }}</a></p>
+    @endif
+
     @if ($limitedMode)
         <p class="mb-4 rounded bg-amber-100 px-4 py-2 text-sm text-amber-800">{{ __('portal.federation.limited_mode_active') }}</p>
     @endif
@@ -77,6 +82,22 @@
         </label>
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
+
+    @if ($joinedAt || $peers->isNotEmpty())
+        <section class="card mb-6 grid gap-3">
+            <h2 class="text-lg font-semibold">{{ __('portal.federation.hub_change') }}</h2>
+            <p class="text-sm">{{ __('portal.federation.repair_intro') }} <a href="{{ route('admin.federation.repair') }}" class="underline">{{ __('portal.federation.repair_title') }}</a></p>
+            @unless ($isHub)
+                <form method="POST" action="{{ route('admin.federation.promote') }}" class="flex flex-wrap items-end gap-2"
+                      onsubmit="return confirm(@js(__('portal.federation.promote_confirm')))">
+                    @csrf
+                    <label class="label">{{ __('portal.federation.promote_help', ['name' => $self->name]) }}
+                        <input name="confirm_name" required autocomplete="off" class="field"></label>
+                    <button class="btn-danger">{{ __('portal.federation.promote') }}</button>
+                </form>
+            @endunless
+        </section>
+    @endif
 
     <section class="card mb-6">
         <div class="mb-4 flex items-center justify-between gap-4">

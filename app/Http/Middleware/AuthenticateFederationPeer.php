@@ -13,7 +13,8 @@ use Symfony\Component\HttpFoundation\Response;
  * Federation API authentication (CONCEPT.md §10.2): nginx passes the client certificate of the mTLS
  * handshake (FastCGI parameter PORTAL_CLIENT_CERT, URL-encoded PEM; not settable by clients). Its
  * public key pin must match a registered, not removed instance. `federation.peer:join` only requires a
- * certificate (pairing: the joining instance is not registered yet, the join token authorizes).
+ * certificate (pairing: the joining instance is not registered yet, the join token authorizes);
+ * `federation.peer:repair` as well (re-pairing checks the pin against the instance's own row).
  */
 class AuthenticateFederationPeer
 {
@@ -31,10 +32,13 @@ class AuthenticateFederationPeer
         }
         $request->attributes->set(self::PIN, $pin);
 
-        if ($mode !== 'join') {
+        if ($mode !== 'join' && $mode !== 'repair') {
             $peer = Instance::query()->where('cert_fingerprint', $pin)->whereKeyNot($this->instance->id())->first();
             if ($peer === null) {
-                return response()->json(['error' => 'unknown peer'], 403);
+                // A removed instance learns it (e.g. a former hub replaced while it was down).
+                $removed = Instance::withTrashed()->where('cert_fingerprint', $pin)->whereNotNull('deleted_at')->exists();
+
+                return response()->json(['error' => $removed ? 'removed' : 'unknown peer'], 403);
             }
             $request->attributes->set(self::PEER, $peer);
         }

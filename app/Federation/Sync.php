@@ -4,6 +4,7 @@ namespace App\Federation;
 
 use App\Models\FederationPeer;
 use App\Models\Instance;
+use App\Models\LocalSetting;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
 use Illuminate\Support\Facades\DB;
@@ -34,8 +35,15 @@ class Sync
     public function syncAll(): array
     {
         $outcomes = [];
+        if ($this->removed()) {
+            return ['-' => 'removed from the federation: re-pair first'];
+        }
         foreach ($this->topology->directPeers() as $peer) {
             $state = $this->heartbeat($peer);
+            if ($this->removed()) {
+                // Replaced (e.g. as hub while down): no silent resumption with the remaining peers.
+                return [$peer->id => 'removed from the federation: re-pair first'];
+            }
             if ($state->last_error !== null || $state->isPaused()) {
                 $outcomes[$peer->id] = $state->last_error ?? 'paused: '.$state->pause_reason;
 
@@ -57,6 +65,9 @@ class Sync
     /** Push to every direct peer with a known state (push job). */
     public function pushAll(): void
     {
+        if ($this->removed()) {
+            return;
+        }
         foreach ($this->topology->directPeers() as $peer) {
             $state = FederationPeer::query()->find($peer->id);
             if ($state === null || $state->isPaused() || $state->acks === null) {
@@ -80,6 +91,13 @@ class Sync
             $response = $this->client->to($peer)->get('/federation/status');
             $received = Hlc::wallMs();
             $data = $response->json();
+            if ($response->status() === 403 && is_array($data) && ($data['error'] ?? null) === 'removed') {
+                // This instance was removed by the hub (e.g. replaced as hub while it was down).
+                if (LocalSetting::get(Pairing::REMOVED_SETTING) === null) {
+                    LocalSetting::put(Pairing::REMOVED_SETTING, now()->toIso8601String());
+                    Log::error('Federation: this instance was removed from the federation', ['peer' => $peer->id]);
+                }
+            }
             if (! $response->successful() || ! is_array($data)) {
                 throw new \RuntimeException('status '.$response->status().' '.mb_substr((string) ($data['error'] ?? ''), 0, 100));
             }
@@ -213,6 +231,11 @@ class Sync
         }
 
         return $sent;
+    }
+
+    private function removed(): bool
+    {
+        return LocalSetting::get(Pairing::REMOVED_SETTING) !== null;
     }
 
     private function pause(FederationPeer $state, string $reason): void

@@ -223,6 +223,54 @@ class Applier
         Log::error('Federation apply paused', ['origin' => $origin, 'reason' => $reason]);
     }
 
+    /**
+     * Membership state from the hub at re-pairing (CONCEPT.md §10.2), trusted because an admin here
+     * confirmed the hub by its certificate pin: instance rows and the hub setting, raw, last writer
+     * wins, without the authority rules (which dropped the new hub's changes before).
+     *
+     * @param  list<array<string, mixed>>  $rows
+     */
+    public function applyTrusted(string $table, array $rows): int
+    {
+        if (! in_array($table, ['instances', 'settings'], true)) {
+            throw new RuntimeException("trusted apply not allowed for $table");
+        }
+        $columns = array_flip($this->columns($table));
+        $written = 0;
+        DB::transaction(function () use ($table, $rows, $columns, &$written) {
+            $max = null;
+            foreach ($rows as $row) {
+                $row = array_intersect_key((array) $row, $columns);
+                if (! isset($row['id'], $row['version']) || ! is_string($row['version'])) {
+                    continue;
+                }
+                foreach ($row as $value) {
+                    if (is_array($value) || is_object($value)) {
+                        continue 2;
+                    }
+                }
+                Hlc::parse($row['version']);
+                if ($table === 'settings') {
+                    $row['id'] = Setting::idFor((string) ($row['key'] ?? ''));
+                }
+                $current = $this->row($table, (string) $row['id']);
+                // Same version but other content: the authority rules kept local fields of that event.
+                $cmp = $current === null ? 1 : strcmp($row['version'], (string) $current['version']);
+                if ($cmp < 0 || ($cmp === 0 && array_intersect_key($current, $row) == $row)) {
+                    continue;
+                }
+                $this->put($table, $row, $current === null);
+                $written++;
+                $max = $max === null || strcmp($row['version'], $max) > 0 ? $row['version'] : $max;
+            }
+            if ($max !== null) {
+                $this->hlc->receive($max);
+            }
+        });
+
+        return $written;
+    }
+
     public function unpause(string $origin): void
     {
         DB::table('peer_cursors')->where('origin', $origin)->update(['paused_at' => null, 'pause_reason' => null,

@@ -76,6 +76,7 @@ class FederationController extends Controller
             'offlineSmsOnly' => $topology->offlineSmsOnly(),
             'limitedMode' => $topology->limitedMode(),
             'joinedAt' => LocalSetting::get(Pairing::JOINED_SETTING),
+            'removed' => LocalSetting::get(Pairing::REMOVED_SETTING) !== null,
         ]);
     }
 
@@ -114,6 +115,49 @@ class FederationController extends Controller
         $request->session()->regenerateToken();
 
         return redirect()->route('login')->with('status', __('portal.federation.joined_login'));
+    }
+
+    /**
+     * Hub takeover (CONCEPT.md §10.1): this instance becomes the hub when the hub is lost for good.
+     * Confirmed by typing this instance's name; the other instances follow when they re-pair.
+     */
+    public function promote(Request $request, Pairing $pairing, LocalInstance $local): RedirectResponse
+    {
+        $self = Instance::query()->findOrFail($local->id());
+        $request->validate(['confirm_name' => ['required', 'string']]);
+        if ($request->input('confirm_name') !== $self->name) {
+            return back()->withErrors(['confirm_name' => __('portal.federation.promote_name_mismatch')]);
+        }
+        try {
+            $pairing->promote();
+        } catch (PairingException $e) {
+            return back()->withErrors(['federation' => $e->getMessage()]);
+        }
+
+        return back()->with('status', __('portal.federation.promoted'));
+    }
+
+    /** Re-pairing page: connect to a (new) hub, data stays. */
+    public function repairForm(Topology $topology): View
+    {
+        return view('admin.federation-repair', ['removed' => LocalSetting::get(Pairing::REMOVED_SETTING) !== null,
+            'hub' => $topology->hub()]);
+    }
+
+    public function repair(Request $request, Pairing $pairing): RedirectResponse
+    {
+        $data = $request->validate([
+            'url' => ['required', 'url:https', 'max:255'],
+            'token' => ['required', 'string', 'max:100'],
+            'fingerprint' => ['required', 'string', 'regex:#^sha256//[A-Za-z0-9+/]{43}=$#'],
+        ]);
+        try {
+            $pairing->repair($data['url'], $data['token'], $data['fingerprint'], (string) $request->user()->name);
+        } catch (PairingException $e) {
+            return back()->withInput($request->except('token'))->withErrors(['repair' => $e->getMessage()]);
+        }
+
+        return redirect()->route('admin.federation')->with('status', __('portal.federation.repaired'));
     }
 
     /** Name and URLs of this instance (replicated: the other instances use them). */

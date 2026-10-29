@@ -454,7 +454,16 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
 - **Hub unreachable** (no successful heartbeat for 2 min, **(assumption)**): non-hub instances accept
   only SMS login and site codes for new logins (hooks `Grant::isAllowedWhileOffline()`,
   `SiteCode::isAllowedWhileOffline()`); redeemed codes and known devices keep working. Admin setting
-  "offline: SMS only", default on; never applied on the hub.
+  "offline: SMS only", default on; never applied on the hub. It follows the hub this instance knows.
+- **Hub takeover** (decision 2026-10-31, implemented): when the hub is lost for good, an admin of another
+  instance makes it the hub (federation page, confirmed by typing the instance name, audited): it sets the
+  hub setting itself (the only exception to "only the hub changes the hub") and tombstones the old hub's
+  row. The other instances drop these changes until their admin **re-pairs** with the new hub (page
+  "Re-pair with a new hub": hub URL, join token of the new hub, its pin; `POST /federation/repair`, the
+  new hub checks the instance's registered pin, a removed instance is restored): data stays, the new hub's
+  instance rows and hub setting are taken over (trusted, LWW), replication continues from the cursors.
+  A returning old hub gets "removed" from its peers, stops syncing (no silent resumption as hub), shows a
+  warning and can re-pair with the new hub as a normal instance.
 
 ### 10.2 Trust and transport
 

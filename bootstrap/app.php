@@ -29,7 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
             Route::middleware(['zone:guest,admin', 'throttle:300,1'])
                 ->group(base_path('routes/branding.php'));
             // Federation API between instances (port 9443, mTLS): no session, cookies or CSRF.
-            Route::middleware(['zone:federation', 'throttle:600,1'])
+            Route::middleware(['zone:federation', 'throttle:600,1,federation'])
                 ->prefix('federation')
                 ->group(base_path('routes/federation.php'));
         },

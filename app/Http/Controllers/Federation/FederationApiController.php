@@ -150,6 +150,26 @@ class FederationApiController extends Controller
         }
     }
 
+    /** Re-pairing with this (new) hub (CONCEPT.md §10.1). */
+    public function repair(Request $request, Pairing $pairing): JsonResponse
+    {
+        $data = $request->validate([
+            'token' => ['required', 'string', 'max:100'],
+            'protocol' => ['required', 'integer'],
+            'instance_id' => ['required', 'string', 'size:26'],
+        ]);
+        try {
+            $response = $pairing->acceptRepair($data, (string) $request->attributes->get(AuthenticateFederationPeer::PIN));
+        } catch (PairingException $e) {
+            Log::warning('Federation re-pairing refused', ['reason' => $e->getMessage(), 'ip' => $request->ip()]);
+
+            return response()->json(['error' => $e->getMessage()], $e->status);
+        }
+        Log::info('Federation instance re-paired', ['instance' => $data['instance_id']]);
+
+        return response()->json($response);
+    }
+
     private function peer(Request $request): Instance
     {
         return $request->attributes->get(AuthenticateFederationPeer::PEER);
