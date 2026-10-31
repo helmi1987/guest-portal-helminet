@@ -37,6 +37,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(DetectZone::class);
+        // Wi-Fi passphrases may start or end with spaces.
+        $middleware->trimStrings(except: ['wifi_password']);
         $middleware->alias([
             'zone' => EnsureZone::class,
             'role' => EnsureRole::class,

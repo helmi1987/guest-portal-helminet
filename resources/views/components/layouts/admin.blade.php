@@ -77,34 +77,47 @@
         });
 
         // Keep scroll position across a form POST + redirect back to the same page.
-        var skey = 'gp-scroll:' + location.pathname;
+        var skey = 'gp-scroll';
         try {
             var saved = sessionStorage.getItem(skey);
-            if (saved !== null) { sessionStorage.removeItem(skey); window.scrollTo(0, parseInt(saved, 10) || 0); }
+            sessionStorage.removeItem(skey);
+            if (saved && !location.hash) {
+                var st = JSON.parse(saved);
+                if (st && st.path === location.pathname) window.scrollTo(0, parseInt(st.y, 10) || 0);
+            }
             d.addEventListener('submit', function (e) {
                 var f = e.target;
-                if (f && f.method && f.method.toLowerCase() === 'post') sessionStorage.setItem(skey, String(window.scrollY));
+                if (f && f.method && f.method.toLowerCase() === 'post') {
+                    sessionStorage.setItem(skey, JSON.stringify({ path: location.pathname, y: window.scrollY }));
+                }
             });
         } catch (e) {}
 
         // Collapsible sections: direct-child h2 of a section/card inside <main>; needs >= 3 per page.
+        // No Livewire components with sections on these pages; siblings are queried fresh on each toggle.
         var heads = Array.prototype.filter.call(d.querySelectorAll('main h2'), function (h) {
             return h.parentElement && h.parentElement.tagName !== 'MAIN' && !h.closest('details');
         });
         if (heads.length >= 3) {
-            var pre = 'gp-collapse:' + location.pathname + ':';
-            heads.forEach(function (h, i) {
+            var pre = 'gp-collapse:' + location.pathname + ':', seen = {}, secs = [];
+            var errSel = '.text-red-600, .text-red-700, .text-red-800, .bg-red-100, .bg-green-100, [aria-invalid="true"]';
+            var bodyOf = function (h) {
                 var body = [];
                 for (var n = h.nextElementSibling; n; n = n.nextElementSibling) body.push(n);
-                if (!body.length) return;
-                var key = pre + i, open = true;
+                return body;
+            };
+            heads.forEach(function (h) {
+                if (!bodyOf(h).length) return;
+                var base = h.id || (h.textContent || '').trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'section';
+                seen[base] = (seen[base] || 0) + 1;
+                var key = pre + base + (seen[base] > 1 ? '-' + seen[base] : ''), open = true;
                 try { open = localStorage.getItem(key) !== '0'; } catch (e) {}
                 h.setAttribute('role', 'button');
                 h.tabIndex = 0;
                 h.style.cursor = 'pointer';
                 var apply = function () {
                     h.setAttribute('aria-expanded', open ? 'true' : 'false');
-                    body.forEach(function (n) { n.style.display = open ? '' : 'none'; });
+                    bodyOf(h).forEach(function (n) { n.style.display = open ? '' : 'none'; });
                 };
                 var toggle = function () {
                     open = !open; apply();
@@ -114,8 +127,25 @@
                 h.addEventListener('keydown', function (e) {
                     if ((e.key === 'Enter' || e.key === ' ') && e.target === h) { e.preventDefault(); toggle(); }
                 });
+                // Force-expand (not persisted) when the section holds errors/flash or the hash target.
+                var reveal = function (target) {
+                    var hit = bodyOf(h).some(function (n) {
+                        return target ? n.contains(target) : (n.matches(errSel) || n.querySelector(errSel));
+                    }) || (target && h.contains(target));
+                    if (hit && !open) { open = true; apply(); }
+                };
+                secs.push(reveal);
                 apply();
+                reveal(null);
             });
+            var hashTarget = function () {
+                if (!location.hash) return;
+                var t = null;
+                try { t = d.getElementById(decodeURIComponent(location.hash.slice(1))); } catch (e) {}
+                if (t) { secs.forEach(function (r) { r(t); }); t.scrollIntoView(); }
+            };
+            hashTarget();
+            window.addEventListener('hashchange', hashTarget);
         }
     })();
     </script>
