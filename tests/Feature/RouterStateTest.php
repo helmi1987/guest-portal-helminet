@@ -451,6 +451,12 @@ class RouterStateTest extends TestCase
         $uninstall = $driver->setupCommands($site, [])['uninstall']['uninstall'];
         $this->assertStringContainsString('/user remove [find where group=guest-portal-ro && (comment="guest-portal:api:user"', $uninstall);
         $this->assertStringContainsString('/user group remove [find where name=guest-portal-ro && (comment="guest-portal:api:group"', $uninstall);
+        // The uninstall never changes /ip service: services still using the portal's certificate are only
+        // reported, before the certificates are removed
+        $this->assertDoesNotMatchRegularExpression('/^\s*[^#\s].*\/ip service set/m', $uninstall);
+        $report = strpos($uninstall, ':foreach gpSvc in=[/ip service find where certificate="guest-portal"] do={ :put');
+        $this->assertNotFalse($report);
+        $this->assertLessThan(strpos($uninstall, '/certificate remove'), $report);
         // Every menu of the generated objects is read by the state query
         $menus = array_keys($driver->stateMenus($site));
         foreach ($driver->managedObjects($site) as $objects) {

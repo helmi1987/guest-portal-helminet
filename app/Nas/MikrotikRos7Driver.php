@@ -673,8 +673,11 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
                 /radius remove [find where {$o('radius', 'server')}]
                 # /radius incoming has no comment: only if nothing else uses Disconnect/CoA on this router:
                 # /radius incoming set accept=no
-                # If /ip service www-ssl or api-ssl uses the certificate "{$n}" (read-only API access of the
-                # state query), set it back first, e.g. /ip service set www-ssl certificate=none
+                # /ip service is not an own object (the portal never sets it), so its certificate is not reset
+                # here. Services that still use the certificate "{$n}" (e.g. www-ssl or api-ssl for the state
+                # query) are reported: set them back before the certificates are removed, e.g.
+                # /ip service set www-ssl certificate=none
+                :foreach gpSvc in=[/ip service find where certificate="{$n}"] do={ :put ("{$n}: /ip service " . [/ip service get \$gpSvc name] . " uses the certificate {$n}; set it back manually") }
                 # Certificates of the certificate script and of older versions, by name only (RouterOS
                 # certificates have no comment): leaf, CAs "-ca-<n>", temporary import and legacy names
                 /certificate remove [find where name="{$n}" || name~"^{$n}-ca-[0-9]+\\$" || name~"^{$n}-import" || name="{$n}-new" || name~"^{$n}-new_"]
