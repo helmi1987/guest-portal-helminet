@@ -159,7 +159,7 @@ return [
     'router_api' => [
         'title' => 'Router-API (nur lesen, Statusabfrage)',
         'not_configured' => 'nicht eingerichtet',
-        'help' => 'Optional: Der Einrichtungsassistent liest die Router-Konfiguration (nur print), prüft seine Blöcke und füllt leere Eingaben vor. TLS wird über den gepinnten Schlüssel vertraut: standardmässig das von diesem Portal verwaltete Router-Zertifikat (auf dem Dienst www-ssl oder api-ssl setzen) oder der hier eingetragene Pin. Benutzer und Passwort werden mit dem Föderations-Datenschlüssel verschlüsselt gespeichert; das Passwort wird nie angezeigt.',
+        'help' => 'Optional: Der Einrichtungsassistent liest die Router-Konfiguration (nur print), prüft seine Blöcke und füllt leere Eingaben vor. TLS wird über den gepinnten Schlüssel vertraut: standardmässig das von diesem Portal verwaltete Router-Zertifikat (auf dem Dienst www-ssl oder api-ssl setzen) oder der hier eingetragene Pin. Benutzer und Passwort werden mit dem Instanzschlüssel (APP_KEY) verschlüsselt gespeichert und gelten nur für diese Instanz (nicht repliziert); das Passwort wird nie angezeigt.',
         'host' => 'API-Host (Router-IP oder Name)',
         'type' => 'API-Typ',
         'types' => [
@@ -293,6 +293,9 @@ return [
             'wifi_password_help' => '8-63 Zeichen (ASCII). Leer: offenes WLAN; leer lassen behält ein gespeichertes Passwort. Verschlüsselt gespeichert; erscheint im WLAN-Block, im WLAN-QR-Code und auf den Gutscheinen.',
             'wifi_password_stored' => 'Passwort gespeichert (WPA2/WPA3).',
             'wifi_password_clear' => 'Passwort entfernen (offenes WLAN)',
+            'wifi_password_shared' => 'An andere Instanzen weitergeben',
+            'wifi_password_shared_help' => 'Aus: Das Passwort bleibt nur auf dieser Instanz (mit APP_KEY verschlüsselt) und wird nicht repliziert. An: Es wird verschlüsselt mit dem Föderationsschlüssel an die anderen Instanzen repliziert. Umschalten verschiebt den gespeicherten Wert. Andere Instanzen erfahren nur, ob das WLAN ein Passwort hat.',
+            'wifi_password_unavailable' => 'Das Passwort dieses Standorts ist auf dieser Instanz nicht verfügbar (auf einer anderen Instanz lokal gespeichert): kein WLAN-QR-Code, kein Passwort auf Gutscheinen, das Router-Skript erzeugt kein offenes WLAN. Passwort hier eintragen, um es zu verwenden.',
             'subnet' => 'Gäste-Subnetz (CIDR)',
             'gateway' => 'Gateway (Router-IP)',
             'pool' => 'DHCP-Pool (von-bis)',
@@ -442,6 +445,7 @@ return [
         'print_a6' => 'Aushang A6 drucken',
         'notice_title' => 'Aushang',
         'no_ssid' => 'Für diesen Standort ist keine Gäste-SSID erfasst (Einrichtungsassistent): kein WLAN-QR-Code.',
+        'wifi_unavailable' => 'Das WLAN-Passwort dieses Standorts ist auf dieser Instanz nicht verfügbar: kein WLAN-QR-Code.',
         'no_hotspot_host' => 'Für diesen Standort ist kein Hotspot-Host erfasst: der Anmelde-QR-Code öffnet direkt das Portal.',
         'notice' => [
             'step_wifi' => '1. Mit dem WLAN verbinden',

@@ -56,7 +56,7 @@
                     <div class="qr">{!! $wifiQr !!}</div>
                     <p>{{ __('portal.grants.wifi') }}: <strong>{{ $ssid }}</strong></p>
                 @else
-                    <div class="qr qr-missing">{{ __('portal.site_codes.no_ssid') }}</div>
+                    <div class="qr qr-missing">{{ $wifiUnavailable ? __('portal.site_codes.wifi_unavailable') : __('portal.site_codes.no_ssid') }}</div>
                 @endif
             </div>
             <div class="step">

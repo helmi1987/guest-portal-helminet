@@ -154,6 +154,11 @@
                 @if ($wifiPasswordSet)
                     <span class="text-xs"><input type="checkbox" name="wifi_password_clear" value="1"> {{ __('portal.setup.network.wifi_password_clear') }}</span>
                 @endif
+                <span class="text-xs"><input type="checkbox" name="wifi_password_shared" value="1" @checked($wifiPasswordShared)> {{ __('portal.setup.network.wifi_password_shared') }}</span>
+                <span class="text-xs text-slate-500">{{ __('portal.setup.network.wifi_password_shared_help') }}</span>
+                @if ($wifiPasswordUnavailable)
+                    <span class="text-xs text-amber-800">{{ __('portal.setup.network.wifi_password_unavailable') }}</span>
+                @endif
             </label>
             <label class="label">{{ __('portal.setup.network.subnet') }}{{ $mark('subnet') }}
                 <input name="subnet" value="{{ $net('subnet') }}" placeholder="10.30.0.0/24" required class="field"></label>

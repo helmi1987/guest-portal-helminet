@@ -16,7 +16,7 @@ use Illuminate\Support\Collection;
  */
 class VoucherQr
 {
-    /** @var Collection<string, ?array{ssid: string, password: ?string}>|null site id => guest Wi-Fi of the setup assistant */
+    /** @var Collection<string, ?array{ssid: string, password: ?string, unavailable: bool}>|null site id => guest Wi-Fi of the setup assistant */
     private ?Collection $networks = null;
 
     /** @var array<string, string> payload@size => SVG */
@@ -24,7 +24,9 @@ class VoucherQr
 
     /**
      * Guest Wi-Fi of the grant's sites (all sites when unrestricted): SSID and password (null: open);
-     * null when none or ambiguous (sites with different SSIDs or passwords).
+     * null when none or ambiguous (sites with different SSIDs or passwords) or when the
+     * password is not available on this instance (WPA site, password kept local elsewhere): a QR without
+     * the password would be useless, so none is rendered.
      *
      * @return array{ssid: string, password: ?string}|null
      */
@@ -34,9 +36,11 @@ class VoucherQr
 
         $ids = $grant->siteIds();
         $candidates = ($ids === [] ? $this->networks : $this->networks->only($ids))->filter()
-            ->unique(fn (array $n) => json_encode([$n['ssid'], $n['password']]))->values();
+            ->unique(fn (array $n) => json_encode([$n['ssid'], $n['password'], $n['unavailable']]))->values();
 
-        return $candidates->count() === 1 ? $candidates->first() : null;
+        $network = $candidates->count() === 1 ? $candidates->first() : null;
+
+        return $network === null || $network['unavailable'] ? null : ['ssid' => $network['ssid'], 'password' => $network['password']];
     }
 
     /** SSID of the grant's sites (all sites when unrestricted); null when none or ambiguous. */
@@ -71,13 +75,13 @@ class VoucherQr
     /**
      * Guest Wi-Fi of one site (setup assistant), null when no SSID is set.
      *
-     * @return array{ssid: string, password: ?string}|null
+     * @return array{ssid: string, password: ?string, unavailable: bool}|null
      */
     public static function networkForSite(Site $site): ?array
     {
         $ssid = self::ssidForSite($site);
 
-        return $ssid === null ? null : ['ssid' => $ssid, 'password' => $site->wifiPassword()];
+        return $ssid === null ? null : ['ssid' => $ssid, 'password' => $site->wifiPassword(), 'unavailable' => $site->wifiPasswordUnavailable()];
     }
 
     /** Guest SSID of one site (setup assistant), null when not set. */

@@ -24,12 +24,20 @@ class Site extends Model
     /** Setting key of the encrypted guest Wi-Fi password (setup assistant). */
     public const WIFI_PASSWORD = 'setup.wifi_password';
 
+    /** Setting keys of the setup assistant: replicated non-secret flags (wpa|open, shared with other instances). */
+    public const WIFI_SECURITY = 'setup.wifi_security';
+
+    public const WIFI_SHARED = 'setup.wifi_password_shared';
+
+    /** Never serialized: instance-local Wi-Fi password (APP_KEY encrypted). */
+    protected $hidden = ['wifi_password_local'];
+
     /** Unsaved copy for rendering only (withDerivedSetup()); saving it is refused. */
     private bool $renderOnly = false;
 
     protected function casts(): array
     {
-        return ['settings' => 'array'];
+        return ['settings' => 'array', 'wifi_password_local' => 'encrypted'];
     }
 
     protected static function booted(): void
@@ -88,12 +96,56 @@ class Site extends Model
     }
 
     /**
-     * Guest Wi-Fi password of the setup assistant (site setting "setup.wifi_password"), stored
-     * encrypted with the federation data key because site settings are replicated (CONCEPT.md §10.2).
-     * Null when not set or not decryptable (never logged).
+     * Whether the guest Wi-Fi password is shared with other instances (replicated site setting, encrypted
+     * with the federation data key). Default off; sites saved before the flag existed keep a stored
+     * replicated password as shared.
+     */
+    public function wifiPasswordShared(): bool
+    {
+        $flag = $this->setting(self::WIFI_SHARED);
+        if ($flag !== null) {
+            return (bool) $flag;
+        }
+
+        return is_string($this->setting(self::WIFI_PASSWORD)) && $this->setting(self::WIFI_PASSWORD) !== '';
+    }
+
+    /** "wpa" (a password is set, on some instance) or "open"; replicated, carries no secret. */
+    public function wifiSecurity(): string
+    {
+        $flag = $this->setting(self::WIFI_SECURITY);
+        if (in_array($flag, ['wpa', 'open'], true)) {
+            return $flag;
+        }
+
+        return $this->wifiPasswordShared() ? 'wpa' : 'open';
+    }
+
+    /** WPA network whose password is not available on this instance (kept local on another one). */
+    public function wifiPasswordUnavailable(): bool
+    {
+        return $this->wifiSecurity() === 'wpa' && $this->wifiPassword() === null;
+    }
+
+    /**
+     * Guest Wi-Fi password of the setup assistant from the storage in use: shared = site setting
+     * "setup.wifi_password" encrypted with the federation data key (replicated, CONCEPT.md §10.2); not
+     * shared = local column encrypted with APP_KEY. Null when not set, not available here or not
+     * decryptable (never logged).
      */
     public function wifiPassword(): ?string
     {
+        if (! $this->wifiPasswordShared()) {
+            try {
+                $local = $this->wifi_password_local;
+            } catch (Throwable) {
+                Log::warning('Local guest Wi-Fi password of the site cannot be decrypted; enter it again in the setup assistant.', ['site' => $this->slug]);
+
+                return null;
+            }
+
+            return is_string($local) && $local !== '' ? $local : null;
+        }
         $stored = $this->setting(self::WIFI_PASSWORD);
         if (! is_string($stored) || $stored === '') {
             return null;
@@ -117,7 +169,7 @@ class Site extends Model
     public function reencryptWifiPassword(): bool
     {
         $stored = $this->setting(self::WIFI_PASSWORD);
-        $plain = $this->wifiPassword();
+        $plain = $this->wifiPasswordShared() ? $this->wifiPassword() : null;
         if ($plain === null || DataKey::keyIdOf($stored) === app(DataKey::class)->currentId()) {
             return false;
         }

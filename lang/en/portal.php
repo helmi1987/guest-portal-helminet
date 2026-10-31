@@ -159,7 +159,7 @@ return [
     'router_api' => [
         'title' => 'Router API (read-only, state query)',
         'not_configured' => 'not configured',
-        'help' => 'Optional: lets the setup assistant read the router configuration (print only) to check its blocks and prefill empty inputs. TLS is trusted by the pinned key: by default the router certificate managed by this portal (set it on the service www-ssl or api-ssl), or the pin entered here. User and password are stored encrypted with the federation data key; the password is never shown.',
+        'help' => 'Optional: lets the setup assistant read the router configuration (print only) to check its blocks and prefill empty inputs. TLS is trusted by the pinned key: by default the router certificate managed by this portal (set it on the service www-ssl or api-ssl), or the pin entered here. User and password are stored encrypted with the instance key (APP_KEY) and are local to this instance (not replicated to other instances); the password is never shown.',
         'host' => 'API host (router IP or name)',
         'type' => 'API type',
         'types' => [
@@ -293,6 +293,9 @@ return [
             'wifi_password_help' => '8-63 characters (ASCII). Empty: open Wi-Fi; leaving it empty keeps a stored password. Stored encrypted; shown in the Wi-Fi block, the Wi-Fi QR code and on the vouchers.',
             'wifi_password_stored' => 'Password stored (WPA2/WPA3).',
             'wifi_password_clear' => 'Remove password (open Wi-Fi)',
+            'wifi_password_shared' => 'Share with other instances',
+            'wifi_password_shared_help' => 'Off: the password stays on this instance only (encrypted with APP_KEY) and is not replicated. On: it is replicated to the other instances, encrypted with the federation data key. Toggling moves the stored value. Other instances only learn that the network has a password.',
+            'wifi_password_unavailable' => 'The password of this site is not available on this instance (kept local on another one): no Wi-Fi QR code, no password on vouchers, and the router script does not create an open network. Enter the password here to use it.',
             'subnet' => 'Guest subnet (CIDR)',
             'gateway' => 'Gateway (router IP)',
             'pool' => 'DHCP pool (from-to)',
@@ -442,6 +445,7 @@ return [
         'print_a6' => 'Print notice A6',
         'notice_title' => 'Notice',
         'no_ssid' => 'No guest SSID set for this site (setup assistant): no Wi-Fi QR code.',
+        'wifi_unavailable' => 'The Wi-Fi password of this site is not available on this instance: no Wi-Fi QR code.',
         'no_hotspot_host' => 'No hotspot host set for this site: the sign-in QR code opens the portal directly.',
         'notice' => [
             'step_wifi' => '1. Connect to the Wi-Fi',

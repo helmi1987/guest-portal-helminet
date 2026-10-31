@@ -114,6 +114,12 @@ package CAPs, `/interface wifi` CAPsMAN manages `wifi` package CAPs. A site can 
 Common settings for both: open guest SSID (no Wi-Fi password; access control is the portal),
 client isolation on, VLAN 30 for the guest SSID only, the staff SSID untouched.
 
+Optional Wi-Fi password: the setup assistant (step 2) can store a guest Wi-Fi password per site. By
+default it stays on that instance only (encrypted with `APP_KEY`, not replicated); the checkbox
+"Share with other instances" replicates it (encrypted with the federation data key). Other instances
+only learn that the network has a password: without the password they print no Wi-Fi QR code, show a
+hint in the assistant and leave `sec-guest` untouched in the generated script (never an open network).
+
 ### 3.1 Legacy CAPsMAN (v1, `/caps-man`, `wireless` package)
 
 ```
@@ -697,7 +703,7 @@ lists of the assistant. It is safe when entries do not exist and logs out connec
 
 ## 10c. Router state query (read-only API)
 
-Optional, per router (site page, Routers, "Router API"): the setup assistant reads the router
+Optional, per router (site page, Routers, "Router API"); the API access is local to the instance (not replicated via federation, encrypted with APP_KEY): the setup assistant reads the router
 configuration (print only) to check its blocks and to prefill empty inputs.
 1. Router certificate first (sections 6 and 8): the certificate script imports it as `guest-portal`.
 2. On the router: the block "Read-only API access" of the router (setup assistant, "Router state") adds

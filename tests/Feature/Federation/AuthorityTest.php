@@ -10,7 +10,9 @@ use App\Federation\Pairing;
 use App\Federation\Topology;
 use App\Models\Grant;
 use App\Models\Instance;
+use App\Models\NasClient;
 use App\Models\Setting;
+use App\Models\Site;
 use App\Models\User;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
@@ -90,6 +92,36 @@ class AuthorityTest extends TestCase
         $this->on('a', fn () => Instance::find($idA)->update(['federation_url' => 'https://a-new.example.com:9443']));
         $this->syncRound();
         $this->assertSame('https://a-new.example.com:9443', $this->rowOn('hub', 'instances', $idA)['federation_url']);
+    }
+
+    public function test_router_api_access_is_local_to_the_instance(): void
+    {
+        $site = $this->on('hub', fn () => Site::create(['slug' => 's', 'name' => 'S', 'driver' => 'mikrotik_ros7',
+            'home_instance_id' => app(LocalInstance::class)->id()]));
+        $nas = $this->on('hub', fn () => $site->nasClients()->create(['name' => 'R', 'nas_ip' => '10.0.2.1', 'coa_port' => 3799,
+            'api_host' => '10.0.2.1', 'api_type' => 'rest', 'api_port' => 443, 'api_user' => 'ro-user', 'api_password' => 'Hub secret 1', 'api_pin' => 'sha256//abc']));
+        $this->syncRound();
+
+        // Not sent: no payload carries api_* and the replica has none
+        $payloads = DB::table(Outbox::TABLE)->where('table', 'nas_clients')->pluck('payload')->implode("\n");
+        $this->assertStringNotContainsString('Hub secret 1', $payloads);
+        $this->assertStringNotContainsString('ro-user', $payloads);
+        $this->assertStringNotContainsString('api_host', $payloads);
+        $row = $this->rowOn('a', 'nas_clients', $nas->id);
+        $this->assertSame('R', $row['name']);
+        foreach (['api_host', 'api_type', 'api_port', 'api_user', 'api_password', 'api_pin'] as $column) {
+            $this->assertNull($row[$column], $column);
+        }
+
+        // Local values on a survive an incoming update from the hub
+        $this->on('a', fn () => NasClient::find($nas->id)->forceFill(['api_host' => '10.9.9.9', 'api_type' => 'api-ssl',
+            'api_user' => 'a-user', 'api_password' => 'A secret 1'])->saveQuietly());
+        $this->on('hub', fn () => NasClient::find($nas->id)->update(['name' => 'R renamed']));
+        $this->syncRound();
+        $this->assertSame('R renamed', $this->rowOn('a', 'nas_clients', $nas->id)['name']);
+        $a = $this->on('a', fn () => NasClient::find($nas->id)->only(['api_host', 'api_type', 'api_user', 'api_password']));
+        $this->assertSame(['api_host' => '10.9.9.9', 'api_type' => 'api-ssl', 'api_user' => 'a-user', 'api_password' => 'A secret 1'], $a);
+        $this->assertSame('Hub secret 1', $this->on('hub', fn () => NasClient::find($nas->id)->api_password));
     }
 
     public function test_only_the_hub_registers_and_removes_instances(): void
