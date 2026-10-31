@@ -4,6 +4,7 @@ namespace Tests\Feature\Federation;
 
 use App\Enums\ExpiryMode;
 use App\Enums\GrantType;
+use App\Federation\Applier;
 use App\Federation\EventCodec;
 use App\Federation\Outbox;
 use App\Federation\Pairing;
@@ -122,6 +123,44 @@ class AuthorityTest extends TestCase
         $a = $this->on('a', fn () => NasClient::find($nas->id)->only(['api_host', 'api_type', 'api_user', 'api_password']));
         $this->assertSame(['api_host' => '10.9.9.9', 'api_type' => 'api-ssl', 'api_user' => 'a-user', 'api_password' => 'A secret 1'], $a);
         $this->assertSame('Hub secret 1', $this->on('hub', fn () => NasClient::find($nas->id)->api_password));
+    }
+
+    public function test_local_wifi_password_is_never_replicated_nor_overwritten_by_remote_events(): void
+    {
+        $setup = ['ssid' => 'Guest', 'wifi_security' => 'wpa', 'wifi_password_shared' => false];
+        $site = $this->on('hub', fn () => Site::create(['slug' => 's', 'name' => 'S', 'driver' => 'mikrotik_ros7',
+            'home_instance_id' => app(LocalInstance::class)->id(), 'settings' => ['setup' => $setup]]));
+        $this->syncRound();
+        $local = fn (string $name) => $this->on($name, fn () => Site::find($site->id)->wifi_password_local);
+        $this->on('a', fn () => Site::find($site->id)->forceFill(['wifi_password_local' => 'A local pass 1'])->save());
+        $this->on('hub', fn () => Site::find($site->id)->forceFill(['wifi_password_local' => 'Hub local pass 1'])->save());
+        $this->syncRound();
+
+        // Remote updates without the column keep each instance's own value
+        $this->on('hub', fn () => Site::find($site->id)->update(['name' => 'S renamed']));
+        $this->syncRound();
+        $this->assertSame('S renamed', $this->rowOn('a', 'sites', $site->id)['name']);
+        $this->assertSame('A local pass 1', $local('a'));
+        $this->assertSame('Hub local pass 1', $local('hub'));
+        $this->assertNull($local('b'));
+        foreach (['hub', 'a'] as $name) {
+            $payloads = $this->on($name, fn () => DB::table(Outbox::TABLE)->where('table', 'sites')->pluck('payload')->implode("\n"));
+            $this->assertStringNotContainsString('wifi_password_local', $payloads, $name);
+        }
+
+        // An event that carries the column anyway (forged or a future peer) does not touch it
+        $idHub = $this->idOf('hub');
+        $result = $this->on('a', function () use ($site, $idHub) {
+            $row = (array) DB::table('sites')->where('id', $site->id)->first();
+            $seq = (int) DB::table('peer_cursors')->where('origin', $idHub)->value('last_seq') + 1;
+
+            return app(Applier::class)->apply($idHub, [['origin' => $idHub, 'seq' => $seq, 'table' => 'sites', 'record_id' => $site->id,
+                'version' => Hlc::format(Hlc::wallMs() + 60000, 0, $idHub), 'payload' => array_merge($row, ['name' => 'S forged',
+                    'wifi_password_local' => null, 'version' => null])]]);
+        });
+        $this->assertSame(1, $result->applied);
+        $this->assertSame('S forged', $this->rowOn('a', 'sites', $site->id)['name']);
+        $this->assertSame('A local pass 1', $local('a'));
     }
 
     public function test_only_the_hub_registers_and_removes_instances(): void
