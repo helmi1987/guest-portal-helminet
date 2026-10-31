@@ -10,7 +10,7 @@
     // Network inputs: saved value, else the value derived from the router state (marked)
     $net = fn ($key, $default = '') => old($key, $setup[$key] ?? ($derived[$key][0] ?? $default));
     $mark = fn ($key) => isset($derived[$key]) ? new \Illuminate\Support\HtmlString('<span class="ml-1 rounded bg-sky-100 px-1 text-xs font-normal text-sky-800" data-derived="'.e($key).'" title="'
-        .e(__('portal.router_api.derived_from.'.$derived[$key][1], ['router' => $derivedFrom])).'">'.e(__('portal.router_api.derived')).'</span>') : '';
+        .e(__('portal.router_api.derived_from.'.$derived[$key][1], ['router' => $derived[$key][2]])).'">'.e(__('portal.router_api.derived')).'</span>') : '';
     $statusClass = ['present' => 'bg-green-100 text-green-800', 'foreign' => 'bg-green-50 text-green-700', 'legacy' => 'bg-sky-100 text-sky-800', 'differs' => 'bg-amber-100 text-amber-800',
         'missing' => 'bg-red-100 text-red-800', 'unknown' => 'bg-slate-200 text-slate-600'];
 @endphp

@@ -14,6 +14,7 @@ use App\Support\PortalAddress;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Validator as ValidatorInstance;
 use Illuminate\View\View;
@@ -35,16 +36,16 @@ class SetupController extends Controller
         $site->setRelation('nasClients', $routers);
         $container = (array) LocalSetting::get(self::CONTAINER_KEY, []);
 
-        // Router state (CONCEPT.md §9, decision 2026-10-31): inputs derived from the first router (by
-        // name) with a stored state, comparison per router, commands greyed out while a state is missing
-        // or stale for any router with API access.
+        // Router state (CONCEPT.md §9, decision 2026-10-31): inputs derived per field from the routers
+        // with a stored state, comparison per router, commands greyed out while a state is missing or
+        // stale for any router with API access.
         $apiRouters = $routers->filter(fn (NasClient $nas) => $nas->hasApiAccess());
         $stateDriver = $driver instanceof RouterStateDriver ? $driver : null;
         $inputsAt = $this->inputsChangedAt($site);
-        // Prefill only from a successful, fresh state of the router's current API host
-        $source = $stateDriver ? $apiRouters->first(fn (NasClient $nas) => is_array($nas->router_state)
-            && $this->fresh($nas, $inputsAt) && ($nas->router_state['host'] ?? null) === $nas->api_host) : null;
-        $derived = $source ? $this->derived($driver, $site, $source->router_state) : [];
+        // Prefill only from successful, fresh states of the routers' current API hosts
+        $sources = $stateDriver ? $apiRouters->filter(fn (NasClient $nas) => is_array($nas->router_state)
+            && $this->fresh($nas, $inputsAt) && ($nas->router_state['host'] ?? null) === $nas->api_host)->values() : collect();
+        $derived = $sources->isNotEmpty() ? $this->derived($driver, $site, $sources) : [];
         $view = $derived !== [] ? $site->withDerivedSetup(array_map(fn ($d) => $d[0], $derived)) : $site;
         $states = $routers->mapWithKeys(fn (NasClient $nas) => [$nas->id => [
             'fresh' => $this->fresh($nas, $inputsAt),
@@ -57,7 +58,7 @@ class SetupController extends Controller
             'site' => $site,
             'setup' => array_diff_key((array) $site->setting('setup', []), ['wifi_password' => true]),
             'derived' => $derived,
-            'derivedFrom' => $source?->name,
+            'derivedFrom' => $sources->pluck('name')->intersect(array_column($derived, 2))->implode(', '),
             'wifiPasswordSet' => $site->wifiPassword() !== null,
             'portalAddressProblem' => PortalAddress::problem($site->setting('portal_address'), (array) $view->setting('setup', [])),
             'container' => $container,
@@ -106,16 +107,29 @@ class SetupController extends Controller
     }
 
     /**
-     * Derived inputs that pass the driver's validation rules, only for fields without a saved value.
+     * Derived inputs that pass the driver's validation rules, only for fields without a saved value,
+     * chosen per field over all source routers (sorted by name): the first router whose own object
+     * (source "own") provides a valid value, else the first router providing a valid value at all
+     * (enabled CAPsMAN, default profile, only bridge).
      *
-     * @return array<string, array{0: string|int, 1: string}>
+     * @param  Collection<int, NasClient>  $routers
+     * @return array<string, array{0: string|int, 1: string, 2: string}> field => [value, source, router name]
      */
-    private function derived(NasDriver&RouterStateDriver $driver, Site $site, array $state): array
+    private function derived(NasDriver&RouterStateDriver $driver, Site $site, Collection $routers): array
     {
         $rules = $driver->setupFields()['network'];
+        $out = [];
+        foreach ($routers as $nas) {
+            foreach ($driver->deriveSetup($site, $nas->router_state) as $field => [$value, $source]) {
+                if (! isset($rules[$field]) || (isset($out[$field]) && ($out[$field][1] === 'own' || $source !== 'own'))
+                    || ! Validator::make([$field => $value], [$field => $rules[$field]])->passes()) {
+                    continue;
+                }
+                $out[$field] = [$value, $source, $nas->name];
+            }
+        }
 
-        return array_filter($driver->deriveSetup($site, $state), fn ($d, $field) => isset($rules[$field])
-            && Validator::make([$field => $d[0]], [$field => $rules[$field]])->passes(), ARRAY_FILTER_USE_BOTH);
+        return $out;
     }
 
     /** Last change of the assistant's inputs: site (setup, hosts, addresses) and the container inputs. */

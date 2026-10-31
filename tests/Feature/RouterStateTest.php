@@ -299,6 +299,42 @@ class RouterStateTest extends TestCase
         $this->assertStringNotContainsString('data-derived', $this->page());
     }
 
+    public function test_prefill_is_chosen_per_field_over_all_routers(): void
+    {
+        $this->configureApi();
+        $second = NasClient::find($this->site->nasClients()->create(['name' => 'Router B', 'nas_ip' => '10.0.1.2', 'coa_port' => 3799])->id);
+        $second->forceFill(['api_host' => '10.0.1.2', 'api_type' => 'rest', 'api_user' => 'portal-ro', 'api_password' => 'x', 'api_pin' => self::PIN])->save();
+        $menus = $this->routerMenus();
+        // Router A (first by name): no own objects, only assumptions (only bridge, enabled CAPsMAN, default profile)
+        $this->nas->storeRouterState(['host' => '10.0.1.1', 'menus' => array_map(fn ($rows) => ['rows' => $rows], [
+            '/interface bridge' => [['name' => 'bridge-a', 'comment' => 'defconf']],
+            '/caps-man manager' => [['enabled' => 'true']],
+            '/interface wifi capsman' => [['enabled' => 'false']],
+            '/ip hotspot profile' => [['name' => 'default', 'html-directory' => 'flash/hotspot', 'default' => 'true']],
+        ])]);
+        // Router B: the assistant's own objects, no hotspot profile
+        unset($menus['/ip hotspot profile']);
+        $second->storeRouterState(['host' => '10.0.1.2', 'menus' => array_map(fn ($rows) => ['rows' => $rows], $menus)]);
+
+        $page = $this->page();
+        // Own objects of router B win over assumptions of router A
+        $this->assertMatchesRegularExpression('/name="bridge"[^>]*value="bridge1"/', $page);
+        $this->assertMatchesRegularExpression('/name="interface"[^>]*value="vlan30-guest"/', $page);
+        $this->assertMatchesRegularExpression('/<option value="capsman2" selected>/', $page);
+        $this->assertStringContainsString(e(trans('portal.router_api.derived_from.own', ['router' => 'Router B'])), $page);
+        // A field only router A provides comes from router A
+        $this->assertMatchesRegularExpression('/<option value="flash\/hotspot" selected>/', $page);
+        $this->assertStringContainsString(e(trans('portal.router_api.derived_from.default_profile', ['router' => 'Router A'])), $page);
+        $this->assertStringContainsString(e(trans('portal.router_api.derived_help', ['router' => 'Router A, Router B'])), $page);
+
+        // Without router B the assumptions of router A are used
+        $second->storeRouterState(null, ['kind' => 'connect', 'detail' => 'down']);
+        $page = $this->page();
+        $this->assertMatchesRegularExpression('/name="bridge"[^>]*value="bridge-a"/', $page);
+        $this->assertMatchesRegularExpression('/<option value="capsman1" selected>/', $page);
+        $this->assertStringNotContainsString('data-derived="interface"', $page);
+    }
+
     public function test_refresh_uses_one_overall_deadline_and_is_throttled(): void
     {
         $this->configureApi();

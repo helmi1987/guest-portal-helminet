@@ -186,7 +186,7 @@ return [
         'cli_disabled' => 'Commands greyed out: the router state is missing, older than :minutes minutes or older than the last change of the inputs. Click "Refresh".',
         'cli_disabled_short' => 'Refresh the router state first',
         'derived' => 'from router',
-        'derived_help' => 'Inputs marked "from router" are not saved yet; they were derived from the state of router :router. Check them and save.',
+        'derived_help' => 'Inputs marked "from router" are not saved yet; they were derived from the router state (:router). Check them and save.',
         'derived_from' => [
             'own' => 'From the object created by the assistant on router :router',
             'capsman1' => 'CAPsMAN v1 (/caps-man) is enabled on router :router',

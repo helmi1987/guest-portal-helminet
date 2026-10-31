@@ -186,7 +186,7 @@ return [
         'cli_disabled' => 'Befehle ausgegraut: Der Router-Status fehlt, ist älter als :minutes Minuten oder älter als die letzte Änderung der Eingaben. «Aktualisieren» klicken.',
         'cli_disabled_short' => 'Zuerst den Router-Status aktualisieren',
         'derived' => 'vom Router',
-        'derived_help' => 'Mit «vom Router» markierte Eingaben sind noch nicht gespeichert; sie stammen aus dem Status von Router :router. Prüfen und speichern.',
+        'derived_help' => 'Mit «vom Router» markierte Eingaben sind noch nicht gespeichert; sie stammen aus dem Router-Status (:router). Prüfen und speichern.',
         'derived_from' => [
             'own' => 'Aus dem vom Assistenten angelegten Objekt auf Router :router',
             'capsman1' => 'CAPsMAN v1 (/caps-man) ist auf Router :router aktiv',

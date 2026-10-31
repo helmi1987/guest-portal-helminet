@@ -186,7 +186,7 @@ return [
         'cli_disabled' => 'Comandi in grigio: lo stato del router manca, ha più di :minutes minuti o è più vecchio dell\'ultima modifica dei campi. Cliccare «Aggiorna».',
         'cli_disabled_short' => 'Aggiornare prima lo stato del router',
         'derived' => 'dal router',
-        'derived_help' => 'I campi marcati «dal router» non sono ancora salvati; provengono dallo stato del router :router. Verificarli e salvare.',
+        'derived_help' => 'I campi marcati «dal router» non sono ancora salvati; provengono dallo stato del router (:router). Verificarli e salvare.',
         'derived_from' => [
             'own' => 'Dall\'oggetto creato dall\'assistente sul router :router',
             'capsman1' => 'CAPsMAN v1 (/caps-man) è attivo sul router :router',

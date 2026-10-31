@@ -186,7 +186,7 @@ return [
         'cli_disabled' => 'Commandes grisées : l\'état du routeur manque, a plus de :minutes minutes ou est plus ancien que la dernière modification des champs. Cliquez sur « Actualiser ».',
         'cli_disabled_short' => 'Actualisez d\'abord l\'état du routeur',
         'derived' => 'du routeur',
-        'derived_help' => 'Les champs marqués « du routeur » ne sont pas encore enregistrés ; ils proviennent de l\'état du routeur :router. Vérifiez-les et enregistrez.',
+        'derived_help' => 'Les champs marqués « du routeur » ne sont pas encore enregistrés ; ils proviennent de l\'état du ou des routeurs (:router). Vérifiez-les et enregistrez.',
         'derived_from' => [
             'own' => 'De l\'objet créé par l\'assistant sur le routeur :router',
             'capsman1' => 'CAPsMAN v1 (/caps-man) est activé sur le routeur :router',
