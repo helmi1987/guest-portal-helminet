@@ -179,6 +179,51 @@ class RouterStateTest extends TestCase
         $this->assertStringNotContainsString(e(trans('portal.router_api.errors.tls_pinned')), $page);
     }
 
+    public function test_pin_changes_clear_only_the_error_and_are_audited_with_the_pinned_flag(): void
+    {
+        $otherPin = 'sha256//BBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBBB=';
+        $lastAudit = fn () => AuditLog::query()->where('action', 'router.api_access_updated')->latest('id')->first()->data;
+        $pinRemovedAudits = fn () => AuditLog::query()->where('action', 'router.api_pin_removed')->count();
+        $tlsError = fn () => $this->nas->forceFill(['router_state_error' => ['kind' => 'tls', 'detail' => 'pin']])->save();
+
+        $this->configureApi();
+        $this->assertTrue($lastAudit()['pinned']);
+        $this->nas->storeRouterState(['menus' => [], 'host' => '10.0.1.1']);
+        $stateAt = $this->nas->fresh()->router_state_at;
+        $tlsError();
+
+        // Unchanged pin keeps the error (and the state)
+        $this->configureApi(['api_password' => '']);
+        $this->assertSame('tls', $this->nas->router_state_error['kind']);
+        $this->assertSame(['menus' => [], 'host' => '10.0.1.1'], $this->nas->router_state);
+
+        // Pin changed to another value: only the error is cleared
+        $this->configureApi(['api_password' => '', 'api_pin' => $otherPin]);
+        $this->assertSame($otherPin, $this->nas->api_pin);
+        $this->assertNull($this->nas->router_state_error);
+        $this->assertSame(['menus' => [], 'host' => '10.0.1.1'], $this->nas->router_state);
+        $this->assertTrue($stateAt->equalTo($this->nas->router_state_at));
+        $this->assertTrue($lastAudit()['pinned']);
+        $this->assertSame(0, $pinRemovedAudits());
+
+        // Pin removed: state and its time are kept, the error is cleared, audited once
+        $tlsError();
+        $this->configureApi(['api_password' => '', 'api_pin' => $otherPin, 'api_clear_pin' => '1']);
+        $this->assertNull($this->nas->api_pin);
+        $this->assertNull($this->nas->router_state_error);
+        $this->assertSame(['menus' => [], 'host' => '10.0.1.1'], $this->nas->router_state);
+        $this->assertTrue($stateAt->equalTo($this->nas->router_state_at));
+        $this->assertFalse($lastAudit()['pinned']);
+        $this->assertSame(1, $pinRemovedAudits());
+
+        // Checkbox without a stored pin: no "pin removed" audit, the error stays
+        $tlsError();
+        $this->configureApi(['api_password' => '', 'api_pin' => '', 'api_clear_pin' => '1']);
+        $this->assertSame(1, $pinRemovedAudits());
+        $this->assertSame('tls', $this->nas->router_state_error['kind']);
+        $this->assertFalse($lastAudit()['pinned']);
+    }
+
     public function test_query_compares_blocks_and_ungreys_the_commands(): void
     {
         $this->saveNetwork();
