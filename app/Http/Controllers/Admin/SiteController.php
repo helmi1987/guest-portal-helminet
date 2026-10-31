@@ -116,7 +116,7 @@ class SiteController extends Controller
 
     /**
      * Read-only router API access for the setup assistant's state query (CONCEPT.md §9). User and
-     * password are stored encrypted with the federation data key and never audited or logged; the password is
+     * password are local to the instance (not replicated), stored encrypted with APP_KEY and never audited or logged; the password is
      * never rendered (the user name is, in the edit form); an empty password field keeps the stored one, "api_clear" removes the access.
      */
     public function updateRouterApi(Request $request, Site $site, NasClient $router): RedirectResponse
