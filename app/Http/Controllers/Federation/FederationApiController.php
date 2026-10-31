@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Federation;
 
+use App\Approval\ApprovalSettings;
+use App\Branding\BrandingAssets;
 use App\Federation\ApplyResult;
 use App\Federation\DataKey;
 use App\Federation\EventCodec;
@@ -10,6 +12,7 @@ use App\Federation\Inbox;
 use App\Federation\Outbox;
 use App\Federation\Pairing;
 use App\Federation\PairingException;
+use App\Federation\RemoteApprovals;
 use App\Federation\RemoteSessions;
 use App\Federation\SigningKey;
 use App\Federation\Topology;
@@ -23,6 +26,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Symfony\Component\HttpFoundation\Response;
 
 /**
  * Federation API endpoints called by other instances (CONCEPT.md §10.2).
@@ -148,6 +152,59 @@ class FederationApiController extends Controller
         } catch (\Throwable $e) {
             return response()->json(['error' => 'instance unreachable: '.mb_substr($e->getMessage(), 0, 100)], 502);
         }
+    }
+
+    /**
+     * Decision for an approval request waiting here, forwarded by the Telegram owner (CONCEPT.md §10.5);
+     * the hub forwards a decision for one of its peers (relay).
+     */
+    public function decideApproval(Request $request, string $approval, RemoteApprovals $remote, Topology $topology, LocalInstance $instance): JsonResponse
+    {
+        $data = $request->validate([
+            'instance' => ['required', 'string', 'size:26'],
+            'choice' => ['required', 'string', 'max:20'],
+            'by' => ['required', 'string', 'max:255'],
+        ]);
+        // Only the Telegram owner decides (directly, or through the hub that relays its press).
+        $caller = $this->peer($request)->id;
+        $owner = ApprovalSettings::telegramOwnerId();
+        $relaying = $data['instance'] !== $instance->id();
+        if (! ($caller === $owner || (! $relaying && ! $topology->isHub() && $caller === $topology->hubId()))) {
+            Log::warning('Federation approval decision refused: caller is not the Telegram owner',
+                ['request' => $approval, 'by' => $caller, 'owner' => $owner]);
+
+            return response()->json(['error' => 'not the telegram owner'], 403);
+        }
+        if (! $relaying) {
+            $status = $remote->decideLocal($approval, $data['choice'], $data['by']);
+            Log::info('Federation approval decision', ['request' => $approval, 'by' => $this->peer($request)->id, 'status' => $status]);
+
+            return response()->json(['status' => $status]);
+        }
+        if (! $topology->isHub() || ! $topology->isDirectPeer($data['instance'])) {
+            return response()->json(['error' => 'unknown instance'], 404);
+        }
+        try {
+            return response()->json(['status' => $remote->decide($data['instance'], $approval, $data['choice'], $data['by'])]);
+        } catch (\Throwable $e) {
+            return response()->json(['error' => 'instance unreachable: '.mb_substr($e->getMessage(), 0, 100)], 502);
+        }
+    }
+
+    /** Branding file stored here, by its content-hash name (CONCEPT.md §10.3); checked by the caller. */
+    public function branding(Request $request, string $file, BrandingAssets $assets): Response
+    {
+        if ($refused = $this->refusePaused($request)) {
+            return $refused;
+        }
+        $path = $assets->path($file);
+        if ($path === null) {
+            return response()->json(['error' => 'not found'], 404);
+        }
+        $bytes = (string) file_get_contents($path);
+
+        return response($bytes, 200, ['Content-Type' => 'application/octet-stream',
+            'Content-Length' => (string) strlen($bytes), 'X-Content-Type-Options' => 'nosniff']);
     }
 
     /** Re-pairing with this (new) hub (CONCEPT.md §10.1). */

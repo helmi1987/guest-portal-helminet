@@ -2,6 +2,8 @@
 
 namespace App\Approval;
 
+use App\Federation\Topology;
+use App\Models\Instance;
 use App\Models\Setting;
 use App\Support\LocalInstance;
 
@@ -17,6 +19,12 @@ class ApprovalSettings
      */
     public static function adminUrl(): string
     {
+        // Federation: each instance has its own admin URL (instances.admin_url, federation page); the
+        // replicated setting is shared by all instances.
+        $own = self::instanceAdminUrl(app(LocalInstance::class)->id());
+        if ($own !== null) {
+            return $own;
+        }
         $configured = Setting::get('admin_url');
         if (is_string($configured) && $configured !== '') {
             return rtrim($configured, '/');
@@ -28,6 +36,9 @@ class ApprovalSettings
     /** True when the admin URL setting is empty (the settings page warns). */
     public static function adminUrlMissing(): bool
     {
+        if (self::instanceAdminUrl(app(LocalInstance::class)->id()) !== null) {
+            return false;
+        }
         $configured = Setting::get('admin_url');
 
         return ! is_string($configured) || $configured === '';
@@ -54,15 +65,47 @@ class ApprovalSettings
         return in_array($locale, config('portal.locales'), true) ? $locale : config('app.locale');
     }
 
+    /** Setting value of the Telegram owner that turns polling off everywhere. */
+    public const TELEGRAM_OWNER_NONE = 'none';
+
     /**
-     * Only the Telegram owner polls getUpdates. Unset means this instance (single instance);
-     * "none" disables polling everywhere.
+     * Instance that polls Telegram updates (CONCEPT.md §10.5): the selected instance; unset, a former
+     * boolean value or an instance no longer in the federation means the hub (this instance without a
+     * hub); "none" (or false) turns polling off.
      */
-    public static function isTelegramOwner(): bool
+    public static function telegramOwnerId(): ?string
     {
         $owner = Setting::get('telegram_owner');
+        if ($owner === self::TELEGRAM_OWNER_NONE || $owner === false) {
+            return null;
+        }
+        if (is_string($owner) && $owner !== '' && Instance::query()->whereKey($owner)->exists()) {
+            return $owner;
+        }
 
-        return $owner === null || $owner === app(LocalInstance::class)->id();
+        return app(Topology::class)->hubId() ?? app(LocalInstance::class)->id();
+    }
+
+    /** Only the Telegram owner polls getUpdates. */
+    public static function isTelegramOwner(): bool
+    {
+        return self::telegramOwnerId() === app(LocalInstance::class)->id();
+    }
+
+    /**
+     * Base URL for the approval links of a request: the admin URL of the instance where the guest
+     * waits (instances.admin_url), else the admin URL setting / fallback.
+     */
+    public static function adminUrlFor(?string $instanceId): string
+    {
+        return ($instanceId === null ? null : self::instanceAdminUrl($instanceId)) ?? self::adminUrl();
+    }
+
+    private static function instanceAdminUrl(string $instanceId): ?string
+    {
+        $url = Instance::query()->whereKey($instanceId)->value('admin_url');
+
+        return is_string($url) && $url !== '' ? rtrim($url, '/') : null;
     }
 
     /** @return array<string,int> approver duration choices, e.g. ['8h' => 28800, ...] */

@@ -7,8 +7,10 @@ use App\Auth\Oidc\OidcClient;
 use App\Auth\Oidc\OidcSettings;
 use App\Auth\TwoFactor;
 use App\Branding\BrandingSettings;
+use App\Federation\Topology;
 use App\Http\Controllers\Controller;
 use App\Models\Channel;
+use App\Models\Instance;
 use App\Models\Setting;
 use App\Sms\PhoneNumber;
 use App\Sms\SmsSettings;
@@ -43,7 +45,9 @@ class SettingsController extends Controller
             'adminUrlMissing' => ApprovalSettings::adminUrlMissing(),
             'adminUrlFallback' => ApprovalSettings::fallbackAdminUrl(),
             'locale' => ApprovalSettings::locale(),
-            'telegramOwner' => ApprovalSettings::isTelegramOwner(),
+            'telegramOwner' => ApprovalSettings::telegramOwnerId() ?? ApprovalSettings::TELEGRAM_OWNER_NONE,
+            'instances' => Instance::query()->orderBy('name')->get(),
+            'hubId' => app(Topology::class)->hubId() ?? app(LocalInstance::class)->id(),
             'require2fa' => TwoFactor::required(),
             'oidc' => OidcSettings::all(),
             'oidcHasSecret' => OidcSettings::hasClientSecret(),
@@ -53,16 +57,18 @@ class SettingsController extends Controller
         ]);
     }
 
-    public function update(Request $request, LocalInstance $instance): RedirectResponse
+    public function update(Request $request): RedirectResponse
     {
         $data = $request->validate([
             'admin_url' => ['nullable', 'url:https,http', 'max:255'],
             'notification_locale' => ['required', Rule::in(config('portal.locales'))],
-            'telegram_owner' => ['boolean'],
+            // Instance that polls Telegram (CONCEPT.md §10.5) or "none".
+            'telegram_owner' => ['required', 'string', Rule::in([ApprovalSettings::TELEGRAM_OWNER_NONE,
+                ...Instance::query()->pluck('id')->all()])],
         ]);
         Setting::put('admin_url', isset($data['admin_url']) ? rtrim($data['admin_url'], '/') : null);
         Setting::put('notification_locale', $data['notification_locale']);
-        Setting::put('telegram_owner', $request->boolean('telegram_owner') ? $instance->id() : 'none');
+        Setting::put('telegram_owner', $data['telegram_owner']);
         Audit::log('settings.updated', null, ['keys' => ['admin_url', 'notification_locale', 'telegram_owner']]);
 
         return back()->with('status', __('portal.saved'));

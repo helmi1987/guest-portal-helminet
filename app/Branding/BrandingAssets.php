@@ -11,7 +11,8 @@ use RuntimeException;
  * parser, never the file name), SVG sanitized, stored as <sha256>.<ext> in the branding folder of
  * the data directory (part of the backups). Settings reference a file by hash + extension, so the
  * same file is stored once and URLs change with the content (long browser caching).
- * Files are local per instance; replication carries only the reference (CONCEPT.md §10.3).
+ * Files are local per instance; replication carries only the reference, a missing file is fetched
+ * from another instance (App\Federation\BrandingFiles, CONCEPT.md §10.3).
  */
 final class BrandingAssets
 {
@@ -67,20 +68,57 @@ final class BrandingAssets
         }
 
         $hash = hash('sha256', $bytes);
-        $dir = $this->dir();
-        if (! is_dir($dir) && ! @mkdir($dir, 0755, true) && ! is_dir($dir)) {
-            throw new RuntimeException('Branding folder cannot be created.');
-        }
-        $target = "$dir/$hash.$ext";
-        if (! is_file($target)) {
-            $tmp = "$dir/.tmp-".bin2hex(random_bytes(6));
-            if (file_put_contents($tmp, $bytes) !== strlen($bytes) || ! @chmod($tmp, 0644) || ! rename($tmp, $target)) {
-                @unlink($tmp);
-                throw new RuntimeException('Branding file cannot be written.');
-            }
-        }
+        $this->write("$hash.$ext", $bytes);
 
         return ['hash' => $hash, 'ext' => $ext];
+    }
+
+    /**
+     * Stores a file received from another instance (CONCEPT.md §10.3) under its referenced name, after
+     * the same checks as an upload: size limit and type detection of a kind referencing it, and the
+     * content (after detection, i.e. sanitized SVG) must match the hash of the name.
+     *
+     * @param  list<string>  $kinds  kinds (logo, favicon) the file is referenced as
+     *
+     * @throws BrandingException
+     */
+    public function import(string $file, string $bytes, array $kinds): void
+    {
+        if (! preg_match(self::FILE_PATTERN, $file, $m)) {
+            throw new BrandingException('invalid_type');
+        }
+        if (hash('sha256', $bytes) !== $m[1]) {
+            throw new BrandingException('hash_mismatch');
+        }
+        $error = 'invalid_type';
+        foreach ($kinds as $kind) {
+            if (! isset(self::TYPES[$kind])) {
+                continue;
+            }
+            $max = (int) config($kind === self::LOGO ? 'portal.branding.logo_max_bytes' : 'portal.branding.favicon_max_bytes');
+            if ($bytes === '' || strlen($bytes) > $max) {
+                $error = 'too_large';
+
+                continue;
+            }
+            try {
+                [$ext, $checked] = $this->detect($bytes, $kind);
+            } catch (BrandingException $e) {
+                $error = $e->getMessage();
+
+                continue;
+            }
+            // The sender stored the checked (sanitized) bytes: they must come back unchanged.
+            if ($ext !== $m[2] || $checked !== $bytes) {
+                $error = 'hash_mismatch';
+
+                continue;
+            }
+            $this->write($file, $checked);
+
+            return;
+        }
+        throw new BrandingException($error);
     }
 
     /** Absolute path of a stored file, null if the name is malformed or the file is missing locally. */
@@ -138,6 +176,23 @@ final class BrandingAssets
         }
 
         return $deleted;
+    }
+
+    /** Writes a file atomically (no-op when it exists: the name is its content hash). */
+    private function write(string $file, string $bytes): void
+    {
+        $dir = $this->dir();
+        if (! is_dir($dir) && ! @mkdir($dir, 0755, true) && ! is_dir($dir)) {
+            throw new RuntimeException('Branding folder cannot be created.');
+        }
+        $target = "$dir/$file";
+        if (! is_file($target)) {
+            $tmp = "$dir/.tmp-".bin2hex(random_bytes(6));
+            if (file_put_contents($tmp, $bytes) !== strlen($bytes) || ! @chmod($tmp, 0644) || ! rename($tmp, $target)) {
+                @unlink($tmp);
+                throw new RuntimeException('Branding file cannot be written.');
+            }
+        }
     }
 
     /**

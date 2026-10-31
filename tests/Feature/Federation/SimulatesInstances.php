@@ -31,7 +31,8 @@ trait SimulatesInstances
             DB::purge($connection);
             Artisan::call('migrate', ['--database' => $connection, '--force' => true]);
             $instance = new LocalInstance;
-            $this->sims[$name] = ['instance' => $instance, 'hlc' => new Hlc($instance), 'dir' => null];
+            $branding = sys_get_temp_dir().'/portal-test-'.getmypid().'/branding-'.$name.'-'.bin2hex(random_bytes(3));
+            $this->sims[$name] = ['instance' => $instance, 'hlc' => new Hlc($instance), 'dir' => null, 'branding' => $branding];
             $this->on($name, fn () => app(LocalInstance::class)->id());
         }
     }
@@ -61,8 +62,10 @@ trait SimulatesInstances
 
     protected function on(string $name, Closure $callback): mixed
     {
-        $previous = [DB::getDefaultConnection(), app(LocalInstance::class), app(Hlc::class), config('portal.federation.dir')];
-        $this->bind("sim_$name", $this->sims[$name]['instance'], $this->sims[$name]['hlc'], $this->sims[$name]['dir'] ?? $previous[3]);
+        $previous = [DB::getDefaultConnection(), app(LocalInstance::class), app(Hlc::class), config('portal.federation.dir'),
+            config('portal.branding.dir')];
+        $this->bind("sim_$name", $this->sims[$name]['instance'], $this->sims[$name]['hlc'], $this->sims[$name]['dir'] ?? $previous[3],
+            $this->sims[$name]['branding']);
         try {
             return $callback();
         } finally {
@@ -119,10 +122,10 @@ trait SimulatesInstances
         return $row === null ? null : (array) $row;
     }
 
-    private function bind(string $connection, LocalInstance $instance, Hlc $hlc, ?string $dir = null): void
+    private function bind(string $connection, LocalInstance $instance, Hlc $hlc, ?string $dir = null, ?string $branding = null): void
     {
         DB::setDefaultConnection($connection);
-        config(['portal.federation.dir' => $dir]);
+        config(['portal.federation.dir' => $dir, 'portal.branding.dir' => $branding]);
         app()->instance(LocalInstance::class, $instance);
         app()->instance(Hlc::class, $hlc);
         app()->forgetInstance(Outbox::class);

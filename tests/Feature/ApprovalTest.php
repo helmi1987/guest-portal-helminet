@@ -161,7 +161,7 @@ class ApprovalTest extends TestCase
             'config' => ['bot_token' => '', 'chat_id' => '-100456']])->assertSessionHasNoErrors();
         $this->assertSame(['test-token', '-100456'], [$channel->fresh()->conf('bot_token'), $channel->fresh()->conf('chat_id')]);
 
-        $this->onZone('admin')->actingAs($admin)->post('/admin/settings', ['notification_locale' => 'de', 'telegram_owner' => '0'])
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings', ['notification_locale' => 'de', 'telegram_owner' => 'none'])
             ->assertRedirect()->assertSessionHasNoErrors();
         $this->assertFalse(ApprovalSettings::isTelegramOwner());
         $this->onZone('admin')->actingAs(User::factory()->create())->get('/admin/settings')->assertForbidden();

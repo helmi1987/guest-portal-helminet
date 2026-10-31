@@ -448,6 +448,7 @@ return [
             'unknown' => 'Demande inconnue.',
             'done' => 'Enregistré.',
             'closed' => 'Déjà traitée ou expirée.',
+            'unreachable' => 'L\'instance de cette demande est injoignable. Réessayez plus tard ou décidez dans l\'interface d\'administration.',
         ],
     ],
     'profile' => [
@@ -525,11 +526,12 @@ return [
     'settings' => [
         'notifications' => 'Notifications',
         'admin_url' => 'URL admin pour les liens',
-        'admin_url_help' => 'URL de base du port admin tel que les approbateurs l\'atteignent (VPN ou reverse proxy). Utilisée dans les liens signés d\'approbation.',
+        'admin_url_help' => 'URL de base du port admin tel que les approbateurs l\'atteignent (VPN ou reverse proxy). Utilisée dans les liens signés d\'approbation. En fédération, l\'URL admin de cette instance sur la page fédération prime si elle est définie (aussi pour l\'URI de redirection OIDC).',
         'admin_url_missing' => 'Non défini : les liens et l\'URI de redirection OIDC utilisent :url (APP_URL avec le port d\'administration). Saisir l\'URL par laquelle les approbateurs et le fournisseur d\'identité atteignent le port d\'administration.',
         'notification_locale' => 'Langue des notifications',
-        'telegram_owner' => 'Cette instance reçoit les boutons Telegram (Telegram owner)',
-        'telegram_owner_help' => 'Une seule instance peut interroger les mises à jour Telegram.',
+        'telegram_owner' => 'Telegram owner (interroge les boutons Telegram)',
+        'telegram_owner_help' => 'Une seule instance interroge les mises à jour Telegram, par défaut le hub. Les boutons des demandes d\'autres instances leur sont transmis.',
+        'telegram_owner_none' => 'Aucune (boutons Telegram désactivés)',
         'sms' => 'Connexion par SMS',
         'sms_duration' => 'Durée d\'accès (heures, à partir de la vérification)',
         'sms_countries' => 'Pays autorisés',

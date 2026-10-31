@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use App\Database\SQLiteConnection;
 use App\Federation\ApplyHooks;
+use App\Federation\BrandingFiles;
 use App\Federation\DataKey;
 use App\Federation\Outbox;
 use App\Federation\SessionHooks;
@@ -27,7 +28,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(Outbox::class);
         $this->app->singleton(ApplyHooks::class);
         // Disconnects of local sessions after replicated changes (CONCEPT.md §10.4).
-        $this->app->afterResolving(ApplyHooks::class, fn (ApplyHooks $hooks) => (new SessionHooks)->register($hooks));
+        $this->app->afterResolving(ApplyHooks::class, function (ApplyHooks $hooks) {
+            (new SessionHooks)->register($hooks);
+            // Branding files referenced by replicated settings (CONCEPT.md §10.3).
+            app(BrandingFiles::class)->register($hooks);
+        });
     }
 
     public function boot(): void

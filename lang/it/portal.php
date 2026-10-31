@@ -448,6 +448,7 @@ return [
             'unknown' => 'Richiesta sconosciuta.',
             'done' => 'Salvato.',
             'closed' => 'Già decisa o scaduta.',
+            'unreachable' => 'L\'istanza di questa richiesta non è raggiungibile. Riprova più tardi o decidi nell\'interfaccia di amministrazione.',
         ],
     ],
     'profile' => [
@@ -525,11 +526,12 @@ return [
     'settings' => [
         'notifications' => 'Notifiche',
         'admin_url' => 'URL admin per i link',
-        'admin_url_help' => 'URL di base della porta admin come raggiunta da chi approva (VPN o reverse proxy). Usato nei link firmati di approvazione.',
+        'admin_url_help' => 'URL di base della porta admin come raggiunta da chi approva (VPN o reverse proxy). Usato nei link firmati di approvazione. In una federazione prevale l\'URL admin di questa istanza nella pagina federazione, se impostato (anche per l\'URI di reindirizzamento OIDC).',
         'admin_url_missing' => 'Non impostato: i link e l\'URI di reindirizzamento OIDC usano :url (APP_URL con la porta di amministrazione). Inserire l\'URL con cui gli approvatori e il provider di identità raggiungono la porta di amministrazione.',
         'notification_locale' => 'Lingua delle notifiche',
-        'telegram_owner' => 'Questa istanza riceve i pulsanti Telegram (Telegram owner)',
-        'telegram_owner_help' => 'Esattamente un\'istanza può interrogare gli aggiornamenti Telegram.',
+        'telegram_owner' => 'Telegram owner (interroga i pulsanti Telegram)',
+        'telegram_owner_help' => 'Esattamente un\'istanza interroga gli aggiornamenti Telegram, per impostazione predefinita l\'hub. I pulsanti delle richieste di altre istanze vengono inoltrati a queste.',
+        'telegram_owner_none' => 'Nessuna (pulsanti Telegram disattivati)',
         'sms' => 'Accesso via SMS',
         'sms_duration' => 'Durata dell\'accesso (ore, dalla verifica)',
         'sms_countries' => 'Paesi ammessi',

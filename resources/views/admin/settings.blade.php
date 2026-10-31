@@ -16,11 +16,14 @@
                     <option value="{{ $code }}" @selected(old('notification_locale', $locale) === $code)>{{ __('portal.languages.'.$code) }}</option>
                 @endforeach
             </select></label>
-        <label class="flex items-start gap-2 text-sm md:col-span-2">
-            <input type="hidden" name="telegram_owner" value="0">
-            <input type="checkbox" name="telegram_owner" value="1" @checked($telegramOwner) class="mt-0.5">
-            <span>{{ __('portal.settings.telegram_owner') }}<br><span class="text-xs text-slate-500">{{ __('portal.settings.telegram_owner_help') }}</span></span>
-        </label>
+        <label class="label md:col-span-2">{{ __('portal.settings.telegram_owner') }}
+            <select name="telegram_owner" class="field">
+                @foreach ($instances as $instance)
+                    <option value="{{ $instance->id }}" @selected(old('telegram_owner', $telegramOwner) === $instance->id)>{{ $instance->name }}{{ $instance->id === $hubId ? ' ('.__('portal.federation.hub').')' : '' }}</option>
+                @endforeach
+                <option value="none" @selected(old('telegram_owner', $telegramOwner) === 'none')>{{ __('portal.settings.telegram_owner_none') }}</option>
+            </select>
+            <span class="text-xs text-slate-500">{{ __('portal.settings.telegram_owner_help') }}</span></label>
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 

@@ -17,9 +17,11 @@ class ApprovalLinks
     {
         $choices = ['confirm', ...array_keys(ApprovalSettings::durations()), 'deny'];
         $links = [];
+        // Admin URL of the instance where the guest waits (CONCEPT.md §10.5).
+        $base = ApprovalSettings::adminUrlFor($request->origin_instance_id);
         foreach ($choices as $choice) {
             $params = ['approval' => $request->id] + ($choice === 'confirm' ? [] : ['choice' => $choice]);
-            $links[$choice] = ApprovalSettings::adminUrl()
+            $links[$choice] = $base
                 .URL::temporarySignedRoute('approval.link', $request->expires_at, $params, absolute: false);
         }
 

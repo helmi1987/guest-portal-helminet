@@ -474,9 +474,9 @@ Features:
 
 ## 10. Federation (multi-instance)
 
-Decisions 2026-10-29 (M7). Implementation status: parts A-G (change log, data key, apply engine,
-federation listener with mTLS, pairing and admin page, sync, session hooks/roaming/limited mode)
-implemented; Telegram forwarding, branding files, purge, restore resync follow (§14).
+Decisions 2026-10-29 (M7). Implementation status: parts A-I (change log, data key, apply engine,
+federation listener with mTLS, pairing and admin page, sync, session hooks/roaming/limited mode,
+Telegram forwarding, branding files) implemented; purge, restore resync follow (§14).
 
 ### 10.1 Model
 
@@ -612,7 +612,13 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
 - Clocks: NTP required. Heartbeats compare clocks: warning above 30 s skew, replication with that peer
   paused above 5 min.
 - Branding files: settings reference logo/favicon by content hash; an apply hook fetches a missing file
-  from the origin, then other peers (sha256, type detection and limits checked).
+  from the origin, then other peers (sha256, type detection and limits checked). Implemented (part I): apply
+  hooks on the setting `branding` and on site settings queue a job; it asks the instance that wrote the
+  reference (instance id in the row's version), then its origin, then the other direct peers
+  (`GET /federation/branding/<sha256>.<ext>`, served only from local files; a non-hub instance asks the hub,
+  which fetched it itself). Checks as for an upload: size limit of a kind referencing it (curl aborts larger
+  downloads), type detection, and the bytes must equal their sanitized form (SVG) and the hash of the name.
+  Files not available yet are retried by the sync run after 5 min.
 
 | Replicated | Local only |
 |---|---|
@@ -661,6 +667,16 @@ implemented; Telegram forwarding, branding files, purge, restore resync follow (
 - One Telegram bot, polled (`getUpdates`) only by the **Telegram owner** (default the hub), switchable
   manually in the admin UI (list of instances). Callbacks for requests of other instances are forwarded
   to `/federation/approvals/{id}/decide` at the origin instance.
+- Implemented (part H): setting `telegram_owner` = instance id, "none" (polling off) or unset; unset, a
+  former boolean value or a removed instance mean the hub (this instance without a hub). The settings page
+  offers the instances and "none". Every instance still sends and edits the Telegram messages of its own
+  requests; the owner checks group and allowlist, then forwards a press for another origin (directly, or
+  to the hub, which relays to its direct peer) with the choice and the clicker's name; the origin decides
+  (`decided_via` telegram) and edits its messages; the clicker gets "saved", "already decided" or
+  "instance unreachable". The decide endpoint accepts a press only from the Telegram owner (the hub relays
+  only the owner's presses; the origin also accepts the hub as relay). Approval links (Gotify, webhook) and
+  the OIDC redirect URI use `instances.admin_url` of this instance (federation page), else the replicated
+  admin URL setting and its fallback (decision 2026-10-31: the setting is shared, the instance URL is not).
 
 ### 10.6 Security of the federation
 
@@ -795,7 +811,8 @@ scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants h
 M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
 (apply engine with conflict rules), D (federation listener, mTLS pin, peer client), E (pairing, federation
 page), F (signed events, push/pull/relay, heartbeat, skew and protocol pause) and G (apply hooks, remote
-sessions and disconnect, home instance, roaming, limited mode) implemented; H-L open.
+sessions and disconnect, home instance, roaming, limited mode), H (Telegram owner and forwarding) and I
+(branding files) implemented; J-L open.
 
 | # | Content | Acceptance criteria |
 |---|---|---|

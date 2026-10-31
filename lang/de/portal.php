@@ -448,6 +448,7 @@ return [
             'unknown' => 'Unbekannte Anfrage.',
             'done' => 'Gespeichert.',
             'closed' => 'Bereits entschieden oder abgelaufen.',
+            'unreachable' => 'Die Instanz dieser Anfrage ist nicht erreichbar. Bitte später erneut versuchen oder per Admin-Oberfläche entscheiden.',
         ],
     ],
     'profile' => [
@@ -525,11 +526,12 @@ return [
     'settings' => [
         'notifications' => 'Benachrichtigungen',
         'admin_url' => 'Admin-URL für Links',
-        'admin_url_help' => 'Basis-URL des Admin-Ports, wie ihn die Freigebenden erreichen (VPN oder Reverse Proxy). Wird in den signierten Freigabe-Links verwendet.',
+        'admin_url_help' => 'Basis-URL des Admin-Ports, wie ihn die Freigebenden erreichen (VPN oder Reverse Proxy). Wird in den signierten Freigabe-Links verwendet. In einer Föderation gilt die Admin-URL dieser Instanz auf der Seite Föderation, falls gesetzt (auch für die OIDC-Redirect-URI).',
         'admin_url_missing' => 'Nicht gesetzt: Links und die OIDC-Redirect-URI verwenden :url (APP_URL mit dem Admin-Port). Die URL eintragen, unter der Freigebende und der Identity Provider den Admin-Port erreichen.',
         'notification_locale' => 'Sprache der Benachrichtigungen',
-        'telegram_owner' => 'Diese Instanz empfängt Telegram-Tastendrücke (Telegram-Owner)',
-        'telegram_owner_help' => 'Genau eine Instanz darf Telegram-Updates abfragen.',
+        'telegram_owner' => 'Telegram-Owner (fragt Telegram-Tastendrücke ab)',
+        'telegram_owner_help' => 'Genau eine Instanz fragt die Telegram-Updates ab, standardmässig der Hub. Tastendrücke für Anfragen anderer Instanzen werden an diese weitergeleitet.',
+        'telegram_owner_none' => 'Keine (Telegram-Tasten aus)',
         'sms' => 'SMS-Anmeldung',
         'sms_duration' => 'Zugangsdauer (Stunden, ab Bestätigung)',
         'sms_countries' => 'Erlaubte Länder',

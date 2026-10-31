@@ -3,20 +3,21 @@
 namespace App\Approval;
 
 use App\Approval\Channels\TelegramChannel;
-use App\Models\ApprovalRequest;
+use App\Federation\RemoteApprovals;
 use App\Models\Channel;
 use App\Models\LocalSetting;
-use App\Support\LocalInstance;
 use Illuminate\Support\Facades\Log;
+use Throwable;
 
 /**
  * Long polling of Telegram updates (getUpdates) for button presses, run by the Telegram owner only
  * (CONCEPT.md §7.2 C, §10.5). A press is accepted only from the configured group and, if an
- * allowlist is set, from a listed user id.
+ * allowlist is set, from a listed user id. Presses for requests of other instances are forwarded to
+ * the instance where the guest waits (RemoteApprovals).
  */
 class TelegramPoller
 {
-    public function __construct(private TelegramChannel $telegram, private ApprovalService $approvals) {}
+    public function __construct(private TelegramChannel $telegram, private RemoteApprovals $remote) {}
 
     /** One getUpdates call; returns the number of updates processed. */
     public function pollOnce(Channel $channel, int $timeout): int
@@ -53,10 +54,7 @@ class TelegramPoller
         }
 
         [$tag, $requestId, $origin, $choice] = array_pad(explode(':', (string) ($callback['data'] ?? '')), 4, null);
-        $durations = ApprovalSettings::durations();
-        $request = $tag === 'a' ? ApprovalRequest::find($requestId) : null;
-        // Requests of other instances: forwarding to the origin follows with federation (M7).
-        if ($request === null || $origin !== app(LocalInstance::class)->id() || ($choice !== 'deny' && ! isset($durations[$choice]))) {
+        if ($tag !== 'a' || ! is_string($requestId) || ! is_string($origin) || ! is_string($choice)) {
             $this->answer($channel, $callback, 'unknown');
 
             return;
@@ -64,8 +62,15 @@ class TelegramPoller
 
         $by = 'Telegram: '.trim(data_get($callback, 'from.first_name', '').' '.data_get($callback, 'from.last_name', ''))
             .(data_get($callback, 'from.username') ? ' (@'.data_get($callback, 'from.username').')' : '');
-        $done = $this->approvals->decide($request, $choice === 'deny' ? null : $durations[$choice], $by, 'telegram');
-        $this->answer($channel, $callback, $done ? 'done' : 'closed');
+        // Requests of other instances are decided at their origin (forwarded, through the hub if needed).
+        try {
+            $status = $this->remote->decide($origin, $requestId, $choice, $by);
+        } catch (Throwable $e) {
+            Log::warning('Telegram decision could not be forwarded', ['request' => $requestId, 'origin' => $origin,
+                'error' => $e->getMessage()]);
+            $status = 'unreachable';
+        }
+        $this->answer($channel, $callback, $status);
     }
 
     private function answer(Channel $channel, array $callback, string $key): void

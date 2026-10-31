@@ -17,6 +17,9 @@ trait FederatedHttp
     /** @var list<string> */
     protected array $down = [];
 
+    /** @var list<string> hosts answered by other fakes registered before routeFederation() */
+    protected array $fakedHosts = [];
+
     /** @var array<string, int> per sim: clock offset in seconds while it answers (clock skew) */
     protected array $clockOffset = [];
 
@@ -29,6 +32,9 @@ trait FederatedHttp
         }
         Http::fake(function (Request $request) use ($names) {
             $host = (string) parse_url($request->url(), PHP_URL_HOST);
+            if (in_array($host, $this->fakedHosts, true)) {
+                return null; // every stub is evaluated: leave these to the other fakes
+            }
             $target = explode('.', $host)[0];
             if (! in_array($target, $names, true) || in_array($target, $this->down, true)) {
                 return Http::failedConnection('connection refused');

@@ -448,6 +448,7 @@ return [
             'unknown' => 'Unknown request.',
             'done' => 'Saved.',
             'closed' => 'Already decided or expired.',
+            'unreachable' => 'The instance of this request is unreachable. Try again later or decide in the admin UI.',
         ],
     ],
     'profile' => [
@@ -525,11 +526,12 @@ return [
     'settings' => [
         'notifications' => 'Notifications',
         'admin_url' => 'Admin URL for links',
-        'admin_url_help' => 'Base URL of the admin port as reached by approvers (VPN or reverse proxy). Used in the signed approve/deny links.',
+        'admin_url_help' => 'Base URL of the admin port as reached by approvers (VPN or reverse proxy). Used in the signed approve/deny links. In a federation the admin URL of this instance on the federation page wins when set (also for the OIDC redirect URI).',
         'admin_url_missing' => 'Not set: links and the OIDC redirect URI use :url (APP_URL with the admin port). Set the URL under which approvers and the identity provider reach the admin port.',
         'notification_locale' => 'Language of notifications',
-        'telegram_owner' => 'This instance receives Telegram button presses (Telegram owner)',
-        'telegram_owner_help' => 'Exactly one instance may poll Telegram updates.',
+        'telegram_owner' => 'Telegram owner (polls Telegram button presses)',
+        'telegram_owner_help' => 'Exactly one instance polls Telegram updates, by default the hub. Presses for requests of other instances are forwarded to them.',
+        'telegram_owner_none' => 'None (Telegram buttons off)',
         'sms' => 'SMS login',
         'sms_duration' => 'Access duration (hours, from verification)',
         'sms_countries' => 'Allowed countries',

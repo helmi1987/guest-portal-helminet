@@ -12,6 +12,10 @@ Route::middleware('federation.peer')->group(function () {
     Route::get('/sessions', [FederationApiController::class, 'sessions'])->name('federation.sessions');
     Route::post('/sessions/{session}/disconnect', [FederationApiController::class, 'disconnect'])->name('federation.sessions.disconnect')
         ->where('session', '[0-9A-Za-z]{26}');
+    Route::get('/branding/{file}', [FederationApiController::class, 'branding'])->name('federation.branding')
+        ->where('file', '[a-f0-9]{64}\.(png|jpg|webp|svg|ico)');
+    Route::post('/approvals/{approval}/decide', [FederationApiController::class, 'decideApproval'])->name('federation.approvals.decide')
+        ->where('approval', '[0-9A-Za-z]{26}');
 });
 
 // Pairing: the joining instance is not registered yet; the one-time join token authorizes, its
