@@ -131,7 +131,7 @@ class RouterStateTest extends TestCase
         $this->assertSame('portal-ro', $this->nas->api_user);
         $this->assertTrue($this->nas->hasApiAccess());
         $this->assertSame(443, $this->nas->apiPort());
-        // Replicated with the router: the event payload carries only ciphertexts
+        // Local to the instance: not part of the replication payload at all
         $payload = (string) DB::table('federation_events')->where('table', 'nas_clients')->orderByDesc('seq')->value('payload');
         $this->assertStringNotContainsString('Test pass 1', $payload);
         $this->assertStringNotContainsString('portal-ro', $payload);

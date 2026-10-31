@@ -697,7 +697,7 @@ lists of the assistant. It is safe when entries do not exist and logs out connec
 
 ## 10c. Router state query (read-only API)
 
-Optional, per router (site page, Routers, "Router API"): the setup assistant reads the router
+Optional, per router (site page, Routers, "Router API"); the API access is local to the instance (not replicated via federation, encrypted with APP_KEY): the setup assistant reads the router
 configuration (print only) to check its blocks and to prefill empty inputs.
 1. Router certificate first (sections 6 and 8): the certificate script imports it as `guest-portal`.
 2. On the router: the block "Read-only API access" of the router (setup assistant, "Router state") adds

@@ -159,7 +159,7 @@ return [
     'router_api' => [
         'title' => 'API del router (sola lettura, interrogazione dello stato)',
         'not_configured' => 'non configurata',
-        'help' => 'Facoltativo: l\'assistente di configurazione legge la configurazione del router (solo print) per verificare i suoi blocchi e precompilare i campi vuoti. TLS è verificato tramite la chiave fissata: per default il certificato router gestito da questo portale (da impostare sul servizio www-ssl o api-ssl), oppure il pin inserito qui. Utente e password sono salvati cifrati con la chiave dati della federazione; la password non viene mai mostrata.',
+        'help' => 'Facoltativo: l\'assistente di configurazione legge la configurazione del router (solo print) per verificare i suoi blocchi e precompilare i campi vuoti. TLS è verificato tramite la chiave fissata: per default il certificato router gestito da questo portale (da impostare sul servizio www-ssl o api-ssl), oppure il pin inserito qui. Utente e password sono salvati cifrati con la chiave dell\'istanza (APP_KEY) e validi solo per questa istanza (non replicati); la password non viene mai mostrata.',
         'host' => 'Host API (IP o nome del router)',
         'type' => 'Tipo di API',
         'types' => [

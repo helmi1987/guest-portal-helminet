@@ -159,7 +159,7 @@ return [
     'router_api' => [
         'title' => 'API du routeur (lecture seule, interrogation de l\'état)',
         'not_configured' => 'non configurée',
-        'help' => 'Facultatif : l\'assistant de configuration lit la configuration du routeur (print uniquement) pour vérifier ses blocs et préremplir les champs vides. TLS est vérifié par la clé épinglée : par défaut le certificat routeur géré par ce portail (à définir sur le service www-ssl ou api-ssl), ou l\'épingle saisie ici. Utilisateur et mot de passe sont stockés chiffrés avec la clé de données de la fédération ; le mot de passe n\'est jamais affiché.',
+        'help' => 'Facultatif : l\'assistant de configuration lit la configuration du routeur (print uniquement) pour vérifier ses blocs et préremplir les champs vides. TLS est vérifié par la clé épinglée : par défaut le certificat routeur géré par ce portail (à définir sur le service www-ssl ou api-ssl), ou l\'épingle saisie ici. Utilisateur et mot de passe sont stockés chiffrés avec la clé de l\'instance (APP_KEY) et propres à cette instance (non répliqués) ; le mot de passe n\'est jamais affiché.',
         'host' => 'Hôte API (IP ou nom du routeur)',
         'type' => 'Type d\'API',
         'types' => [

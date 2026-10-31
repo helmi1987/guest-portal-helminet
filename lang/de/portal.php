@@ -159,7 +159,7 @@ return [
     'router_api' => [
         'title' => 'Router-API (nur lesen, Statusabfrage)',
         'not_configured' => 'nicht eingerichtet',
-        'help' => 'Optional: Der Einrichtungsassistent liest die Router-Konfiguration (nur print), prüft seine Blöcke und füllt leere Eingaben vor. TLS wird über den gepinnten Schlüssel vertraut: standardmässig das von diesem Portal verwaltete Router-Zertifikat (auf dem Dienst www-ssl oder api-ssl setzen) oder der hier eingetragene Pin. Benutzer und Passwort werden mit dem Föderations-Datenschlüssel verschlüsselt gespeichert; das Passwort wird nie angezeigt.',
+        'help' => 'Optional: Der Einrichtungsassistent liest die Router-Konfiguration (nur print), prüft seine Blöcke und füllt leere Eingaben vor. TLS wird über den gepinnten Schlüssel vertraut: standardmässig das von diesem Portal verwaltete Router-Zertifikat (auf dem Dienst www-ssl oder api-ssl setzen) oder der hier eingetragene Pin. Benutzer und Passwort werden mit dem Instanzschlüssel (APP_KEY) verschlüsselt gespeichert und gelten nur für diese Instanz (nicht repliziert); das Passwort wird nie angezeigt.',
         'host' => 'API-Host (Router-IP oder Name)',
         'type' => 'API-Typ',
         'types' => [

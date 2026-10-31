@@ -159,7 +159,7 @@ return [
     'router_api' => [
         'title' => 'Router API (read-only, state query)',
         'not_configured' => 'not configured',
-        'help' => 'Optional: lets the setup assistant read the router configuration (print only) to check its blocks and prefill empty inputs. TLS is trusted by the pinned key: by default the router certificate managed by this portal (set it on the service www-ssl or api-ssl), or the pin entered here. User and password are stored encrypted with the federation data key; the password is never shown.',
+        'help' => 'Optional: lets the setup assistant read the router configuration (print only) to check its blocks and prefill empty inputs. TLS is trusted by the pinned key: by default the router certificate managed by this portal (set it on the service www-ssl or api-ssl), or the pin entered here. User and password are stored encrypted with the instance key (APP_KEY) and are local to this instance (not replicated to other instances); the password is never shown.',
         'host' => 'API host (router IP or name)',
         'type' => 'API type',
         'types' => [
