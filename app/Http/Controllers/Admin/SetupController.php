@@ -40,10 +40,12 @@ class SetupController extends Controller
         // or stale for any router with API access.
         $apiRouters = $routers->filter(fn (NasClient $nas) => $nas->hasApiAccess());
         $stateDriver = $driver instanceof RouterStateDriver ? $driver : null;
-        $source = $stateDriver ? $apiRouters->first(fn (NasClient $nas) => is_array($nas->router_state)) : null;
+        $inputsAt = $this->inputsChangedAt($site);
+        // Prefill only from a successful, fresh state of the router's current API host
+        $source = $stateDriver ? $apiRouters->first(fn (NasClient $nas) => is_array($nas->router_state)
+            && $this->fresh($nas, $inputsAt) && ($nas->router_state['host'] ?? null) === $nas->api_host) : null;
         $derived = $source ? $this->derived($driver, $site, $source->router_state) : [];
         $view = $derived !== [] ? $site->withDerivedSetup(array_map(fn ($d) => $d[0], $derived)) : $site;
-        $inputsAt = $this->inputsChangedAt($site);
         $states = $routers->mapWithKeys(fn (NasClient $nas) => [$nas->id => [
             'fresh' => $this->fresh($nas, $inputsAt),
             'compare' => $stateDriver && is_array($nas->router_state) ? $stateDriver->compareState($view, $nas->router_state) : null,
@@ -82,12 +84,21 @@ class SetupController extends Controller
     /** Query every router of the site with API access ("Refresh"). */
     public function refreshState(Site $site, RouterStateQuery $query): RedirectResponse
     {
+        // One overall deadline for the whole request; routers not reached get an error state
+        $until = microtime(true) + (int) config('portal.router_api.total_deadline', 40);
         $failed = 0;
         foreach ($site->nasClients as $router) {
-            if ($router->hasApiAccess()) {
-                $router->setRelation('site', $site);
-                $failed += $query->run($router) === null ? 0 : 1;
+            if (! $router->hasApiAccess()) {
+                continue;
             }
+            $router->setRelation('site', $site);
+            if (microtime(true) >= $until) {
+                $router->storeRouterState(null, ['kind' => 'timeout', 'detail' => 'skipped: time limit']);
+                $failed++;
+
+                continue;
+            }
+            $failed += $query->run($router, $until) === null ? 0 : 1;
         }
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-state')

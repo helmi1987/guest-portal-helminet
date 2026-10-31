@@ -16,7 +16,7 @@ class RouterOsClients
     public function __construct(private readonly ApiConnector $connector) {}
 
     /** @throws RouterOsException */
-    public function for(NasClient $nas): RouterOsClient
+    public function for(NasClient $nas, ?float $deadline = null): RouterOsClient
     {
         if (! $nas->hasApiAccess()) {
             throw new RouterOsException('config', 'router API access is not configured');
@@ -26,9 +26,10 @@ class RouterOsClients
 
         return $nas->api_type === 'api-ssl'
             ? new ApiSslClient($this->connector, $nas->api_host, $nas->apiPort(), $nas->api_user, $nas->api_password, $pin,
-                (int) $config['connect_timeout'], (int) $config['timeout'], (int) $config['max_rows'])
+                (int) $config['connect_timeout'], (int) $config['timeout'], (int) $config['max_rows'], $deadline,
+                (int) ($config['max_bytes'] ?? 8388608), (int) ($config['max_word'] ?? 65536))
             : new RestClient($nas->api_host, $nas->apiPort(), $nas->api_user, $nas->api_password, $pin,
-                (int) $config['connect_timeout'], (int) $config['timeout']);
+                (int) $config['connect_timeout'], (int) $config['timeout'], (int) ($config['max_bytes'] ?? 8388608));
     }
 
     /** @throws RouterOsException */

@@ -23,7 +23,7 @@ class ApiSslClientTest extends TestCase
 
     public function test_length_prefixes_round_trip(): void
     {
-        foreach ([1, 0x7F, 0x80, 0x3FFF, 0x4000, 0x100000] as $n) {
+        foreach ([1, 0x7F, 0x80, 0x3FFF, 0x4000, 0x10000] as $n) {
             $word = str_repeat('a', $n);
             $c = new FakeApiConnection(fn () => [], null);
             $encoded = ApiSentence::encode([$word]);
@@ -37,6 +37,37 @@ class ApiSslClientTest extends TestCase
         $this->assertSame("\xDF\xFF\xFF", ApiSentence::length(0x1FFFFF));
         $this->assertSame("\xE0\x20\x00\x00", ApiSentence::length(0x200000));
         $this->assertSame("\xF0\x10\x00\x00\x00", ApiSentence::length(0x10000000));
+    }
+
+    public function test_response_caps_and_deadline(): void
+    {
+        $menus = ['/ip pool' => array_map(fn ($i) => ['name' => 'p'.$i], range(1, 40))];
+        $mk = fn () => new FakeApiConnection(FakeApiConnection::router('portal-ro', 'test-pass', $menus), self::PIN);
+        $kind = function (callable $f): string {
+            try {
+                $f();
+            } catch (RouterOsException $e) {
+                return $e->kind.': '.$e->getMessage();
+            }
+
+            return 'none';
+        };
+        // Too many sentences (max_rows 5 + slack)
+        $c = new ApiSslClient(FakeApiConnection::connector($mk()), '10.0.0.1', 8729, 'portal-ro', 'test-pass', self::PIN, 1, 1, 5);
+        $this->assertStringContainsString('protocol: answer has too many sentences', $kind(fn () => $c->print('/ip pool', ['name'])));
+        // Byte budget
+        $c = new ApiSslClient(FakeApiConnection::connector($mk()), '10.0.0.1', 8729, 'portal-ro', 'test-pass', self::PIN, 1, 1, 2000, null, 100);
+        $this->assertStringContainsString('protocol: answer too large', $kind(fn () => $c->print('/ip pool', ['name'])));
+        // Word cap
+        $c = new ApiSslClient(FakeApiConnection::connector($mk()), '10.0.0.1', 8729, 'portal-ro', 'test-pass', self::PIN, 1, 1, 2000, null, 8388608, 5);
+        $this->assertStringContainsString('protocol: word too long', $kind(fn () => $c->print('/ip pool', ['name'])));
+        // Deadline already passed
+        $c = new ApiSslClient(FakeApiConnection::connector($mk()), '10.0.0.1', 8729, 'portal-ro', 'test-pass', self::PIN, 1, 1, 2000, microtime(true) - 1);
+        $this->assertStringContainsString('timeout:', $kind(fn () => $c->print('/ip pool', ['name'])));
+        // Empty sentences count toward the byte budget (1 each)
+        $empty = new FakeApiConnection(fn (array $s) => ($s[0] ?? '') === '/login' ? [['!done']] : array_fill(0, 50, []), self::PIN);
+        $c = new ApiSslClient(FakeApiConnection::connector($empty), '10.0.0.1', 8729, 'portal-ro', 'test-pass', self::PIN, 1, 1, 2000, null, 10);
+        $this->assertStringContainsString('protocol: answer too large', $kind(fn () => $c->print('/ip pool', ['name'])));
     }
 
     public function test_login_then_print_with_proplist_and_or_query(): void

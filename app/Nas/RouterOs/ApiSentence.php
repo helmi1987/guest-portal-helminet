@@ -31,17 +31,22 @@ final class ApiSentence
     }
 
     /**
-     * Read one sentence (list of words) from the connection.
+     * Read one sentence (list of words) from the connection. $maxWord caps one word, $budget (by
+     * reference, optional) is the remaining byte budget of the whole response: it is decreased by the
+     * words and length prefixes read (an empty sentence costs 1) and exceeding it throws.
      *
      * @return list<string>
      *
      * @throws RouterOsException
      */
-    public static function read(ApiConnection $connection, int $maxWord = 1048576): array
+    public static function read(ApiConnection $connection, int $maxWord = 65536, ?int &$budget = null): array
     {
         $words = [];
         while (true) {
             $n = self::readLength($connection);
+            if ($budget !== null && ($budget -= max(1, $n)) < 0) {
+                throw new RouterOsException('protocol', 'answer too large');
+            }
             if ($n === 0) {
                 return $words;
             }

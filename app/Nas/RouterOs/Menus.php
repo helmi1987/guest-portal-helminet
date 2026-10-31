@@ -40,12 +40,12 @@ final class Menus
             throw new RouterOsException('config', 'an explicit property list is required');
         }
         foreach ($proplist as $prop) {
-            if (! is_string($prop) || ! preg_match('/^\.?[a-z0-9][a-z0-9.-]*$/', $prop) || preg_match(self::FORBIDDEN, $prop)) {
+            if (! is_string($prop) || ! preg_match('/^\.?[a-z0-9][a-z0-9.-]*$/D', $prop) || preg_match(self::FORBIDDEN, $prop)) {
                 throw new RouterOsException('config', 'property not allowed: '.(is_string($prop) ? $prop : gettype($prop)));
             }
         }
         foreach ($where as $condition) {
-            if (! is_string($condition) || ! preg_match('/^[a-z0-9][a-z0-9.-]*=[A-Za-z0-9._:\/,-]*$/', $condition)
+            if (! is_string($condition) || ! preg_match('/^[a-z0-9][a-z0-9.-]*=[A-Za-z0-9._:\/,-]*$/D', $condition)
                 || preg_match(self::FORBIDDEN, strstr($condition, '=', true))) {
                 throw new RouterOsException('config', 'condition not allowed');
             }

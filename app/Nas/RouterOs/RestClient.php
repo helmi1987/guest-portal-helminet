@@ -3,6 +3,8 @@
 namespace App\Nas\RouterOs;
 
 use App\Federation\PinningCurlFactory;
+use GuzzleHttp\Exception\GuzzleException;
+use GuzzleHttp\Exception\TransferException;
 use GuzzleHttp\Handler\CurlHandler;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\PendingRequest;
@@ -24,6 +26,7 @@ final class RestClient implements RouterOsClient
         private readonly string $pin,
         private readonly int $connectTimeout,
         private readonly int $timeout,
+        private readonly int $maxBytes = 8388608,
     ) {}
 
     public function print(string $menu, array $proplist, array $where = []): array
@@ -35,8 +38,15 @@ final class RestClient implements RouterOsClient
         }
         try {
             $response = $this->request()->post('/rest/'.implode('/', $segments).'/print', $body);
+            $length = (int) $response->header('Content-Length');
+            if ($length > $this->maxBytes || strlen($response->body()) > $this->maxBytes) {
+                throw new RouterOsException('protocol', 'answer too large');
+            }
         } catch (ConnectionException $e) {
             throw self::connectionError($e->getMessage());
+        } catch (GuzzleException $e) {
+            // Aborted by the size limit of the progress callback (or another transport error)
+            throw new RouterOsException('protocol', str_contains($e->getMessage(), 'answer too large') ? 'answer too large' : 'transport error: '.mb_substr($e->getMessage(), 0, 150));
         }
 
         $status = $response->status();
@@ -48,8 +58,10 @@ final class RestClient implements RouterOsClient
         }
         if ($status >= 400) {
             $message = (string) ($response->json('detail') ?: $response->json('message') ?: 'HTTP '.$status);
-            // Unknown menu (package not installed): "no such command" / "no such command prefix"
-            throw new RouterOsException($status === 400 || $status === 404 ? 'menu' : 'protocol', mb_substr($message, 0, 200));
+            // Unknown menu (package not installed): "no such command" / "no such command prefix"; other
+            // 400/404 answers (bad request, wrong path) are real errors with the router's detail
+            $missing = ($status === 400 || $status === 404) && preg_match('/no such (command|menu)/i', $message) === 1;
+            throw new RouterOsException($missing ? 'menu' : 'protocol', mb_substr($message, 0, 200));
         }
         $rows = $response->json();
         if (! is_array($rows)) {
@@ -77,7 +89,12 @@ final class RestClient implements RouterOsClient
             ->connectTimeout($this->connectTimeout)
             ->timeout($this->timeout)
             // Trust from the pinned public key only (see class comment); never verify=false without the pin
-            ->withOptions(['verify' => false])
+            ->withOptions(['verify' => false, 'progress' => function ($total, $downloaded) {
+                // Abort a download above the size limit while it runs (the body is not trusted to be small)
+                if ($downloaded > $this->maxBytes) {
+                    throw new TransferException('answer too large');
+                }
+            }])
             ->setHandler(new CurlHandler(['handle_factory' => new PinningCurlFactory($this->pin)]));
     }
 

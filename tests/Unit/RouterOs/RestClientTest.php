@@ -75,6 +75,24 @@ class RestClientTest extends TestCase
         Http::assertSentCount(7);
     }
 
+    public function test_400_404_are_menu_missing_only_with_a_no_such_command_detail(): void
+    {
+        Http::fake([
+            '*/rest/ip/pool/print' => Http::response(['error' => 400, 'detail' => 'no such command prefix'], 400),
+            '*/rest/ip/address/print' => Http::response(['error' => 404, 'detail' => 'no such command or directory (print)'], 404),
+            '*/rest/radius/print' => Http::response(['error' => 400, 'detail' => 'invalid value for argument proplist'], 400),
+            '*/rest/user/print' => Http::response('<html>nginx</html>', 404),
+            '*/rest/interface/print' => Http::response(str_repeat('x', 100), 200),
+        ]);
+        $this->assertSame('menu', $this->kind(fn () => $this->client()->print('/ip pool', ['name'])));
+        $this->assertSame('menu', $this->kind(fn () => $this->client()->print('/ip address', ['address'])));
+        $this->assertSame('protocol', $this->kind(fn () => $this->client()->print('/radius', ['address'])));
+        $this->assertSame('protocol', $this->kind(fn () => $this->client()->print('/user', ['name'])));
+        // Response above the size cap
+        $client = new RestClient('10.0.0.1', 443, 'portal-ro', 'test-pass', self::PIN, 1, 1, 50);
+        $this->assertSame('protocol', $this->kind(fn () => $client->print('/interface', ['name'])));
+    }
+
     public function test_pin_is_the_configured_one_or_the_managed_router_certificate(): void
     {
         $dir = sys_get_temp_dir().'/portal-test-'.getmypid().'-pin';

@@ -238,6 +238,61 @@ class RouterStateTest extends TestCase
         $this->assertStringContainsString('interface=bridge1 vlan-id=31', $page);
     }
 
+    public function test_prefill_needs_a_fresh_successful_state_of_the_current_host_and_clears_on_change(): void
+    {
+        $this->configureApi();
+        $this->fakeRest($this->routerMenus());
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+        $this->assertSame('10.0.1.1', $this->nas->fresh()->router_state['host']);
+        $this->assertStringContainsString('data-derived="interface"', $this->page());
+
+        // Stale state: no prefill
+        $this->travel(16)->minutes();
+        $this->assertStringNotContainsString('data-derived="interface"', $this->page());
+        $this->travel(-16)->minutes();
+
+        // Changed host (or type/port): state dropped
+        $this->configureApi(['api_host' => '10.0.1.2']);
+        $nas = $this->nas->fresh();
+        $this->assertNull($nas->router_state);
+        $this->assertNull($nas->router_state_at);
+        $this->assertStringNotContainsString('data-derived="interface"', $this->page());
+
+        // Unchanged settings keep the state; removing the access drops it
+        $this->configureApi(['api_host' => '10.0.1.1']);
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+        $this->configureApi(['api_host' => '10.0.1.1', 'api_password' => '']);
+        $this->assertNotNull($this->nas->fresh()->router_state);
+        $this->admin()->put("/admin/sites/{$this->site->id}/routers/{$this->nas->id}/api", ['api_clear' => 1])->assertRedirect();
+        $this->assertNull($this->nas->fresh()->router_state);
+
+        // Stored host that differs from the current one is not used (state written by hand)
+        $this->configureApi();
+        $this->nas->storeRouterState(['menus' => [], 'host' => '10.9.9.9']);
+        $this->assertStringNotContainsString('data-derived', $this->page());
+    }
+
+    public function test_refresh_uses_one_overall_deadline_and_is_throttled(): void
+    {
+        $this->configureApi();
+        $second = NasClient::find($this->site->nasClients()->create(['name' => 'Router B', 'nas_ip' => '10.0.1.2', 'coa_port' => 3799])->id);
+        $second->forceFill(['api_host' => '10.0.1.2', 'api_type' => 'rest', 'api_user' => 'portal-ro', 'api_password' => 'x', 'api_pin' => self::PIN])->save();
+        $this->fakeRest($this->routerMenus());
+        config(['portal.router_api.total_deadline' => 0]);
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/state")->assertRedirect();
+        foreach ([$this->nas->fresh(), $second->fresh()] as $nas) {
+            $this->assertSame('timeout', $nas->router_state_error['kind']);
+            $this->assertSame('skipped: time limit', $nas->router_state_error['detail']);
+        }
+        Http::assertNothingSent();
+
+        config(['portal.router_api.total_deadline' => 40]);
+        for ($i = 0; $i < 12; $i++) {
+            $response = $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state");
+        }
+        $response->assertStatus(429);
+    }
+
     public function test_errors_are_shown_localized_per_router(): void
     {
         $this->configureApi();
@@ -304,6 +359,9 @@ class RouterStateTest extends TestCase
         $this->assertStringContainsString('/user add name=portal-ro group=guest-portal-ro password="<API_PASSWORD>" comment="guest-portal:api:user"', $access);
         $this->assertStringContainsString('find where name=portal-ro && (comment="guest-portal:api:user"', $access);
         $this->assertStringNotContainsString('Test pass 1', $access);
+        // Aborts while the placeholder is not replaced (the split operand survives a global replace)
+        $this->assertStringContainsString(':if ("<API_PASSWORD>" = ("<" . "API_PASSWORD>")) do={ :error "replace <API_PASSWORD> first" }', $access);
+        $this->assertLessThan(strpos($access, '/user group add'), strpos($access, ':error'));
         // /ip service is not changed (only printed, setting as a hint)
         $this->assertDoesNotMatchRegularExpression('/^\/ip service set/m', $access);
         $this->assertStringContainsString('# /ip service set www-ssl certificate=guest-portal', $access);

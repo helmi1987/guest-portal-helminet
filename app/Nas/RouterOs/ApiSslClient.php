@@ -22,6 +22,9 @@ final class ApiSslClient implements RouterOsClient
         private readonly int $connectTimeout,
         private readonly int $timeout,
         private readonly int $maxRows = 2000,
+        private readonly ?float $deadline = null,
+        private readonly int $maxBytes = 8388608,
+        private readonly int $maxWord = 65536,
     ) {}
 
     public function print(string $menu, array $proplist, array $where = []): array
@@ -39,8 +42,16 @@ final class ApiSslClient implements RouterOsClient
 
         $rows = [];
         $trap = null;
+        $budget = $this->maxBytes;
+        $sentences = 0;
         while (true) {
-            $reply = ApiSentence::read($connection);
+            $this->checkDeadline();
+            // Every sentence counts (also empty ones): rows + trap/done/empty + slack
+            if (++$sentences > $this->maxRows + 20) {
+                $this->close();
+                throw new RouterOsException('protocol', 'answer has too many sentences');
+            }
+            $reply = ApiSentence::read($connection, $this->maxWord, $budget);
             $type = $reply[0] ?? '';
             $attrs = self::attributes(array_slice($reply, 1));
             if ($type === '!re') {
@@ -68,6 +79,14 @@ final class ApiSslClient implements RouterOsClient
         return $rows;
     }
 
+    private function checkDeadline(): void
+    {
+        if ($this->deadline !== null && microtime(true) > $this->deadline) {
+            $this->close();
+            throw new RouterOsException('timeout', 'query exceeded its time limit');
+        }
+    }
+
     public function close(): void
     {
         $this->connection?->close();
@@ -88,14 +107,25 @@ final class ApiSslClient implements RouterOsClient
         $connection->write(ApiSentence::encode(['/login', '=name='.$this->user, '=password='.$this->password]));
         $trapped = false;
         $attrs = [];
-        do {
-            $reply = ApiSentence::read($connection);
-            $type = $reply[0] ?? '';
-            $trapped = $trapped || $type === '!trap';
-            if ($type === '!done') {
-                $attrs = self::attributes(array_slice($reply, 1));
-            }
-        } while ($type !== '!done' && $type !== '!fatal');
+        $budget = 65536;
+        $count = 0;
+        try {
+            do {
+                $this->checkDeadline();
+                if (++$count > 20) {
+                    throw new RouterOsException('protocol', 'login answer too long');
+                }
+                $reply = ApiSentence::read($connection, $this->maxWord, $budget);
+                $type = $reply[0] ?? '';
+                $trapped = $trapped || $type === '!trap';
+                if ($type === '!done') {
+                    $attrs = self::attributes(array_slice($reply, 1));
+                }
+            } while ($type !== '!done' && $type !== '!fatal');
+        } catch (RouterOsException $e) {
+            $connection->close();
+            throw $e;
+        }
         if ($trapped || $type !== '!done') {
             $connection->close();
             throw new RouterOsException('auth', 'login refused');

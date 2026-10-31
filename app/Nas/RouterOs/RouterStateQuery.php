@@ -14,8 +14,11 @@ class RouterStateQuery
 {
     public function __construct(private readonly RouterOsClients $clients) {}
 
-    /** @return array{kind: string, detail: string}|null error, null on success */
-    public function run(NasClient $nas): ?array
+    /**
+     * @param  float|null  $until  overall deadline (microtime) of the caller, e.g. the whole "Refresh" request
+     * @return array{kind: string, detail: string}|null error, null on success
+     */
+    public function run(NasClient $nas, ?float $until = null): ?array
     {
         $site = $nas->site;
         $driver = $site?->driver();
@@ -26,14 +29,15 @@ class RouterStateQuery
             return $error;
         }
         $max = (int) config('portal.router_api.max_rows', 2000);
-        $deadline = microtime(true) + (int) config('portal.router_api.deadline', 45);
+        // Own deadline, capped by the overall one of the caller ($until, microtime)
+        $deadline = min(microtime(true) + (int) config('portal.router_api.deadline', 45), $until ?? PHP_FLOAT_MAX);
         $client = null;
         try {
-            $client = $this->clients->for($nas);
+            $client = $this->clients->for($nas, $deadline);
             $menus = [];
             foreach ($driver->stateMenus($site) as $menu => $spec) {
                 if (microtime(true) > $deadline) {
-                    throw new RouterOsException('timeout', 'query took longer than '.config('portal.router_api.deadline').' s');
+                    throw new RouterOsException('timeout', 'query exceeded its time limit');
                 }
                 $props = array_values(array_unique(['.id', ...$spec['props']]));
                 try {
@@ -46,7 +50,7 @@ class RouterStateQuery
                     $menus[$menu] = ['error' => $e->getMessage()];
                 }
             }
-            $nas->storeRouterState(['menus' => $menus]);
+            $nas->storeRouterState(['menus' => $menus, 'host' => $nas->api_host]);
 
             return null;
         } catch (RouterOsException $e) {

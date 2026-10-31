@@ -116,13 +116,14 @@ class SiteController extends Controller
 
     /**
      * Read-only router API access for the setup assistant's state query (CONCEPT.md §9). User and
-     * password are stored encrypted with the federation data key, never audited, logged or rendered;
-     * an empty password field keeps the stored one, "api_clear" removes the access.
+     * password are stored encrypted with the federation data key and never audited or logged; the password is
+     * never rendered (the user name is, in the edit form); an empty password field keeps the stored one, "api_clear" removes the access.
      */
     public function updateRouterApi(Request $request, Site $site, NasClient $router): RedirectResponse
     {
         if ($request->boolean('api_clear')) {
             $router->fill(['api_host' => null, 'api_type' => null, 'api_port' => null, 'api_user' => null, 'api_password' => null, 'api_pin' => null]);
+            self::clearRouterState($router);
             $router->save();
             Audit::log('router.api_access_removed', $router, ['site' => $site->slug, 'name' => $router->name]);
 
@@ -143,6 +144,9 @@ class SiteController extends Controller
             'api_user' => $data['api_user'],
             'api_pin' => $data['api_pin'] ?? null,
         ]);
+        if ($router->isDirty(['api_host', 'api_type', 'api_port'])) {
+            self::clearRouterState($router);
+        }
         if (($data['api_password'] ?? '') !== '') {
             $router->api_password = $data['api_password'];
         }
@@ -152,6 +156,14 @@ class SiteController extends Controller
             'api_type' => $router->api_type, 'api_port' => $router->apiPort(), 'pinned' => $router->api_pin !== null]);
 
         return back()->with('status', __('portal.saved'));
+    }
+
+    /** Drop the stored router state (it belongs to the previous access settings). */
+    private static function clearRouterState(NasClient $router): void
+    {
+        $router->router_state = null;
+        $router->router_state_at = null;
+        $router->router_state_error = null;
     }
 
     public function destroyRouter(Site $site, NasClient $router): RedirectResponse

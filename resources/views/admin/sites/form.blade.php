@@ -92,7 +92,7 @@
                         @php($apiErrors = $errors->getBag('api_'.$router->id))
                         <tr>
                             <td colspan="5">
-                                {{-- Read-only router API for the state query of the setup assistant; the password is never rendered --}}
+                                {{-- Read-only router API for the state query of the setup assistant; the password is never rendered, the user name is --}}
                                 <details id="router-api-{{ $router->id }}" @if ($apiErrors->any()) open @endif>
                                     <summary class="cursor-pointer text-sm">{{ __('portal.router_api.title') }}:
                                         <x-admin.step-status :ok="$router->hasApiAccess()" :label="$router->hasApiAccess() ? strtoupper($router->api_type === 'api-ssl' ? 'api-ssl' : 'rest').' '.$router->api_host.':'.$router->apiPort() : __('portal.router_api.not_configured')" /></summary>
@@ -110,7 +110,7 @@
                                         <label class="label">{{ __('portal.router_api.port') }}
                                             <input name="api_port" type="number" min="1" max="65535" value="{{ old('api_port', $router->api_port) }}" placeholder="443 / 8729" class="field"></label>
                                         <label class="label">{{ __('portal.router_api.user') }}
-                                            <input name="api_user" value="{{ $router->api_user }}" autocomplete="off" placeholder="guest-portal-ro" class="field"></label>
+                                            <input name="api_user" value="{{ old('api_user', $router->api_user) }}" autocomplete="off" placeholder="guest-portal-ro" class="field"></label>
                                         <label class="label">{{ __('portal.router_api.password') }}
                                             <input name="api_password" type="password" autocomplete="new-password" maxlength="128" class="field"
                                                 @if ($router->api_password !== null) placeholder="••••••••" @endif>
