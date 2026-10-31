@@ -43,7 +43,7 @@
     </form>
 
     @if ($site->exists)
-        @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $site->driver()->setupCommands($site, [])['diagnostics']['verify'] ?? ''])
+        @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $site->driver()->setupCommands($site, [], false)['diagnostics']['verify'] ?? ''])
     @endif
 
     @if ($site->exists && ! $site->isServedHere())

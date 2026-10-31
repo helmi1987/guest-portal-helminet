@@ -353,7 +353,10 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
         ];
     }
 
-    public function setupCommands(Site $site, array $container): array
+    /** Placeholder of the guest Wi-Fi passphrase in the displayed (masked) setup commands. */
+    public const WIFI_PASSWORD_PLACEHOLDER = '<WIFI_PASSWORD>';
+
+    public function setupCommands(Site $site, array $container, bool $withSecrets = true): array
     {
         $g = $this->guestValues($site);
         $c = [
@@ -399,7 +402,9 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             $security = "# Guest Wi-Fi password is set for this site but not available on this instance (kept local on another one).\n"
                 .'# sec-guest is NOT created or changed here: enter the password in step 2 on this instance, or run this on the instance that has it.';
         } elseif ($g['wifi_password'] !== '') {
-            $pass = self::quoted($g['wifi_password']);
+            // Masked for display (setup assistant page): the placeholder is replaced in the browser only
+            // when the admin asks for it; a copy with the placeholder left in aborts before any change.
+            $pass = $withSecrets ? self::quoted($g['wifi_password']) : self::WIFI_PASSWORD_PLACEHOLDER;
             $auth = $g['wifi_mode'] === 'capsman1' ? 'authentication-types=wpa2-psk encryption=aes-ccm' : 'authentication-types=wpa2-psk,wpa3-psk';
             $security .= "\n# Guest Wi-Fi password of the setup assistant (WPA2/WPA3 personal); re-running updates it\n"
                 ."{$wifiPath} security set [find where name=sec-guest && comment=\"{$kSec}\"] {$auth} passphrase=\"{$pass}\"";
@@ -408,10 +413,19 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             $security .= "\n# No guest Wi-Fi password in the setup assistant: open SSID (a password set earlier is removed)\n"
                 .implode("\n", array_map(fn ($p) => "{$wifiPath} security unset [find where name=sec-guest && comment=\"{$kSec}\"] {$p}", $unset));
         }
-        $wifiObjects = $up("{$wifiPath} datapath", 'name=dp-guest', $k('wifi', 'dp-guest'), 'name=dp-guest', $datapath)."\n"
+        $guard = ! $withSecrets && ! $g['wifi_unavailable'] && $g['wifi_password'] !== ''
+            ? ':if ("'.self::WIFI_PASSWORD_PLACEHOLDER.'" = ("<" . "'.substr(self::WIFI_PASSWORD_PLACEHOLDER, 1).'")) do={ :error "replace '
+                .self::WIFI_PASSWORD_PLACEHOLDER.' first" }'."\n"
+            : '';
+        $wifiObjects = $guard.$up("{$wifiPath} datapath", 'name=dp-guest', $k('wifi', 'dp-guest'), 'name=dp-guest', $datapath)."\n"
             .$security."\n"
             .$up("{$wifiPath} configuration", 'name=cfg-guest', $k('wifi', 'cfg-guest'), 'name=cfg-guest',
                 "ssid=\"{$g['ssid']}\" country=<COUNTRY> security=sec-guest datapath=dp-guest");
+        if ($guard !== '') {
+            // One "{ ... }" unit: a terminal paste runs line by line, so without the group the lines after
+            // the guard would still run after its :error; inside the group the :error ends the whole block.
+            $wifiObjects = "{\n".$wifiObjects."\n}";
+        }
         $wifiHeader = "# Re-runnable: adds dp-guest, sec-guest and cfg-guest or updates the own ones (comment key\n"
             ."# \"{$k('wifi', 'cfg-guest')}\" etc.); objects of others with these names are never changed (the add fails).";
 

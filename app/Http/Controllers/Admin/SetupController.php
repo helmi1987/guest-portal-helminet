@@ -12,6 +12,7 @@ use App\Nas\RouterOs\RouterStateDriver;
 use App\Nas\RouterOs\RouterStateQuery;
 use App\Support\Audit;
 use App\Support\PortalAddress;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -43,19 +44,25 @@ class SetupController extends Controller
         // stale for any router with API access.
         $apiRouters = $routers->filter(fn (NasClient $nas) => $nas->hasApiAccess());
         $stateDriver = $driver instanceof RouterStateDriver ? $driver : null;
-        $inputsAt = $this->inputsChangedAt($site);
+        $inputsAt = self::inputsChangedAt($site);
         // Prefill only from successful, fresh states of the routers' current API hosts
         $sources = $stateDriver ? $apiRouters->filter(fn (NasClient $nas) => is_array($nas->router_state)
-            && $this->fresh($nas, $inputsAt) && ($nas->router_state['host'] ?? null) === $nas->api_host)->values() : collect();
+            && self::fresh($nas, $inputsAt) && ($nas->router_state['host'] ?? null) === $nas->api_host)->values() : collect();
         $derived = $sources->isNotEmpty() ? $this->derived($driver, $site, $sources) : [];
         $view = $derived !== [] ? $site->withDerivedSetup(array_map(fn ($d) => $d[0], $derived)) : $site;
         $states = $routers->mapWithKeys(fn (NasClient $nas) => [$nas->id => [
-            'fresh' => $this->fresh($nas, $inputsAt),
+            'fresh' => self::fresh($nas, $inputsAt),
             'compare' => $stateDriver && is_array($nas->router_state) ? $stateDriver->compareState($view, $nas->router_state) : null,
             'version' => $nas->router_state['menus']['/system resource']['rows'][0]['version'] ?? null,
             'queued' => QueryRouterState::queuedAt((string) $nas->id),
         ]]);
         $stale = $apiRouters->contains(fn (NasClient $nas) => ! $states[$nas->id]['fresh']);
+        // Line colours of the command blocks (display only): worst status over the fresh router states;
+        // none while the commands are greyed out (stale states would mislead).
+        $statusOf = fn (Collection $from) => self::statusByKey($from->map(fn (NasClient $nas) => $states[$nas->id]['compare'])->filter()->all());
+        $freshRouters = $apiRouters->filter(fn (NasClient $nas) => $states[$nas->id]['fresh']);
+        $siteStatus = $stateDriver && ! $stale ? $statusOf($freshRouters) : [];
+        $routerStatus = $stateDriver ? $freshRouters->mapWithKeys(fn (NasClient $nas) => [$nas->id => $statusOf(collect([$nas]))])->all() : [];
 
         return view('admin.sites.setup', [
             'site' => $site,
@@ -67,14 +74,57 @@ class SetupController extends Controller
             'wifiPasswordShared' => $site->wifiPasswordShared(),
             'portalAddressProblem' => PortalAddress::problem($site->setting('portal_address'), (array) $view->setting('setup', [])),
             'container' => $container,
-            'commands' => $driver->setupCommands($view, $container),
+            // Passwords are never rendered: placeholders, inserted in the browser only on request (secrets())
+            'commands' => $driver->setupCommands($view, $container, false),
             'fetch' => $routers->mapWithKeys(fn ($nas) => [$nas->id => $driver->loginPageFetch($view, $nas)]),
             'apiAccess' => $stateDriver ? $routers->mapWithKeys(fn ($nas) => [$nas->id => $driver->apiAccessCommands($view, $nas)]) : collect(),
             'states' => $states,
             'stateSupported' => $stateDriver !== null,
             'cliDisabled' => $stale,
             'maxAge' => (int) config('portal.router_api.max_age_minutes', 15),
+            'lineStatus' => fn (string $code, ?string $routerId = null) => $stateDriver
+                && ($map = $routerId === null ? $siteStatus : ($routerStatus[$routerId] ?? [])) !== []
+                ? $stateDriver->lineStatuses($code, $map) : null,
+            'placeholders' => $stateDriver ? $stateDriver->placeholderHints($view, $apiRouters) : ['options' => [], 'values' => []],
+            'secretsUrl' => $stateDriver ? route('admin.sites.setup.secrets', $site) : null,
         ]);
+    }
+
+    /**
+     * Stored passwords for the placeholders of the displayed commands ("Insert passwords", off by
+     * default): admin only like the page, POST with CSRF, not cached, never logged or audited.
+     */
+    public function secrets(Site $site): JsonResponse
+    {
+        $driver = $site->driver();
+        $secrets = $driver instanceof RouterStateDriver ? $driver->scriptSecrets($site, $site->nasClients) : [];
+
+        return response()->json($secrets)->header('Cache-Control', 'no-store, private');
+    }
+
+    /**
+     * Comment key (or hotspot:server|profile) => worst compare status over several router comparisons
+     * (missing > differs > legacy > foreign > present > unknown).
+     *
+     * @param  list<array<string, array<string, array{status: string}>>>  $compares
+     * @return array<string, string>
+     */
+    public static function statusByKey(array $compares): array
+    {
+        $rank = ['unknown' => 0, 'present' => 1, 'foreign' => 2, 'legacy' => 3, 'differs' => 4, 'missing' => 5];
+        $out = [];
+        foreach ($compares as $compare) {
+            foreach ($compare as $items) {
+                foreach ($items as $key => $item) {
+                    $status = (string) ($item['status'] ?? 'unknown');
+                    if (! isset($out[$key]) || ($rank[$status] ?? 0) > ($rank[$out[$key]] ?? 0)) {
+                        $out[$key] = $status;
+                    }
+                }
+            }
+        }
+
+        return $out;
     }
 
     /** Query the state of one router (read-only API), then back to the assistant. */
@@ -130,7 +180,7 @@ class SetupController extends Controller
     }
 
     /** Last change of the assistant's inputs: site (setup, hosts, addresses) and the container inputs. */
-    private function inputsChangedAt(Site $site): ?Carbon
+    public static function inputsChangedAt(Site $site): ?Carbon
     {
         $container = LocalSetting::query()->find(self::CONTAINER_KEY)?->updated_at;
 
@@ -138,7 +188,7 @@ class SetupController extends Controller
     }
 
     /** A successful state query newer than max_age_minutes, the inputs and the router's access settings. */
-    private function fresh(NasClient $nas, ?Carbon $inputsAt): bool
+    public static function fresh(NasClient $nas, ?Carbon $inputsAt): bool
     {
         $at = $nas->router_state_at;
 

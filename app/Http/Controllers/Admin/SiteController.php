@@ -7,6 +7,7 @@ use App\Models\Instance;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Nas\NasDrivers;
+use App\Nas\RouterOs\RouterStateDriver;
 use App\Radius\ClientsFile;
 use App\Support\Audit;
 use App\Support\LocalInstance;
@@ -188,10 +189,19 @@ class SiteController extends Controller
 
     public function routerConfig(Site $site, NasClient $router): View
     {
+        $driver = $site->driver();
+        $script = $driver->configScript($site, $router);
+        $stateDriver = $driver instanceof RouterStateDriver ? $driver : null;
+        // Line colours from this router's fresh state (display only), placeholder suggestions
+        $fresh = $stateDriver && is_array($router->router_state) && SetupController::fresh($router, SetupController::inputsChangedAt($site));
+        $statusByKey = $fresh ? SetupController::statusByKey([$stateDriver->compareState($site, $router->router_state)]) : [];
+
         return view('admin.sites.config', [
             'site' => $site,
             'router' => $router,
-            'script' => $site->driver()->configScript($site, $router),
+            'script' => $script,
+            'lines' => $statusByKey !== [] ? $stateDriver->lineStatuses($script, $statusByKey) : null,
+            'placeholders' => $stateDriver ? $stateDriver->placeholderHints($site, $router->hasApiAccess() ? [$router] : []) : ['options' => [], 'values' => []],
         ]);
     }
 

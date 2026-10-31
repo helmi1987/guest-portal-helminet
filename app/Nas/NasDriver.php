@@ -57,11 +57,12 @@ interface NasDriver
 
     /**
      * Ready-to-copy, sanitized command blocks of the setup assistant, by step and block id:
-     * container, network, hotspot, diagnostics.
+     * container, network, hotspot, diagnostics. Without secrets (display on the assistant page) stored
+     * passwords are replaced by placeholders such as <WIFI_PASSWORD>; the script semantics stay the same.
      *
      * @return array<string, array<string, string>>
      */
-    public function setupCommands(Site $site, array $container): array;
+    public function setupCommands(Site $site, array $container, bool $withSecrets = true): array;
 
     /** Command that makes the router download its login page (route router-login). */
     public function loginPageFetch(Site $site, NasClient $nas): string;

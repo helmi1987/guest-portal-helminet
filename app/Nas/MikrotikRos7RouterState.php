@@ -313,6 +313,166 @@ trait MikrotikRos7RouterState
     }
 
     /**
+     * Display state of each line of a generated script (setup assistant, router script page): the
+     * worst status of the comment keys on the line ("missing" > "update" > "ok"), the hotspot server
+     * and profile by "add name=guest-portal" in their menu, continuation lines (trailing "\") and the
+     * lines inside a "{ ... }" group opened by a line with a state inherit it. Comment lines and lines
+     * without a known key stay null. Display only: the script itself is not changed.
+     *
+     * @param  array<string, string>  $statusByKey  comment key (or hotspot:server|profile) => compare status
+     * @return list<?string> one entry per line of $script: missing|update|ok|null
+     */
+    public function lineStatuses(string $script, array $statusByKey): array
+    {
+        $class = fn (?string $status) => match ($status) {
+            'missing' => 'missing', 'differs', 'legacy' => 'update', 'present', 'foreign' => 'ok', default => null,
+        };
+        $rank = ['ok' => 1, 'update' => 2, 'missing' => 3];
+        $worst = function (array $states) use ($rank): ?string {
+            $states = array_values(array_filter($states));
+            usort($states, fn ($a, $b) => $rank[$b] <=> $rank[$a]);
+
+            return $states[0] ?? null;
+        };
+        $byName = ['/ip hotspot' => 'hotspot:server', '/ip hotspot profile' => 'hotspot:profile'];
+        $verbs = ['add', 'set', 'remove', 'print', 'unset', 'enable', 'disable', 'find', 'export', 'import'];
+        $n = preg_quote(self::NAME, '/');
+        $out = [];
+        $menu = null;
+        $depth = 0;
+        $group = null;
+        $continued = null;
+        foreach (explode("\n", $script) as $line) {
+            $t = trim($line);
+            $status = null;
+            if ($t !== '' && $t[0] !== '#') {
+                preg_match_all('/"('.$n.':[a-z0-9-]+:[a-z0-9-]+)"/', $line, $m);
+                $status = $worst(array_map(fn ($key) => $class($statusByKey[$key] ?? null), array_unique($m[1])));
+                // Menu context ("/ip hotspot profile") or command with its menu ("/ip hotspot add ...")
+                $rest = $t;
+                if ($t[0] === '/') {
+                    $words = explode(' ', $t);
+                    $path = [];
+                    while ($words !== [] && ! in_array($words[0], $verbs, true)) {
+                        $path[] = array_shift($words);
+                    }
+                    $path = '/'.trim(str_replace('/', ' ', implode(' ', $path)));
+                    if ($words === []) {
+                        $menu = $path;
+                    }
+                    $rest = implode(' ', $words);
+                    $cmdMenu = $path;
+                } else {
+                    $cmdMenu = $menu;
+                }
+                if ($status === null && isset($byName[$cmdMenu]) && preg_match('/^add name='.$n.'( |$)/', $rest)) {
+                    $status = $class($statusByKey[$byName[$cmdMenu]] ?? null);
+                }
+                $status ??= $continued ?? ($depth > 0 ? $group : null);
+                // Group "{ ... }" outside quoted strings
+                $bare = (string) preg_replace('/"(?:\\\\.|[^"\\\\])*"/', '', $line);
+                if ($depth === 0) {
+                    $group = $status;
+                }
+                $depth = max(0, $depth + substr_count($bare, '{') - substr_count($bare, '}'));
+                if ($depth === 0) {
+                    $group = null;
+                }
+                $continued = str_ends_with($t, '\\') ? $status : null;
+            } else {
+                $continued = null;
+            }
+            $out[] = $status;
+        }
+
+        return $out;
+    }
+
+    /**
+     * Known values for the placeholders of the generated scripts: suggestions from the stored router
+     * states (names of interfaces, bridges, pools, Wi-Fi configurations, addresses) and prefill values
+     * from the site. Which menu fits which placeholder is a mapping by meaning (assumption), offered as
+     * suggestions only: the admin picks or types the value.
+     *
+     * @param  iterable<NasClient>  $routers
+     * @return array{options: array<string, list<string>>, values: array<string, string>}
+     */
+    public function placeholderHints(Site $site, iterable $routers): array
+    {
+        $names = [];
+        foreach ($routers as $nas) {
+            $menus = is_array($nas->router_state) ? (array) ($nas->router_state['menus'] ?? []) : [];
+            $col = fn (string $menu, string $prop) => array_map(fn ($r) => (string) ($r[$prop] ?? ''), (array) ($menus[$menu]['rows'] ?? []));
+            $add = function (string $placeholder, array $values) use (&$names) {
+                foreach ($values as $v) {
+                    $v = self::token($v);
+                    if ($v !== '' && $v !== 'cfg-guest' && $v !== 'wifi-guest') {
+                        $names[$placeholder][$v] = true;
+                    }
+                }
+            };
+            $interfaces = $col('/interface', 'name');
+            $bridges = $col('/interface bridge', 'name');
+            $addresses = array_filter($col('/ip address', 'address'), fn ($a) => str_contains($a, '/'));
+            $add('GUEST_INTERFACE', $interfaces);
+            $add('TRUNK_PORT_TO_CAP', array_diff($interfaces, $bridges));
+            $add('IF', array_diff($interfaces, $bridges));
+            $add('WIFI_INTERFACE', $col('/interface wifi', 'name'));
+            $add('BRIDGE', $bridges);
+            $add('CONTAINER_BRIDGE', $bridges);
+            $add('GUEST_POOL', $col('/ip pool', 'name'));
+            $add('MASTER_CFG', [...$col('/interface wifi configuration', 'name'), ...$col('/caps-man configuration', 'name')]);
+            $add('EXISTING_SLAVES', array_map(fn ($v) => implode(',', array_diff(explode(',', $v), ['cfg-guest'])),
+                [...$col('/interface wifi provisioning', 'slave-configurations'), ...$col('/caps-man provisioning', 'slave-configurations')]));
+            $add('MANAGER_IP', array_map(fn ($a) => strstr($a, '/', true), $addresses));
+            $add('LAN', array_map(function ($a) {
+                [$ip, $bits] = explode('/', $a, 2);
+                $long = ip2long($ip);
+
+                return $long !== false && ctype_digit($bits) && (int) $bits <= 32
+                    ? long2ip($long & ((-1 << (32 - (int) $bits)) & 0xFFFFFFFF)) : '';
+            }, $addresses));
+        }
+        $options = array_map(function ($set) {
+            $list = array_keys($set);
+            sort($list, SORT_NATURAL);
+
+            return $list;
+        }, $names);
+
+        $setup = (array) $site->setting('setup', []);
+        $values = array_filter([
+            'INSTANCE_IP' => self::token($site->setting('portal_address')) ?: self::token($site->setting('radius_address')),
+            'PORTAL_HOST' => self::token(parse_url($this->portalUrl($site), PHP_URL_HOST)),
+            'HOTSPOT_DNS_NAME' => self::token(((array) $site->setting('hotspot_hosts', []))[0] ?? null),
+            'HOTSPOT_GATEWAY_IP' => self::token($setup['gateway'] ?? null),
+            'BRIDGE' => self::token($setup['bridge'] ?? null),
+            'GUEST_INTERFACE' => self::token($setup['interface'] ?? null),
+        ], fn ($v) => $v !== '');
+
+        return ['options' => $options, 'values' => $values];
+    }
+
+    /**
+     * Stored passwords for the placeholders of the displayed scripts, escaped for a quoted RouterOS
+     * string: WIFI_PASSWORD (null when open or not available here) and API_PASSWORD per router id.
+     * Only for the admin's explicit "Insert passwords"; never logged or audited.
+     *
+     * @param  iterable<NasClient>  $routers
+     * @return array{WIFI_PASSWORD: ?string, API_PASSWORD: array<string, ?string>}
+     */
+    public function scriptSecrets(Site $site, iterable $routers): array
+    {
+        $wifi = $site->wifiPasswordUnavailable() ? '' : (string) preg_replace('/[^\x20-\x7E]/', '', (string) $site->wifiPassword());
+        $api = [];
+        foreach ($routers as $nas) {
+            $api[(string) $nas->id] = $nas->api_password !== null && $nas->api_password !== '' ? self::quoted((string) $nas->api_password) : null;
+        }
+
+        return ['WIFI_PASSWORD' => $wifi !== '' ? self::quoted($wifi) : null, 'API_PASSWORD' => $api];
+    }
+
+    /**
      * Read-only API access for the state query of one router: group "guest-portal-ro" (policies read,
      * api, rest-api; no write, no sensitive: the router hides secrets) and the user of the router's
      * access settings, both add-or-update by name + comment key. /ip service is not an own object: only
@@ -336,10 +496,13 @@ trait MikrotikRos7RouterState
             "# \"{$kUser}\"); a group or user of others with these names is never changed (the add fails).",
             '# The script aborts before changing anything while <API_PASSWORD> is not replaced (the first operand is',
             '# replaced with the rest, the split second one is not).',
+            '# Wrapped in one "{ ... }" unit so a terminal paste (line by line) is aborted as a whole by the :error.',
+            '{',
             ':if ("<API_PASSWORD>" = ("<" . "API_PASSWORD>")) do={ :error "replace <API_PASSWORD> first" }',
             self::upsert('/user group', "name={$group}", $kGroup, "name={$group}", 'policy='.self::API_POLICY),
             '# Replace <API_PASSWORD> with the password stored for this router in the portal (re-running sets it again).',
             self::upsert('/user', "name={$user}", $kUser, "name={$user}", "group={$group} password=\"<API_PASSWORD>\""),
+            '}',
             '# Optional: allow this user only from the portal instance',
             "# /user set [find where name={$user} && comment=\"{$kUser}\"] address={$radius}/32",
             "# The service must use the router certificate \"{$n}\" (imported by the certificate script, step 4):",

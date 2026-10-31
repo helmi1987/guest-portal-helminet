@@ -27,5 +27,5 @@
             </li>
         @endforeach
     </ol>
-    <x-admin.code :title="__('portal.setup.blocks.verify')" :code="$verify" />
+    <x-admin.code :title="__('portal.setup.blocks.verify')" :code="$verify" :placeholders="$placeholders ?? ['options' => [], 'values' => []]" />
 </section>

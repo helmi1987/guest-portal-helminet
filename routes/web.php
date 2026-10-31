@@ -144,6 +144,9 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');
+                // Stored passwords for "Insert passwords" of the displayed commands (JSON, no-store)
+                Route::post('/sites/{site}/setup/secrets', [SetupController::class, 'secrets'])
+                    ->name('sites.setup.secrets')->middleware('throttle:30,1,setup-secrets');
                 Route::post('/sites/{site}/setup/state', [SetupController::class, 'refreshState'])
                     ->name('sites.setup.state')->middleware('throttle:10,1,router-state');
                 Route::post('/sites/{site}/setup/routers/{router}/state', [SetupController::class, 'queryState'])

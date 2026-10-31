@@ -9,10 +9,11 @@
     $field = fn ($values, $key, $default = '') => old($key, $values[$key] ?? $default);
     // Network inputs: saved value, else the value derived from the router state (marked)
     $net = fn ($key, $default = '') => old($key, $setup[$key] ?? ($derived[$key][0] ?? $default));
-    $mark = fn ($key) => isset($derived[$key]) ? new \Illuminate\Support\HtmlString('<span class="ml-1 rounded bg-sky-100 px-1 text-xs font-normal text-sky-800" data-derived="'.e($key).'" title="'
+    $mark = fn ($key) => isset($derived[$key]) ? new \Illuminate\Support\HtmlString('<span class="gp-badge gp-badge-info ml-1 font-normal" data-derived="'.e($key).'" title="'
         .e(__('portal.router_api.derived_from.'.$derived[$key][1], ['router' => $derived[$key][2]])).'">'.e(__('portal.router_api.derived')).'</span>') : '';
-    $statusClass = ['present' => 'bg-green-100 text-green-800', 'foreign' => 'bg-green-50 text-green-700', 'legacy' => 'bg-sky-100 text-sky-800', 'differs' => 'bg-amber-100 text-amber-800',
-        'missing' => 'bg-red-100 text-red-800', 'unknown' => 'bg-slate-200 text-slate-600'];
+    // Solid badges (WCAG AA in both schemes); legacy/differs = will be updated by the next run
+    $statusClass = ['present' => 'gp-badge gp-badge-ok', 'foreign' => 'gp-badge gp-badge-ok', 'legacy' => 'gp-badge gp-badge-warn', 'differs' => 'gp-badge gp-badge-warn',
+        'missing' => 'gp-badge gp-badge-error', 'unknown' => 'gp-badge gp-badge-neutral'];
 @endphp
 <x-layouts.admin :title="__('portal.setup.title')">
     <h1 class="mb-2 text-2xl font-semibold">{{ __('portal.setup.title') }}: {{ $site->name }}</h1>
@@ -46,7 +47,7 @@
                         <x-admin.step-status :ok="$st['fresh']" :label="$router->router_state_at ? __('portal.router_api.queried_at', ['when' => $router->router_state_at->diffForHumans()]) : __('portal.router_api.never_queried')" />
                         @if ($st['version']) <span class="text-xs text-slate-500">RouterOS {{ $st['version'] }}</span> @endif
                         @if ($st['queued'])
-                            <span class="rounded bg-sky-100 px-1 text-xs text-sky-800" role="status" data-state-queued>{{ __('portal.router_api.queued', ['when' => \Illuminate\Support\Carbon::parse($st['queued'])->diffForHumans()]) }}</span>
+                            <span class="gp-badge gp-badge-info" role="status" data-state-queued>{{ __('portal.router_api.queued', ['when' => \Illuminate\Support\Carbon::parse($st['queued'])->diffForHumans()]) }}</span>
                             <a href="{{ route('admin.sites.setup', $site) }}#step-state" class="text-sm underline">{{ __('portal.router_api.reload') }}</a>
                         @endif
                         <form method="POST" action="{{ route('admin.sites.setup.router-state', [$site, $router]) }}">@csrf
@@ -66,19 +67,19 @@
                     <div class="grid gap-2 md:grid-cols-3">
                         @foreach ($st['compare'] as $block => $items)
                             @php($counts = collect($items)->countBy('status'))
-                            <details class="rounded bg-slate-50 p-2 text-sm" data-state-block="{{ $block }}">
+                            <details class="rounded border border-slate-300 p-2 text-sm" data-state-block="{{ $block }}">
                                 <summary class="cursor-pointer">
                                     <span class="font-medium">{{ __('portal.router_api.blocks.'.$block) }}</span>
                                     @foreach (['present', 'foreign', 'legacy', 'differs', 'missing', 'unknown'] as $status)
                                         @if ($counts->get($status))
-                                            <span class="rounded px-1 text-xs {{ $statusClass[$status] }}">{{ $counts->get($status) }} {{ __('portal.router_api.status.'.$status) }}</span>
+                                            <span class="{{ $statusClass[$status] }}">{{ $counts->get($status) }} {{ __('portal.router_api.status.'.$status) }}</span>
                                         @endif
                                     @endforeach
                                 </summary>
                                 <ul class="mt-1 space-y-1">
                                     @foreach ($items as $key => $item)
                                         <li data-state-item="{{ $key }}" data-status="{{ $item['status'] }}">
-                                            <span class="rounded px-1 text-xs {{ $statusClass[$item['status']] }}">{{ __('portal.router_api.status.'.$item['status']) }}</span>
+                                            <span class="{{ $statusClass[$item['status']] }}">{{ __('portal.router_api.status.'.$item['status']) }}</span>
                                             <code class="text-xs">{{ $item['path'] }}{{ $item['name'] ? ' '.$item['name'] : '' }}</code> <span class="text-xs text-slate-500">{{ $key }}</span>
                                             @foreach ($item['diff'] as $prop => [$want, $actual])
                                                 <div class="pl-4 text-xs text-amber-800">{{ $prop }}: {{ __('portal.router_api.expected') }} <code>{{ $want }}</code>, {{ __('portal.router_api.actual') }} <code>{{ $actual === '' ? '–' : $actual }}</code></div>
@@ -94,7 +95,8 @@
                     <details class="mt-2">
                         <summary class="cursor-pointer text-sm">{{ __('portal.router_api.access_commands') }}</summary>
                         <p class="my-2 text-xs text-slate-500">{{ __('portal.router_api.access_help') }}</p>
-                        <x-admin.code :title="__('portal.router_api.access_block', ['name' => $router->name])" :code="$apiAccess[$router->id]" />
+                        <x-admin.code :title="__('portal.router_api.access_block', ['name' => $router->name])" :code="$apiAccess[$router->id]"
+                            :lines="$lineStatus($apiAccess[$router->id], $router->id)" :placeholders="$placeholders" :secrets-url="$secretsUrl" :scope="$router->id" />
                     </details>
                 @endif
             </div>
@@ -124,9 +126,9 @@
                 <input name="image" value="{{ $field($container, 'image') }}" placeholder="ghcr.io/OWNER/REPO:latest" required class="field"></label>
             <div class="md:col-span-3"><button class="btn">{{ __('portal.save') }}</button></div>
         </form>
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.device_mode')" :code="$commands['container']['device_mode']" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.container_network')" :code="$commands['container']['container_network']" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.container_add')" :code="$commands['container']['container_add']" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.device_mode')" :code="$commands['container']['device_mode']" :placeholders="$placeholders" :lines="$lineStatus($commands['container']['device_mode'])" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.container_network')" :code="$commands['container']['container_network']" :placeholders="$placeholders" :lines="$lineStatus($commands['container']['container_network'])" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.container_add')" :code="$commands['container']['container_add']" :placeholders="$placeholders" :lines="$lineStatus($commands['container']['container_add'])" />
         <p class="text-sm text-slate-600">{{ __('portal.setup.container.registry') }}</p>
     </details>
 
@@ -182,15 +184,15 @@
             <div class="md:col-span-4"><button class="btn">{{ __('portal.save') }}</button></div>
         </form>
         <p class="mb-2 text-sm text-amber-800">{{ __('portal.setup.network.bridge_warning') }}</p>
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan')" :code="$commands['network']['vlan']" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan')" :code="$commands['network']['vlan']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan'])" />
         <p class="mb-2 text-sm text-slate-600">{{ __('portal.setup.network.vlan_filtering_help') }}</p>
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan_filtering')" :code="$commands['network']['vlan_filtering']" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.wifi')" :code="$commands['network']['wifi']" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan_filtering')" :code="$commands['network']['vlan_filtering']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan_filtering'])" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.wifi')" :code="$commands['network']['wifi']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['wifi'])" :secrets-url="$secretsUrl" />
         @if (($setup['wifi_mode'] ?? 'capsman2') !== 'local') <p class="mb-4 text-sm text-amber-800">{{ __('portal.setup.network.slaves_help') }}</p> @endif
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.dhcp')" :code="$commands['network']['dhcp']" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.captive_option')" :code="$commands['network']['captive_option']" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.dhcp')" :code="$commands['network']['dhcp']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['dhcp'])" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.captive_option')" :code="$commands['network']['captive_option']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['captive_option'])" />
         <p class="mb-4 text-sm text-slate-600">{{ __('portal.setup.network.captive_help') }}</p>
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.firewall')" :code="$commands['network']['firewall']" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.firewall')" :code="$commands['network']['firewall']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['firewall'])" />
         <p class="text-sm text-slate-600">{{ __('portal.setup.network.guide') }}</p>
     </section>
 
@@ -211,8 +213,8 @@
             <p class="mb-3 text-sm font-semibold text-amber-800">{{ __('portal.setup.hotspot.portal_address_warning') }} {{ $portalAddressProblem }}
                 <a href="{{ route('admin.sites.edit', $site) }}" class="underline">{{ __('portal.sites.portal_address') }}</a></p>
         @endif
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.dns')" :code="$commands['hotspot']['dns']" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.hotspot')" :code="$commands['hotspot']['hotspot']" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.dns')" :code="$commands['hotspot']['dns']" :placeholders="$placeholders" :lines="$lineStatus($commands['hotspot']['dns'])" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.hotspot')" :code="$commands['hotspot']['hotspot']" :placeholders="$placeholders" :lines="$lineStatus($commands['hotspot']['hotspot'])" />
         <p class="text-sm text-amber-800">{{ __('portal.setup.hotspot.captive_hosts') }}</p>
     </section>
 
@@ -237,7 +239,7 @@
             <x-admin.step-status :ok="$allLogin" :label="$allLogin ? __('portal.setup.done') : __('portal.setup.open')" /></h2>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.login.help') }}</p>
         @foreach ($routers as $router)
-            <x-admin.code :disabled="$cliDisabled" :title="$router->name.' ('.$router->nas_ip.')'" :code="$fetch[$router->id]" />
+            <x-admin.code :disabled="$cliDisabled" :title="$router->name.' ('.$router->nas_ip.')'" :code="$fetch[$router->id]" :placeholders="$placeholders" :lines="$lineStatus($fetch[$router->id])" />
         @endforeach
         <p class="text-sm"><a href="{{ route('admin.sites.login-page', $site) }}" class="btn-light">{{ __('portal.sites.download_login') }}</a></p>
     </section>
@@ -269,16 +271,16 @@
     <section id="step-diagnostics" class="card mb-6">
         <h2 class="mb-2 text-lg font-semibold">7. {{ __('portal.setup.diagnostics.title') }}</h2>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.diagnostics.help') }}</p>
-        <x-admin.code :disabled="$cliDisabled" :code="$commands['diagnostics']['diagnostics']" />
+        <x-admin.code :disabled="$cliDisabled" :code="$commands['diagnostics']['diagnostics']" :placeholders="$placeholders" />
     </section>
 
     {{-- 8. Uninstall --}}
     <details id="step-uninstall" class="card mb-6">
         <summary class="cursor-pointer text-lg font-semibold">8. {{ __('portal.setup.uninstall.title') }}</summary>
         <p class="my-3 text-sm text-slate-600">{{ __('portal.setup.uninstall.help') }}</p>
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall')" :code="$commands['uninstall']['uninstall']" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_container')" :code="$commands['uninstall']['uninstall_container']" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_network')" :code="$commands['uninstall']['uninstall_network']" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall')" :code="$commands['uninstall']['uninstall']" :placeholders="$placeholders" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_container')" :code="$commands['uninstall']['uninstall_container']" :placeholders="$placeholders" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_network')" :code="$commands['uninstall']['uninstall_network']" :placeholders="$placeholders" />
         <p class="text-sm text-amber-800">{{ __('portal.setup.uninstall.portal_hint') }}</p>
     </details>
 

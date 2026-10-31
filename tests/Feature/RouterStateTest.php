@@ -233,10 +233,10 @@ class RouterStateTest extends TestCase
         $this->configureApi();
         $before = $this->page();
         $this->assertStringContainsString('data-cli-disabled-notice', $before);
-        $this->assertMatchesRegularExpression('/<div x-data="\{ copied: false \}" class="mb-4 opacity-50 select-none"\s+aria-disabled="true" data-cli-disabled/', $before);
+        $this->assertMatchesRegularExpression('/<div x-data="gpScript\([^"]*\)" class="mb-4 opacity-50 select-none"\s+aria-disabled="true" data-cli-disabled/', $before);
         $this->assertMatchesRegularExpression('/<button type="button" class="btn-light" disabled\s+aria-disabled="true"/', $before);
         // The access block itself is never greyed out
-        $this->assertMatchesRegularExpression('/<div x-data="\{ copied: false \}" class="mb-4"\s*>\s*<div[^>]*>\s*<span class="text-sm font-medium">'
+        $this->assertMatchesRegularExpression('/<div x-data="gpScript\([^"]*\)" class="mb-4"\s*>\s*<div[^>]*>\s*<span class="text-sm font-medium">'
             .preg_quote(e(__('portal.router_api.access_block', ['name' => 'Router A'])), '/').'/', $before);
 
         $this->fakeRest($this->routerMenus());
@@ -510,5 +510,115 @@ class RouterStateTest extends TestCase
             }
         }
         $this->assertEqualsCanonicalizing($menus, array_intersect($menus, Menus::ALLOWED));
+    }
+
+    /** Line text => display state of the coloured script lines of a page. */
+    private function lineStates(string $page): array
+    {
+        preg_match_all('/<span data-line class="gp-line gp-line-([a-z]+)" data-line-status="\1" title="[^"]*">([^<]*)<\/span>/', $page, $m, PREG_SET_ORDER);
+        $out = [];
+        foreach ($m as [, $status, $text]) {
+            $out[html_entity_decode($text, ENT_QUOTES)][] = $status;
+        }
+
+        return $out;
+    }
+
+    public function test_script_lines_are_coloured_by_the_fresh_router_state(): void
+    {
+        $this->saveNetwork();
+        $this->configureApi();
+        $this->fakeRest($this->routerMenus());
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+
+        $page = $this->page();
+        $this->assertStringContainsString('data-line-legend', $page);
+        $lines = $this->lineStates($page);
+        $state = function (string $needle) use ($lines): array {
+            $hits = array_values(array_filter($lines, fn ($text) => str_contains($text, $needle), ARRAY_FILTER_USE_KEY));
+
+            return array_values(array_unique(array_merge(...$hits ?: [[]])));
+        };
+        // present = ok, also the add/else/closing lines of the add-or-update group
+        $this->assertSame(['ok'], $state('/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30'));
+        $this->assertSame(['update'], $state('/ip pool add name=guest-pool'));
+        $this->assertSame(['update'], $state('/ip dhcp-server add name=guest-dhcp'));
+        $this->assertSame(['missing'], $state('address=172.16.0.0/12'));
+        // Hotspot profile by name (differs), the continuation line inherits
+        $this->assertSame(['update'], $state('add name=guest-portal dns-name='));
+        $this->assertSame(['update'], $state('use-radius=yes radius-accounting=yes'));
+        // Access block per router: user missing, group present
+        $this->assertSame(['missing'], $state('/user add name=portal-ro group=guest-portal-ro'));
+        $this->assertSame(['ok'], $state('/user group add name=guest-portal-ro'));
+        // Comment lines and uninstall blocks stay neutral
+        $this->assertSame([], array_filter(array_keys($lines), fn ($text) => str_starts_with(ltrim($text), '#')));
+        $this->assertSame([], $state('remove [find where name=vlan30-guest'));
+
+        // Stale state: no colours (the commands are greyed out)
+        $this->travel(16)->minutes();
+        $page = $this->page();
+        $this->assertStringContainsString('data-cli-disabled-notice', $page);
+        $this->assertStringNotContainsString('data-line-legend', $page);
+        $this->assertStringNotContainsString('data-line-status', preg_replace('/<div[^>]*data-router-state.*?<\/section>/s', '', $page));
+    }
+
+    public function test_placeholders_get_inputs_with_suggestions_from_the_router_state(): void
+    {
+        $this->saveNetwork();
+        $this->configureApi();
+        $this->fakeRest(['/interface' => [['name' => 'ether1', 'type' => 'ether'], ['name' => 'ether2', 'type' => 'ether'],
+            ['name' => 'bridge1', 'type' => 'bridge']], '/interface wifi configuration' => [['name' => 'cfg-main', 'ssid' => 'Office'],
+                ['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi']]] + $this->routerMenus());
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+
+        $page = $this->page();
+        $this->assertMatchesRegularExpression('/data-placeholder="TRUNK_PORT_TO_CAP"\s+list="(gp-code-[a-z0-9]+-trunk_port_to_cap)"/', $page);
+        preg_match('/data-placeholder="TRUNK_PORT_TO_CAP"\s+list="([^"]+)"/', $page, $m);
+        $this->assertMatchesRegularExpression('/<datalist id="'.preg_quote($m[1], '/').'">\s*<option value="ether1"><\/option><option value="ether2"><\/option>\s*<\/datalist>/', $page);
+        // Own objects are not offered; free text without known values (no datalist)
+        $this->assertMatchesRegularExpression('/data-placeholder="MASTER_CFG"\s+list="[^"]+"/', $page);
+        $this->assertStringContainsString('<option value="cfg-main"></option>', $page);
+        $this->assertStringNotContainsString('<option value="cfg-guest"></option>', $page);
+        $this->assertMatchesRegularExpression('/data-placeholder="COUNTRY"\s+x-on:input/', $page);
+        // The split guard operand is not a placeholder; the visible script keeps the placeholder text
+        $this->assertStringContainsString('data-secret-placeholders="API_PASSWORD"', $page);
+        $this->assertStringContainsString('password=&quot;&lt;API_PASSWORD&gt;&quot;', $page);
+
+        // Router script page: placeholder inputs and colours of this router
+        $config = $this->admin()->get("/admin/sites/{$this->site->id}/routers/{$this->nas->id}/config")->assertOk()->getContent();
+        $this->assertStringContainsString('data-placeholder="LAN"', $config);
+        $this->assertStringContainsString('<option value="10.30.0.0"></option>', $config);
+        $radius = array_filter($this->lineStates($config), fn ($text) => str_contains($text, 'add address=10.0.0.10 secret='), ARRAY_FILTER_USE_KEY);
+        $this->assertSame([['missing']], array_values($radius));
+    }
+
+    public function test_passwords_are_never_rendered_and_only_fetched_on_request(): void
+    {
+        $wifi = 'Wifi "pass" $1?';
+        $this->saveNetwork(self::NETWORK + ['wifi_password' => $wifi]);
+        $this->configureApi();
+
+        $page = $this->page();
+        foreach (['Test pass 1', 'Wifi', addcslashes($wifi, '\\"$?'), e(addcslashes($wifi, '\\"$?'))] as $secret) {
+            $this->assertStringNotContainsString($secret, $page);
+        }
+        $this->assertStringContainsString('passphrase=&quot;&lt;WIFI_PASSWORD&gt;&quot;', $page);
+        // A copy with the placeholder left in aborts before any change
+        $this->assertStringContainsString(e(':if ("<WIFI_PASSWORD>" = ("<" . "WIFI_PASSWORD>")) do={ :error "replace <WIFI_PASSWORD> first" }'), $page);
+        $this->assertSame(2, substr_count($page, 'data-insert-passwords'));
+        // The generated script itself is unchanged (with the password)
+        $this->assertStringContainsString('passphrase="'.addcslashes($wifi, '\\"$?').'"',
+            $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['network']['wifi']);
+
+        // "Insert passwords": admin only, POST, not cached, escaped for the quoted RouterOS strings
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/secrets")->assertOk()
+            ->assertHeader('Cache-Control', 'no-store, private')
+            ->assertExactJson(['WIFI_PASSWORD' => addcslashes($wifi, '\\"$?'), 'API_PASSWORD' => [(string) $this->nas->id => 'Test pass 1']]);
+        $this->admin()->get("/admin/sites/{$this->site->id}/setup/secrets")->assertStatus(405);
+        $this->onZone('admin')->actingAs(User::factory()->create())->post("/admin/sites/{$this->site->id}/setup/secrets")->assertForbidden();
+        $this->onZone('guest')->post("/admin/sites/{$this->site->id}/setup/secrets")->assertNotFound();
+        // Never audited
+        $this->assertStringNotContainsString('Test pass 1', (string) json_encode(AuditLog::query()->get()->toArray()));
+        $this->assertStringNotContainsString('Wifi', (string) json_encode(AuditLog::query()->get()->toArray()));
     }
 }

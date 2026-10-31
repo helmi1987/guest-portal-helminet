@@ -2,6 +2,7 @@
 
 namespace App\Nas\RouterOs;
 
+use App\Models\NasClient;
 use App\Models\Site;
 
 /**
@@ -29,4 +30,30 @@ interface RouterStateDriver
      * @return array<string, array{0: string|int, 1: string}>
      */
     public function deriveSetup(Site $site, array $state): array;
+
+    /**
+     * Display state per line of a generated script (missing|update|ok|null), from a map comment key
+     * (or hotspot:server|profile) => compare status. Display only.
+     *
+     * @param  array<string, string>  $statusByKey
+     * @return list<?string>
+     */
+    public function lineStatuses(string $script, array $statusByKey): array;
+
+    /**
+     * Placeholder suggestions from the stored router states and prefill values from the site.
+     *
+     * @param  iterable<NasClient>  $routers
+     * @return array{options: array<string, list<string>>, values: array<string, string>}
+     */
+    public function placeholderHints(Site $site, iterable $routers): array;
+
+    /**
+     * Stored passwords for the script placeholders (escaped for quoted strings), only for the admin's
+     * explicit "Insert passwords": WIFI_PASSWORD and API_PASSWORD per router id.
+     *
+     * @param  iterable<NasClient>  $routers
+     * @return array{WIFI_PASSWORD: ?string, API_PASSWORD: array<string, ?string>}
+     */
+    public function scriptSecrets(Site $site, iterable $routers): array;
 }
