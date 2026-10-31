@@ -56,15 +56,13 @@ class VoucherQr
     }
 
     /**
-     * WIFI: payload (ZXing format; \ ; , : " escaped): open network, or WPA with a password. An SSID or
-     * password of hex digits only is quoted, otherwise readers may take it for a hex-encoded value.
+     * WIFI: payload (ZXing format; \ ; , : " escaped): open network, or WPA with a password. Values are never
+     * quoted: phones would take the quotes as part of the SSID or password.
      */
     public static function wifiPayload(string $ssid, ?string $password = null): string
     {
         $value = function (string $v): string {
-            $escaped = preg_replace('/([\\\\;,:"])/', '\\\\$1', $v);
-
-            return ctype_xdigit($v) ? '"'.$escaped.'"' : $escaped;
+            return preg_replace('/([\\\\;,:"])/', '\\\\$1', $v);
         };
 
         return $password === null || $password === ''

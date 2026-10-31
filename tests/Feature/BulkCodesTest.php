@@ -41,7 +41,7 @@ class BulkCodesTest extends TestCase
             ->assertDontSee('Export CSV');
 
         $this->assertSame('WIFI:S:Guest WiFi;T:nopass;;', VoucherQr::wifiPayload('Guest WiFi'));
-        $this->assertSame('WIFI:S:"CAFE01";T:nopass;;', VoucherQr::wifiPayload('CAFE01'));
+        $this->assertSame('WIFI:S:CAFE01;T:nopass;;', VoucherQr::wifiPayload('CAFE01'));
         $this->assertSame('WIFI:S:a\\;b;T:nopass;;', VoucherQr::wifiPayload('a;b'));
         $this->onZone('admin')->actingAs($manager)->post('/admin/grants', [
             'quantity' => 101, 'duration' => '1d', 'expiry_mode' => 'first_login',

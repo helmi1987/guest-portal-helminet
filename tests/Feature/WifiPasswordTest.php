@@ -170,7 +170,8 @@ class WifiPasswordTest extends TestCase
     public function test_voucher_qr_and_print_sheet_carry_the_password(): void
     {
         $this->assertSame('WIFI:T:WPA;S:Guest WiFi;P:pa\\;ss\\:wo\\,rd\\"\\\\;;', VoucherQr::wifiPayload('Guest WiFi', 'pa;ss:wo,rd"\\'));
-        $this->assertSame('WIFI:T:WPA;S:Guest;P:"DEADBEEF";;', VoucherQr::wifiPayload('Guest', 'DEADBEEF'));
+        $this->assertSame('WIFI:T:WPA;S:Guest;P:DEADBEEF;;', VoucherQr::wifiPayload('Guest', 'DEADBEEF'));
+        $this->assertSame('WIFI:T:WPA;S:Guest;P:12345678;;', VoucherQr::wifiPayload('Guest', '12345678'));
         $this->assertSame('WIFI:S:Guest;T:nopass;;', VoucherQr::wifiPayload('Guest', null));
         $this->assertSame('WIFI:S:Guest;T:nopass;;', VoucherQr::wifiPayload('Guest', ''));
 
