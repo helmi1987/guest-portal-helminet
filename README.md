@@ -20,15 +20,18 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (M7 federation in progress; v0.12.7: generated RouterOS scripts verified on a CHR (tests/routeros), never touch foreign objects, re-runnable firewall block, hotspot HTML directory setting; v0.12.6: Disconnect-Request with Framed-IP-Address only (RouterOS 7), assistant firewall rules moved before existing drop rules; v0.12.5: critical fix of the router certificate script (see below); v0.12.4: "Regenerate secret and token" also rotates the router download token; v0.12.3: router certificate script without certificate comments, portal name pinned as CNAME (no IPv6 leak), portal IP validation; v0.12.2: styled error pages, separate route throttle counters; v0.12.1: setup fixes (bridge, host names, router certificate script, CertWarden keys, uninstall); v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
+**Status:** early development (v0.13.0: M7 federation, one instance per site, see
+[docs/federation.md](docs/federation.md); v0.12.7: generated RouterOS scripts verified on a CHR (tests/routeros), never touch foreign objects, re-runnable firewall block, hotspot HTML directory setting; v0.12.6: Disconnect-Request with Framed-IP-Address only (RouterOS 7), assistant firewall rules moved before existing drop rules; v0.12.5: critical fix of the router certificate script (see below); v0.12.4: "Regenerate secret and token" also rotates the router download token; v0.12.3: router certificate script without certificate comments, portal name pinned as CNAME (no IPv6 leak), portal IP validation; v0.12.2: styled error pages, separate route throttle counters; v0.12.1: setup fixes (bridge, host names, router certificate script, CertWarden keys, uninstall); v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor
 login, audit log, backups, certificate pull from CertWarden or a URL, test buttons, guests & sessions list,
 bulk codes with printable A4 voucher sheet (Wi-Fi join QR) and CSV export, MAC whitelist (trusted devices
 online without the portal via RouterOS MAC authentication), OIDC login for the admin UI (e.g.
-Authentik), branding (logo, favicon, colours, custom CSS, per-site overrides); federation follows
-(see CONCEPT.md §14).
+Authentik), branding (logo, favicon, colours, custom CSS, per-site overrides); federation (M7): one
+instance per site, paired with a hub over a private link (mutual TLS with pinned certificates, signed
+changes), codes, devices, users, sites and settings shared, roaming between sites, offline rule "SMS
+only" while the hub is unreachable, Telegram owner, hub takeover, restore resync.
 
 See [CONCEPT.md](CONCEPT.md) for architecture, data model, security and milestones.
 
@@ -84,11 +87,12 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
 - Branding: admin UI → Settings → Appearance (logo, favicon, colours, custom CSS; admin only), per
   site on the site page. Files are stored in `/data/branding`. Stable CSS hooks (`gp-*` classes,
   `--gp-*` variables), examples and limits: [docs/branding.md](docs/branding.md).
-- Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`, `branding/`; one `.tar.gz`, mode 0600,
+- Backups: daily to `/data/backups` (SQLite snapshot, `.env`, `certs/`, `branding/`, `federation/`; one `.tar.gz`, mode 0600,
   14 kept by default), admin UI → Backups or `artisan portal:backup`. Backups contain secrets.
 - Compose: [docker-compose.example.yml](docker-compose.example.yml).
   Docker host (Compose, e.g. Unraid): [docs/docker-host.md](docs/docker-host.md).
   RouterOS container: [docs/routeros-container.md](docs/routeros-container.md).
+  Several instances (one per site, federation): [docs/federation.md](docs/federation.md).
   Guest network (VLAN, Wi-Fi, firewall, hotspot, RADIUS, certificates):
   [docs/guest-network-setup.md](docs/guest-network-setup.md).
 - Push approval: admin UI → Settings → admin URL for links (admin port as reached by approvers),
@@ -102,9 +106,11 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   hits are logged as warnings. Code and approval login keep working.
 - Restore: stop the container, delete `<data folder>/db/database.sqlite-wal` and `-shm` if present,
   extract the backup into the data folder (`tar -xzf portal-backup-….tar.gz -C <data folder>`;
-  entries mirror the folder: `db/database.sqlite`, `.env`, `certs/`, `branding/`, plus `backup-manifest.json`),
-  start the container. The
+  entries mirror the folder: `db/database.sqlite`, `.env`, `certs/`, `branding/`, `federation/`, plus
+  `backup-manifest.json`), start the container. The
   `.env` must belong to the database (same `APP_KEY`), otherwise stored secrets cannot be decrypted.
+  A federated instance then fetches its own changes made after the backup back from the other instances
+  before it accepts changes again ([docs/federation.md](docs/federation.md) 9.6).
 - Time zone: `TZ` (or `APP_TIMEZONE`, which wins) sets the zone of times shown in the admin UI,
   notifications ("open until"), entered dates and backup file names; the database, expiry logic
   and the scheduler (backup 02:45, purge 03:30) stay in UTC.

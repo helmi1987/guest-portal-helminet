@@ -125,10 +125,9 @@ class BrandingFiles
         $max = max((int) config('portal.branding.logo_max_bytes'), (int) config('portal.branding.favicon_max_bytes'));
         foreach ($peers as $peer) {
             try {
-                $response = $this->client->to($peer)
+                // curl aborts larger downloads early; the length is checked again below.
+                $response = $this->client->to($peer, null, [CURLOPT_MAXFILESIZE => $max])
                     ->accept('application/octet-stream')
-                    // Abort larger downloads early (Content-Length); the length is checked again below.
-                    ->withOptions(['curl' => [CURLOPT_MAXFILESIZE => $max]])
                     ->get('/federation/branding/'.$file);
                 if (! $response->successful()) {
                     continue;

@@ -16,7 +16,11 @@ final class PinningCurlFactory implements CurlFactoryInterface
 {
     private CurlFactory $inner;
 
-    public function __construct(private readonly string $pin)
+    /**
+     * @param  array<int, mixed>  $options  further curl options outside Guzzle's allow-list (e.g.
+     *                                      CURLOPT_MAXFILESIZE for downloads)
+     */
+    public function __construct(private readonly string $pin, private readonly array $options = [])
     {
         $this->inner = new CurlFactory(3);
     }
@@ -25,6 +29,9 @@ final class PinningCurlFactory implements CurlFactoryInterface
     {
         $easy = $this->inner->create($request, $options);
         curl_setopt($easy->handle, CURLOPT_PINNEDPUBLICKEY, $this->pin);
+        if ($this->options !== []) {
+            curl_setopt_array($easy->handle, $this->options);
+        }
 
         return $easy;
     }

@@ -220,10 +220,11 @@ Only one site, only one step:
 | Favicon | 100 KB, PNG/ICO/SVG |
 | Custom CSS | 64 KB, rules in section 4 |
 
-- Multiple instances (federation, M7): colours, CSS and the file references are replicated with the
+- Multiple instances (federation): colours, CSS and the file references are replicated with the
   settings and sites; the files themselves are stored per instance in `/data/branding`. An instance
-  without the file shows the built-in default (the settings page warns) until the file is uploaded
-  there too (same file = same hash) or file replication exists.
+  without a referenced file fetches it by its hash from the instance that set it (or the hub) and checks
+  it like an upload (size, type, SVG rules, hash); until then it shows the built-in default (the settings
+  page warns). Files not available yet are tried again every 5 minutes.
 - The router's `login.html` only redirects to the portal (nothing visible), so it has no logo.
 - Captive browsers (OS mini browsers) may cache aggressively and support less CSS; test changes on
   real devices.

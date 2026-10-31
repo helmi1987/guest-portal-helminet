@@ -476,8 +476,8 @@ Features:
 
 Decisions 2026-10-29 (M7). Implementation status: parts A-I (change log, data key, apply engine,
 federation listener with mTLS, pairing and admin page, sync, session hooks/roaming/limited mode,
-Telegram forwarding, branding files), J (purge) and K (restore resync) implemented; integration tests
-and docs follow (§14).
+Telegram forwarding, branding files), J (purge), K (restore resync) and L (integration tests, docs)
+implemented, released as v0.13.0 (§14). Setup and operation: docs/federation.md.
 
 ### 10.1 Model
 
@@ -840,12 +840,16 @@ login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authe
 (User-Name format, `login-by=mac` before the certificate, reject handling) tested on real RouterOS. Open: first-start web setup, CertWarden pull, backups, voucher QR
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
 (revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
-M7 in progress: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
+M7 implemented: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
 (apply engine with conflict rules), D (federation listener, mTLS pin, peer client), E (pairing, federation
-page), F (signed events, push/pull/relay, heartbeat, skew and protocol pause) and G (apply hooks, remote
-sessions and disconnect, home instance, roaming, limited mode), H (Telegram owner and forwarding) and I
-(branding files), J (tombstone purge, log compaction) and K (restore resync, repair command) implemented;
-L open.
+page), F (signed events, push/pull/relay, heartbeat, skew and protocol pause), G (apply hooks, remote
+sessions and disconnect, home instance, roaming, limited mode), H (Telegram owner and forwarding), I
+(branding files), J (tombstone purge, log compaction), K (restore resync, repair command) and L
+(integration tests with three simulated instances: partition and rejoin, double redemption, relay, clock
+skew, newer schema and protocol, hub takeover, restore; docs/federation.md) implemented; released as
+v0.13.0, checked with three containers on one Docker host (pairing, relay, offline SMS-only, catch-up,
+restore resync, branding files, hub takeover with re-pairing). Open: test across real sites (WireGuard, WAN outages), Telegram forwarding with a real
+group.
 
 | # | Content | Acceptance criteria |
 |---|---|---|

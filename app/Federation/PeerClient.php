@@ -18,17 +18,22 @@ class PeerClient
 {
     public function __construct(private LocalInstance $instance) {}
 
-    public function to(Instance $peer, ?int $timeout = null): PendingRequest
+    /** @param  array<int, mixed>  $curl  extra curl options set on the handle (e.g. CURLOPT_MAXFILESIZE) */
+    public function to(Instance $peer, ?int $timeout = null, array $curl = []): PendingRequest
     {
         if (! $peer->federation_url || ! PeerCertificate::isPin($peer->cert_fingerprint)) {
             throw new InvalidArgumentException("Instance {$peer->id} has no federation URL or pin.");
         }
 
-        return $this->pinned($peer->federation_url, $peer->cert_fingerprint, $timeout);
+        return $this->pinned($peer->federation_url, $peer->cert_fingerprint, $timeout, $curl);
     }
 
-    /** Request to a URL with a known pin (pairing, before the peer is registered). */
-    public function pinned(string $url, string $pin, ?int $timeout = null): PendingRequest
+    /**
+     * Request to a URL with a known pin (pairing, before the peer is registered).
+     *
+     * @param  array<int, mixed>  $curl
+     */
+    public function pinned(string $url, string $pin, ?int $timeout = null, array $curl = []): PendingRequest
     {
         if (! PeerCertificate::isPin($pin) || ! preg_match('#^https://#i', $url)) {
             throw new InvalidArgumentException('Federation URL must use https and the pin sha256//<base64>.');
@@ -51,6 +56,6 @@ class PeerClient
                 'X-Federation-Protocol' => (string) Federation::FEDERATION_PROTOCOL,
             ])
             ->withOptions($options)
-            ->setHandler(new CurlHandler(['handle_factory' => new PinningCurlFactory($pin)]));
+            ->setHandler(new CurlHandler(['handle_factory' => new PinningCurlFactory($pin, $curl)]));
     }
 }
