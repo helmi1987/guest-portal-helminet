@@ -144,10 +144,14 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');
+                Route::post('/sites/{site}/setup/state', [SetupController::class, 'refreshState'])->name('sites.setup.state');
+                Route::post('/sites/{site}/setup/routers/{router}/state', [SetupController::class, 'queryState'])
+                    ->scopeBindings()->name('sites.setup.router-state');
                 Route::scopeBindings()->prefix('/sites/{site}/routers')->name('sites.routers.')->group(function () {
                     Route::post('/', [SiteController::class, 'storeRouter'])->name('store');
                     Route::delete('/{router}', [SiteController::class, 'destroyRouter'])->name('destroy');
                     Route::post('/{router}/secret', [SiteController::class, 'regenerateSecret'])->name('secret');
+                    Route::put('/{router}/api', [SiteController::class, 'updateRouterApi'])->name('api');
                     Route::get('/{router}/config', [SiteController::class, 'routerConfig'])->name('config');
                 });
 

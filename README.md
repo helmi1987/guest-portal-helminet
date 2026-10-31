@@ -51,8 +51,9 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
 - Guest portal: `https://<host>/`, admin UI: `https://<host>:8443/admin`.
 - Router setup: admin UI → Sites → add site and router → "Set up" (setup assistant: guided steps
   with ready-to-copy RouterOS commands for container, guest network, hotspot, RADIUS/certificate,
-  `login.html` fetch, status per router and diagnostics), or "Router configuration" (RouterOS
-  script) and `login.html` download.
+  `login.html` fetch, status per router and diagnostics; optional read-only router API to check the
+  router state and prefill the inputs, docs/guest-network-setup.md §10c), or "Router configuration"
+  (RouterOS script) and `login.html` download.
 - `/data` holds the database, generated secrets (`.env`), certificates and backups.
   Certificates (PEM, full chain + key) go to `/data/certs`: `portal.crt` + `portal.key` for the guest
   and admin ports (otherwise a self-signed one is generated; legacy: `fullchain.pem` + `privkey.pem`

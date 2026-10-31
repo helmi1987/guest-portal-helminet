@@ -49,7 +49,7 @@ final class Federation
      * payloads, never overwritten by remote events.
      */
     public const LOCAL_COLUMNS = [
-        'nas_clients' => ['last_seen_at', 'cert_fetched_at', 'login_page_fetched_at'],
+        'nas_clients' => ['last_seen_at', 'cert_fetched_at', 'login_page_fetched_at', 'router_state', 'router_state_at', 'router_state_error'],
     ];
 
     /** @return list<string> */

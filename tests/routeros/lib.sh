@@ -5,6 +5,9 @@ ROS_HOST=${ROS_HOST:-127.0.0.1}
 ROS_PORT=${ROS_PORT:-2222}
 ROS_USER=${ROS_USER:-admin}
 ROS_PASS=${ROS_PASS:-}
+# Router API forwards (router state query): www-ssl (REST) and api-ssl
+ROS_REST_PORT=${ROS_REST_PORT:-2443}
+ROS_APISSL_PORT=${ROS_APISSL_PORT:-2729}
 SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR -o ConnectTimeout=10
     -o ServerAliveInterval=10 -o ServerAliveCountMax=6)
 

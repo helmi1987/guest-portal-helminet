@@ -6,6 +6,7 @@ use App\Models\Grant;
 use App\Models\NasClient;
 use App\Models\RadiusAccounting;
 use App\Models\Site;
+use App\Nas\RouterOs\RouterStateDriver;
 use App\Support\Mac;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
@@ -13,13 +14,21 @@ use Illuminate\Support\Facades\Log;
 /**
  * MikroTik RouterOS 7 hotspot (CONCEPT.md §2.1, §5.1).
  */
-class MikrotikRos7Driver implements NasDriver
+class MikrotikRos7Driver implements NasDriver, RouterStateDriver
 {
+    use MikrotikRos7RouterState;
+
     /**
      * Name of the hotspot, hotspot profile, RADIUS/walled-garden comments, script, scheduler and
      * certificate created by the generated script. Defined once here; the certificate script uses it too.
      */
     public const NAME = 'guest-portal';
+
+    /** User group of the read-only router API access (state query of the setup assistant). */
+    public const API_GROUP = 'guest-portal-ro';
+
+    /** Policies of that group (RouterOS 7): print via the API (api-ssl) or REST (www-ssl), nothing else. */
+    public const API_POLICY = 'read,api,rest-api';
 
     /** html-directory of the hotspot profile: RouterOS default, or on devices with a flash folder. */
     public const HTML_DIRECTORIES = ['hotspot', 'flash/hotspot'];
@@ -80,6 +89,8 @@ class MikrotikRos7Driver implements NasDriver
             'fw' => ['list-guest' => $o('/interface list', 'GUEST'), 'list-member' => $o('/interface list member', 'GUEST')]
                 + array_map(fn ($list) => $o('/ip firewall address-list', $list), self::FW_ADDRESSES)
                 + array_map(fn () => $o('/ip firewall filter'), self::FW_RULES),
+            // Read-only API access of the state query (per router: the user name is the router's api_user)
+            'api' => ['group' => $o('/user group', self::API_GROUP), 'user' => $o('/user')],
         ];
         $out = [];
         foreach ($blocks as $block => $objects) {
@@ -451,6 +462,7 @@ class MikrotikRos7Driver implements NasDriver
         $kOpt = $k('net', 'option-114');
         $oOpt = $o('net', 'option-114');
         $dnsOwned = self::owned(...self::keys('dns', ['hotspot-name', 'portal-a', 'portal-cname']));
+        $apiGroup = self::API_GROUP;
 
         // Container network (step 1)
         $containerNetwork = implode("\n", [
@@ -661,6 +673,8 @@ class MikrotikRos7Driver implements NasDriver
                 /radius remove [find where {$o('radius', 'server')}]
                 # /radius incoming has no comment: only if nothing else uses Disconnect/CoA on this router:
                 # /radius incoming set accept=no
+                # If /ip service www-ssl or api-ssl uses the certificate "{$n}" (read-only API access of the
+                # state query), set it back first, e.g. /ip service set www-ssl certificate=none
                 # Certificates of the certificate script and of older versions, by name only (RouterOS
                 # certificates have no comment): leaf, CAs "-ca-<n>", temporary import and legacy names
                 /certificate remove [find where name="{$n}" || name~"^{$n}-ca-[0-9]+\\$" || name~"^{$n}-import" || name="{$n}-new" || name~"^{$n}-new_"]
@@ -683,6 +697,9 @@ class MikrotikRos7Driver implements NasDriver
                 /ip firewall filter remove [find where {$rulesOwned}]
                 /ip firewall nat remove [find where comment~"^{$n}: "]
                 /ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && {$addrOwned}]
+                # Read-only API access of the portal: its users (group {$apiGroup}), then the group
+                /user remove [find where group={$apiGroup} && {$o('api', 'user')}]
+                /user group remove [find where name={$apiGroup} && {$o('api', 'group')}]
                 # Older assistant versions used other comments; check and remove manually if present:
                 # /ip firewall filter print where comment~"^(guest|portal): |^stateful\\$|^nothing initiates"
                 # /ip firewall address-list print where list=PORTAL || list=PORTAL_RADIUS || list=RFC1918

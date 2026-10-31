@@ -89,6 +89,48 @@
                                     @csrf @method('DELETE') <button class="btn-danger">{{ __('portal.delete') }}</button></form>
                             </td>
                         </tr>
+                        @php($apiErrors = $errors->getBag('api_'.$router->id))
+                        <tr>
+                            <td colspan="5">
+                                {{-- Read-only router API for the state query of the setup assistant; the password is never rendered --}}
+                                <details id="router-api-{{ $router->id }}" @if ($apiErrors->any()) open @endif>
+                                    <summary class="cursor-pointer text-sm">{{ __('portal.router_api.title') }}:
+                                        <x-admin.step-status :ok="$router->hasApiAccess()" :label="$router->hasApiAccess() ? strtoupper($router->api_type === 'api-ssl' ? 'api-ssl' : 'rest').' '.$router->api_host.':'.$router->apiPort() : __('portal.router_api.not_configured')" /></summary>
+                                    <p class="my-2 text-xs text-slate-500">{{ __('portal.router_api.help') }}</p>
+                                    <form method="POST" action="{{ route('admin.sites.routers.api', [$site, $router]) }}" class="grid items-end gap-3 md:grid-cols-3">
+                                        @csrf @method('PUT')
+                                        <label class="label">{{ __('portal.router_api.host') }}
+                                            <input name="api_host" value="{{ old('api_host', $router->api_host) }}" placeholder="{{ $router->nas_ip }}" class="field"></label>
+                                        <label class="label">{{ __('portal.router_api.type') }}
+                                            <select name="api_type" class="field">
+                                                @foreach (\App\Models\NasClient::API_TYPES as $type)
+                                                    <option value="{{ $type }}" @selected(old('api_type', $router->api_type ?? 'rest') === $type)>{{ __('portal.router_api.types.'.$type) }}</option>
+                                                @endforeach
+                                            </select></label>
+                                        <label class="label">{{ __('portal.router_api.port') }}
+                                            <input name="api_port" type="number" min="1" max="65535" value="{{ old('api_port', $router->api_port) }}" placeholder="443 / 8729" class="field"></label>
+                                        <label class="label">{{ __('portal.router_api.user') }}
+                                            <input name="api_user" value="{{ $router->api_user }}" autocomplete="off" placeholder="guest-portal-ro" class="field"></label>
+                                        <label class="label">{{ __('portal.router_api.password') }}
+                                            <input name="api_password" type="password" autocomplete="new-password" maxlength="128" class="field"
+                                                @if ($router->api_password !== null) placeholder="••••••••" @endif>
+                                            @if ($router->api_password !== null)<span class="text-xs text-slate-500">{{ __('portal.router_api.password_stored') }}</span>@endif</label>
+                                        <label class="label">{{ __('portal.router_api.pin') }}
+                                            <input name="api_pin" value="{{ old('api_pin', $router->api_pin) }}" placeholder="sha256//..." class="field">
+                                            <span class="text-xs text-slate-500">{{ __('portal.router_api.pin_help') }}</span></label>
+                                        @foreach ($apiErrors->all() as $message)
+                                            <p class="text-sm text-red-700 md:col-span-3">{{ $message }}</p>
+                                        @endforeach
+                                        <div class="flex flex-wrap items-center gap-3 md:col-span-3">
+                                            <button class="btn-light">{{ __('portal.save') }}</button>
+                                            @if ($router->hasApiAccess() || $router->api_host)
+                                                <label class="text-xs"><input type="checkbox" name="api_clear" value="1"> {{ __('portal.router_api.clear') }}</label>
+                                            @endif
+                                        </div>
+                                    </form>
+                                </details>
+                            </td>
+                        </tr>
                     @empty
                         <tr><td colspan="5" class="text-slate-500">{{ __('portal.none') }}</td></tr>
                     @endforelse

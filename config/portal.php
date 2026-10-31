@@ -73,6 +73,17 @@ return [
         'fetch_interval' => env('PORTAL_ROUTER_CERT_INTERVAL', '1d'),
     ],
 
+    // Read-only router API of the setup assistant (CONCEPT.md §9): state query per router. The assistant's
+    // commands are greyed out when the last query is older than max_age_minutes or than the last change of
+    // the setup inputs. Timeouts in seconds; deadline = whole query of one router.
+    'router_api' => [
+        'max_age_minutes' => (int) env('PORTAL_ROUTER_STATE_MAX_AGE', 15),
+        'connect_timeout' => 5,
+        'timeout' => 10,
+        'deadline' => 45,
+        'max_rows' => 2000,
+    ],
+
     // Certificate for the guest and admin ports (CONCEPT.md §6), selected by portal-certs (nginx).
     'portal_cert' => [
         'cert' => $dataDir.'/certs/portal.crt',

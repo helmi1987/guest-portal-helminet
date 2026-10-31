@@ -130,7 +130,7 @@ class WifiPasswordTest extends TestCase
             $driver = $site->driver();
             $objects = $driver->managedObjects($site);
 
-            $this->assertSame(['radius', 'walled', 'cert', 'dns', 'container', 'net', 'wifi', 'fw'], array_keys($objects));
+            $this->assertSame(['radius', 'walled', 'cert', 'dns', 'container', 'net', 'wifi', 'fw', 'api'], array_keys($objects));
             $keys = array_merge(...array_map('array_keys', array_values($objects)));
             $this->assertSame($keys, array_unique($keys));
             foreach ($objects as $block => $entries) {

@@ -20,7 +20,7 @@ class FederatedSecrets
     public const FIELDS = [
         User::class => ['totp_secret'],
         Channel::class => ['config'],
-        NasClient::class => ['radius_secret', 'cert_token'],
+        NasClient::class => ['radius_secret', 'cert_token', 'api_user', 'api_password'],
         CertificateSource::class => ['api_key'],
     ];
 

@@ -114,6 +114,46 @@ class SiteController extends Controller
         return back()->with('status', __('portal.sites.secret_regenerated'));
     }
 
+    /**
+     * Read-only router API access for the setup assistant's state query (CONCEPT.md §9). User and
+     * password are stored encrypted with the federation data key, never audited, logged or rendered;
+     * an empty password field keeps the stored one, "api_clear" removes the access.
+     */
+    public function updateRouterApi(Request $request, Site $site, NasClient $router): RedirectResponse
+    {
+        if ($request->boolean('api_clear')) {
+            $router->fill(['api_host' => null, 'api_type' => null, 'api_port' => null, 'api_user' => null, 'api_password' => null, 'api_pin' => null]);
+            $router->save();
+            Audit::log('router.api_access_removed', $router, ['site' => $site->slug, 'name' => $router->name]);
+
+            return back()->with('status', __('portal.saved'));
+        }
+        $data = $request->validateWithBag('api_'.$router->id, [
+            'api_host' => ['required', 'string', 'max:253', 'regex:/^(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$|^[0-9a-fA-F:]+$/'],
+            'api_type' => ['required', Rule::in(NasClient::API_TYPES)],
+            'api_port' => ['nullable', 'integer', 'between:1,65535'],
+            'api_user' => ['required', 'string', 'max:64', 'regex:/^[A-Za-z0-9._@-]+$/'],
+            'api_password' => [$router->api_password === null ? 'required' : 'nullable', 'string', 'max:128', 'regex:/^[\x20-\x7E]+$/'],
+            'api_pin' => ['nullable', 'string', 'regex:#^sha256//[A-Za-z0-9+/]{43}=$#'],
+        ]);
+        $router->fill([
+            'api_host' => strtolower($data['api_host']),
+            'api_type' => $data['api_type'],
+            'api_port' => $data['api_port'] ?? null,
+            'api_user' => $data['api_user'],
+            'api_pin' => $data['api_pin'] ?? null,
+        ]);
+        if (($data['api_password'] ?? '') !== '') {
+            $router->api_password = $data['api_password'];
+        }
+        $router->save();
+        // Never the user name or password; only which access is configured
+        Audit::log('router.api_access_updated', $router, ['site' => $site->slug, 'name' => $router->name,
+            'api_type' => $router->api_type, 'api_port' => $router->apiPort(), 'pinned' => $router->api_pin !== null]);
+
+        return back()->with('status', __('portal.saved'));
+    }
+
     public function destroyRouter(Site $site, NasClient $router): RedirectResponse
     {
         $router->delete();

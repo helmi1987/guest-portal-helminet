@@ -9,7 +9,7 @@ Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, 
 
 | File | Purpose |
 |---|---|
-| `render.php` | Renders all blocks for a fixture site/router (in-memory SQLite, fake values) into `.rsc` files, one directory per Wi-Fi mode |
+| `render.php` | Renders all blocks for a fixture site/router (in-memory SQLite, fake values) into `.rsc` files, one directory per Wi-Fi mode; with `RQ_*` variables runs the router state query against the CHR instead |
 | `legacy.rsc` | Objects as created by scripts before the comment keys (migration check) |
 | `seed.rsc` | "Foreign" defconf-like configuration: firewall, interface lists, bridge, certificates, hotspot profiles, DNS, DHCP, address lists, RADIUS, Wi-Fi/CAPsMAN, scripts; some names start with `guest-portal` on purpose |
 | `pki.sh` | Throw-away test PKI: portal CA + portal server certificate, router chain (root, intermediate, two leaves: RSA PKCS#1, EC PKCS#8) |
@@ -52,6 +52,12 @@ dependencies. The run needs a router without configuration (fresh image or `load
   test portal CA imported as trusted (a foreign certificate as well).
 - `login.html` fetch into the profile's html-directory; survives re-creating the hotspot; a foreign
   hotspot directory is untouched.
+- Router state query (read-only API): the access block runs (and re-runs); with `www-ssl` and `api-ssl`
+  set to the certificate `guest-portal` for the test (restored before the uninstall), the REST and the
+  API-SSL client read the state through the forwarded ports (`ROS_REST_PORT` 2443, `ROS_APISSL_PORT`
+  2729): every generated object present with the expected values (except the container objects, removed
+  again before, and the virtual AP of mode local); wrong password = auth error, another pinned key =
+  TLS error; a REST write with the read-only user is refused.
 - Uninstall: afterwards the full `/export verbose show-sensitive`, the certificate store and the file
   list equal the snapshot taken after seeding, except for documented leftovers: `/radius incoming`,
   `capsman enabled`, the CAPsMAN certificates RouterOS generates when wifi CAPsMAN is enabled, the

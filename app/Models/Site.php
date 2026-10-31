@@ -24,9 +24,42 @@ class Site extends Model
     /** Setting key of the encrypted guest Wi-Fi password (setup assistant). */
     public const WIFI_PASSWORD = 'setup.wifi_password';
 
+    /** Unsaved copy for rendering only (withDerivedSetup()); saving it is refused. */
+    private bool $renderOnly = false;
+
     protected function casts(): array
     {
         return ['settings' => 'array'];
+    }
+
+    protected static function booted(): void
+    {
+        static::saving(function (Site $site) {
+            if ($site->renderOnly) {
+                throw new \LogicException('A site copy with derived setup values must not be saved.');
+            }
+        });
+    }
+
+    /**
+     * Copy of this site for rendering the setup assistant with inputs derived from the router state
+     * (field => value) where the saved setup has none. Never saved; relations are kept.
+     */
+    public function withDerivedSetup(array $values): static
+    {
+        $copy = clone $this;
+        $copy->renderOnly = true;
+        $settings = $copy->settings ?? [];
+        $setup = (array) ($settings['setup'] ?? []);
+        foreach ($values as $field => $value) {
+            if (($setup[$field] ?? '') === '') {
+                $setup[$field] = $value;
+            }
+        }
+        $settings['setup'] = $setup;
+        $copy->settings = $settings;
+
+        return $copy;
     }
 
     public function nasClients(): HasMany

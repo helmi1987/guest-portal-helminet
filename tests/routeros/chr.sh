@@ -8,7 +8,9 @@
 #                                                    router to the saved state in seconds instead of a reboot
 #   tests/routeros/chr.sh stop
 #
-# Host forward: $ROS_PORT (default 2222) -> 22 (SSH). Inside the CHR the host is 10.0.2.2 (qemu user net).
+# Host forwards: $ROS_PORT (default 2222) -> 22 (SSH), $ROS_REST_PORT (2443) -> 443 (www-ssl, REST) and
+# $ROS_APISSL_PORT (2729) -> 8729 (api-ssl) for the router state query. Inside the CHR the host is
+# 10.0.2.2 (qemu user net).
 set -euo pipefail
 cd "$(dirname "$0")"
 source ./lib.sh
@@ -45,7 +47,7 @@ start() { # <image> [console-log]
     # shellcheck disable=SC2046
     qemu-system-x86_64 $(accel) -m 256 -smp 2 -display none -serial "file:$console" \
         -monitor "unix:$MONITOR,server,nowait" -drive "file=$img,format=$fmt,if=virtio" \
-        -netdev "user,id=n0,hostfwd=tcp::${ROS_PORT}-:22" \
+        -netdev "user,id=n0,hostfwd=tcp::${ROS_PORT}-:22,hostfwd=tcp::${ROS_REST_PORT}-:443,hostfwd=tcp::${ROS_APISSL_PORT}-:8729" \
         -device virtio-net-pci,netdev=n0 -daemonize -pidfile "$PIDFILE"
     echo "CHR started ($(accel)), pid $(cat "$PIDFILE")"
     ros_wait

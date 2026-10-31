@@ -695,6 +695,31 @@ lists of the assistant. It is safe when entries do not exist and logs out connec
 - In the portal afterwards: delete the router (site page, Routers) or the whole site; this removes the
   RADIUS secret and the certificate token.
 
+## 10c. Router state query (read-only API)
+
+Optional, per router (site page, Routers, "Router API"): the setup assistant reads the router
+configuration (print only) to check its blocks and to prefill empty inputs.
+1. Router certificate first (sections 6 and 8): the certificate script imports it as `guest-portal`.
+2. On the router: the block "Read-only API access" of the router (setup assistant, "Router state") adds
+   group `guest-portal-ro` (policy `read,api,rest-api`; no write, no `sensitive`, so secrets stay hidden)
+   and the user; replace `<API_PASSWORD>`. Set the certificate on the service you use (not done by the
+   script, `/ip service` is not its own object):
+   `/ip service set www-ssl certificate=guest-portal disabled=no` (REST, port 443) or
+   `/ip service set api-ssl certificate=guest-portal disabled=no` (API over TLS, port 8729).
+   Optionally restrict the user to the portal instance (`address=<INSTANCE_IP>/32`) and the service
+   (`/ip service set ... address=<INSTANCE_IP>/32`).
+3. In the portal: API host (router IP), type, port, user and password. TLS is trusted only by the
+   pinned public key: by default the router certificate managed by the portal; another certificate on
+   the service needs its pin (`sha256//<base64>`, e.g.
+   `openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64`).
+   After a rotation of the router certificate with a new key the query fails with a TLS error until the
+   router imported the new certificate (certificate script, daily).
+4. "Query state" (per router) or "Refresh" (all routers): per block present / missing / differs (value
+   expected by the assistant vs. router) / legacy (created by an older version, updated on the next run).
+   The commands are greyed out while a router with API access has no query newer than 15 minutes
+   (`PORTAL_ROUTER_STATE_MAX_AGE`) or than the last change of the inputs.
+5. Uninstall: the block removes the user and the group; set the service certificate back first.
+
 ## 11. Sources and verification state
 
 Commands were checked against manual.mikrotik.com (RouterOS 7.26 docs), except items marked

@@ -4,11 +4,16 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\LocalSetting;
+use App\Models\NasClient;
 use App\Models\Site;
+use App\Nas\NasDriver;
+use App\Nas\RouterOs\RouterStateDriver;
+use App\Nas\RouterOs\RouterStateQuery;
 use App\Support\Audit;
 use App\Support\PortalAddress;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Validator as ValidatorInstance;
 use Illuminate\View\View;
@@ -26,16 +31,98 @@ class SetupController extends Controller
     {
         $site->load('nasClients');
         $driver = $site->driver();
+        $routers = $site->nasClients->sortBy('name')->values();
+        $site->setRelation('nasClients', $routers);
+        $container = (array) LocalSetting::get(self::CONTAINER_KEY, []);
+
+        // Router state (CONCEPT.md §9, decision 2026-10-31): inputs derived from the first router (by
+        // name) with a stored state, comparison per router, commands greyed out while a state is missing
+        // or stale for any router with API access.
+        $apiRouters = $routers->filter(fn (NasClient $nas) => $nas->hasApiAccess());
+        $stateDriver = $driver instanceof RouterStateDriver ? $driver : null;
+        $source = $stateDriver ? $apiRouters->first(fn (NasClient $nas) => is_array($nas->router_state)) : null;
+        $derived = $source ? $this->derived($driver, $site, $source->router_state) : [];
+        $view = $derived !== [] ? $site->withDerivedSetup(array_map(fn ($d) => $d[0], $derived)) : $site;
+        $inputsAt = $this->inputsChangedAt($site);
+        $states = $routers->mapWithKeys(fn (NasClient $nas) => [$nas->id => [
+            'fresh' => $this->fresh($nas, $inputsAt),
+            'compare' => $stateDriver && is_array($nas->router_state) ? $stateDriver->compareState($view, $nas->router_state) : null,
+            'version' => $nas->router_state['menus']['/system resource']['rows'][0]['version'] ?? null,
+        ]]);
+        $stale = $apiRouters->contains(fn (NasClient $nas) => ! $states[$nas->id]['fresh']);
 
         return view('admin.sites.setup', [
             'site' => $site,
             'setup' => array_diff_key((array) $site->setting('setup', []), ['wifi_password' => true]),
+            'derived' => $derived,
+            'derivedFrom' => $source?->name,
             'wifiPasswordSet' => $site->wifiPassword() !== null,
-            'portalAddressProblem' => PortalAddress::problem($site->setting('portal_address'), (array) $site->setting('setup', [])),
-            'container' => (array) LocalSetting::get(self::CONTAINER_KEY, []),
-            'commands' => $driver->setupCommands($site, (array) LocalSetting::get(self::CONTAINER_KEY, [])),
-            'fetch' => $site->nasClients->mapWithKeys(fn ($nas) => [$nas->id => $driver->loginPageFetch($site, $nas)]),
+            'portalAddressProblem' => PortalAddress::problem($site->setting('portal_address'), (array) $view->setting('setup', [])),
+            'container' => $container,
+            'commands' => $driver->setupCommands($view, $container),
+            'fetch' => $routers->mapWithKeys(fn ($nas) => [$nas->id => $driver->loginPageFetch($view, $nas)]),
+            'apiAccess' => $stateDriver ? $routers->mapWithKeys(fn ($nas) => [$nas->id => $driver->apiAccessCommands($view, $nas)]) : collect(),
+            'states' => $states,
+            'stateSupported' => $stateDriver !== null,
+            'cliDisabled' => $stale,
+            'maxAge' => (int) config('portal.router_api.max_age_minutes', 15),
         ]);
+    }
+
+    /** Query the state of one router (read-only API), then back to the assistant. */
+    public function queryState(Site $site, NasClient $router, RouterStateQuery $query): RedirectResponse
+    {
+        $router->setRelation('site', $site);
+        $error = $query->run($router);
+
+        return redirect()->to(route('admin.sites.setup', $site).'#step-state')
+            ->with('status', $error === null ? __('portal.router_api.queried', ['name' => $router->name]) : null);
+    }
+
+    /** Query every router of the site with API access ("Refresh"). */
+    public function refreshState(Site $site, RouterStateQuery $query): RedirectResponse
+    {
+        $failed = 0;
+        foreach ($site->nasClients as $router) {
+            if ($router->hasApiAccess()) {
+                $router->setRelation('site', $site);
+                $failed += $query->run($router) === null ? 0 : 1;
+            }
+        }
+
+        return redirect()->to(route('admin.sites.setup', $site).'#step-state')
+            ->with('status', $failed === 0 ? __('portal.router_api.refreshed') : null);
+    }
+
+    /**
+     * Derived inputs that pass the driver's validation rules, only for fields without a saved value.
+     *
+     * @return array<string, array{0: string|int, 1: string}>
+     */
+    private function derived(NasDriver&RouterStateDriver $driver, Site $site, array $state): array
+    {
+        $rules = $driver->setupFields()['network'];
+
+        return array_filter($driver->deriveSetup($site, $state), fn ($d, $field) => isset($rules[$field])
+            && Validator::make([$field => $d[0]], [$field => $rules[$field]])->passes(), ARRAY_FILTER_USE_BOTH);
+    }
+
+    /** Last change of the assistant's inputs: site (setup, hosts, addresses) and the container inputs. */
+    private function inputsChangedAt(Site $site): ?Carbon
+    {
+        $container = LocalSetting::query()->find(self::CONTAINER_KEY)?->updated_at;
+
+        return collect([$site->updated_at, $container])->filter()->max();
+    }
+
+    /** A successful state query newer than max_age_minutes, the inputs and the router's access settings. */
+    private function fresh(NasClient $nas, ?Carbon $inputsAt): bool
+    {
+        $at = $nas->router_state_at;
+
+        return $nas->hasApiAccess() && $at !== null && $nas->router_state_error === null
+            && $at->gte(now()->subMinutes((int) config('portal.router_api.max_age_minutes', 15)))
+            && ($inputsAt === null || $at->gte($inputsAt)) && ($nas->updated_at === null || $at->gte($nas->updated_at));
     }
 
     public function updateNetwork(Request $request, Site $site): RedirectResponse

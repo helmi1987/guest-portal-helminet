@@ -20,6 +20,8 @@ WORK=${WORK:-$(mktemp -d /tmp/routeros-harness.XXXXXX)}
 MODES=("${@:-capsman2}")
 [ $# -eq 0 ] && MODES=(capsman2 capsman1 local)
 TOKEN=testcerttoken0123456789abcdefABCD
+# Password of the read-only API user (fake test value, replaces <API_PASSWORD>)
+API_PASS=Test-api-pass-1
 N=guest-portal
 FAILS=0
 mkdir -p "$WORK"
@@ -35,7 +37,7 @@ check() { # <description> <command...>
 run_block() { # <file> [label]
     local f=$1 label=${2:-$(basename "$1")} prep=$WORK/run-$(basename "$1")
     sed -e "s/<COUNTRY>/${COUNTRY:-Germany}/g" -e 's/<MASTER_CFG>/cfg-main/g' -e 's/<EXISTING_SLAVES>/cfg-iot/g' \
-        -e 's/<TRUNK_PORT_TO_CAP>/veth-trunk/g' -e '/<WIFI_INTERFACE>/d' "$f" > "$prep"
+        -e 's/<TRUNK_PORT_TO_CAP>/veth-trunk/g' -e "s/<API_PASSWORD>/$API_PASS/g" -e '/<WIFI_INTERFACE>/d' "$f" > "$prep"
     if grep -v '^[[:space:]]*#' "$prep" | grep -q '<[A-Z_/-]*>'; then
         fail "$label: unreplaced placeholder: $(grep -v '^[[:space:]]*#' "$prep" | grep -o '<[A-Z_/-]*>' | sort -u | tr '\n' ' ')"
         return 1
@@ -300,6 +302,51 @@ for MODE in "${MODES[@]}"; do
         run_block "$R/container.container_network.rsc" "[$MODE] container.container_network"
         run_block "$R/uninstall.uninstall_container.rsc" "[$MODE] uninstall.uninstall_container"
     fi
+
+    log "[$MODE] read-only API access and router state query (REST via www-ssl, API via api-ssl)"
+    run_block "$R/api_access.rsc" "[$MODE] api_access"
+    run_block "$R/api_access.rsc" "[$MODE] api_access (re-run)"
+    # The services are not own objects: set for the test, restored before the uninstall
+    svc_before=$(ros ':foreach s in=[/ip service find where name="www-ssl" || name="api-ssl"] do={ :put ([/ip service get $s name] . "|" . [/ip service get $s certificate] . "|" . [/ip service get $s disabled]) }')
+    ros "/ip service set www-ssl certificate=$N disabled=no; /ip service set api-ssl certificate=$N disabled=no" >/dev/null
+    sleep 2
+    query() { # <type> <port> <cert> <password> -> state file
+        mkdir -p "$WORK/state/$MODE"
+        (cd "$REPO" && RQ_TYPE=$1 RQ_HOST=127.0.0.1 RQ_PORT=$2 RQ_CERT=$3 RQ_PASS=$4 \
+            php tests/routeros/render.php "$WORK/state/$MODE" "$ROUTER_IP" "$PORTAL_IP" "$PORTAL_PORT" "$MODE") >/dev/null
+        echo "$WORK/state/$MODE/state-$1.txt"
+    }
+    for t in rest api-ssl; do
+        port=$ROS_REST_PORT; [ "$t" = api-ssl ] && port=$ROS_APISSL_PORT
+        f=$(query "$t" "$port" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+        if grep -q '^error' "$f"; then fail "[$MODE] $t: state query: $(grep '^error' "$f")"; continue; fi
+        pass "[$MODE] $t: state query ($(grep '^version' "$f"))"
+        # Every generated object present with the expected values (container: removed again above; the
+        # virtual AP of mode local needs a radio)
+        bad=$(grep -vE '^(version |guest-portal:container:)' "$f" | grep -vE ' (present|foreign)$' | grep -vx 'guest-portal:wifi:wifi-guest missing')
+        if [ -z "$bad" ]; then pass "[$MODE] $t: all objects present, values as expected"
+        else fail "[$MODE] $t: objects not present or different"; printf '%s\n' "$bad" | sed 's/^/    | /'; fi
+        check "[$MODE] $t: foreign RFC1918 10.0.0.0/8 entry (seed) reported as foreign, not added" \
+            grep -qx 'guest-portal:fw:addr-rfc1918-10 foreign' "$f"
+    done
+    f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" wrong-password)
+    check "[$MODE] rest: wrong password -> auth error" grep -q '^error auth' "$f"
+    f=$(query api-ssl "$ROS_APISSL_PORT" "$WORK/pki/leaf2/router.crt" wrong-password)
+    check "[$MODE] api-ssl: wrong password -> auth error" grep -q '^error auth' "$f"
+    f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf1/router.crt" "$API_PASS")
+    check "[$MODE] rest: other key pinned -> tls error" grep -q '^error tls' "$f"
+    f=$(query api-ssl "$ROS_APISSL_PORT" "$WORK/pki/leaf1/router.crt" "$API_PASS")
+    check "[$MODE] api-ssl: other key pinned -> tls error" grep -q '^error tls' "$f"
+    # The group is read-only: a write through REST is refused
+    pin=sha256//$(openssl x509 -in "$WORK/pki/leaf2/router.crt" -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64)
+    code=$(curl -s -o /dev/null -w '%{http_code}' -k --pinnedpubkey "$pin" -u "portal-ro:$API_PASS" -X PUT \
+        -H 'content-type: application/json' --data '{"name":"gp-write-test","ranges":"10.99.0.1-10.99.0.2"}' \
+        "https://127.0.0.1:$ROS_REST_PORT/rest/ip/pool")
+    check "[$MODE] rest: write with the read-only user refused (HTTP $code)" test "$code" != 200 -a "$code" != 201
+    check "[$MODE] rest: nothing written" test -z "$(ros ':put [/ip pool find where name=gp-write-test]')"
+    while IFS='|' read -r sname scert sdis; do
+        [ -n "$sname" ] && ros "/ip service set $sname certificate=$scert disabled=$sdis" >/dev/null
+    done <<<"$svc_before"
 
     check_keys_known "$R" "[$MODE] before uninstall"
     log "[$MODE] uninstall"

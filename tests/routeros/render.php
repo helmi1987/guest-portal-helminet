@@ -5,10 +5,15 @@
  * (used by tests/routeros/run.sh against a RouterOS CHR). Fixed fake values only; no production data.
  *
  * Usage: php tests/routeros/render.php <out-dir> [router-ip] [portal-ip] [portal-port] [wifi-mode]
+ *
+ * Router state query instead of rendering (same fixture, one Wi-Fi mode): environment RQ_TYPE (rest or
+ * api-ssl), RQ_HOST, RQ_PORT, RQ_CERT (PEM whose key is pinned), RQ_PASS; writes one line per object to
+ * <out-dir>/state-<type>.txt ("<key> <status> <diff>") or "error <kind> <detail>".
  */
 
 use App\Models\NasClient;
 use App\Models\Site;
+use App\Nas\RouterOs\RouterStateQuery;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
 
@@ -66,9 +71,36 @@ foreach ($wifiModes as $i => $mode) {
     // Fixed test values (fake, not secrets).
     $nas->radius_secret = 'testradiussecret0123456789abcdef';
     $nas->cert_token = 'testcerttoken0123456789abcdefABCD';
+    // Read-only API user of the state query (name only; the password is set by run.sh)
+    $nas->api_user = 'portal-ro';
+    $nas->api_type = getenv('RQ_TYPE') ?: 'rest';
     $nas->save();
     $site = Site::with('nasClients')->find($site->id);
     $driver = $site->driver();
+
+    if (getenv('RQ_TYPE')) {
+        config(['portal.router_cert.cert' => getenv('RQ_CERT')]);
+        $nas = NasClient::find($nas->id);
+        $nas->fill(['api_host' => getenv('RQ_HOST') ?: '127.0.0.1', 'api_port' => (int) getenv('RQ_PORT'), 'api_password' => getenv('RQ_PASS')])->save();
+        $nas = NasClient::with('site.nasClients')->find($nas->id);
+        $error = app(RouterStateQuery::class)->run($nas);
+        $lines = [];
+        if ($error !== null) {
+            $lines[] = "error {$error['kind']} {$error['detail']}";
+        } else {
+            $nas->refresh();
+            foreach ($driver->compareState($site, $nas->router_state) as $objects) {
+                foreach ($objects as $key => $item) {
+                    $lines[] = "{$key} {$item['status']}".($item['diff'] !== [] ? ' '.json_encode($item['diff']) : '');
+                }
+            }
+            $lines[] = 'version '.($nas->router_state['menus']['/system resource']['rows'][0]['version'] ?? '?');
+        }
+        file_put_contents($out.'/state-'.getenv('RQ_TYPE').'.txt', implode("\n", $lines)."\n");
+        fwrite(STDOUT, implode("\n", $lines)."\n");
+
+        continue;
+    }
 
     $dir = count($wifiModes) > 1 ? $out.'/'.$mode : $out;
     @mkdir($dir, 0755, true);
@@ -83,6 +115,7 @@ foreach ($wifiModes as $i => $mode) {
     }
     $files['router.rsc'] = $driver->configScript($site, $nas);
     $files['login_fetch.rsc'] = $driver->loginPageFetch($site, $nas);
+    $files['api_access.rsc'] = $driver->apiAccessCommands($site, $nas);
     file_put_contents($dir.'/login.html', $driver->loginPage($site));
     file_put_contents($dir.'/nas_id', (string) $nas->id);
     file_put_contents($dir.'/keys', implode("\n", array_merge(...array_map('array_keys', array_values($driver->managedObjects($site)))))."\n");

@@ -14,18 +14,25 @@ use Illuminate\Support\Str;
 /**
  * A router of a site (replicated for recovery, CONCEPT.md §10.3; secrets with the federation data key).
  * Only the site's home instance serves it: FreeRADIUS clients file, RADIUS, downloads, disconnects.
- * last_seen_at, cert_fetched_at and login_page_fetched_at are local status (not replicated).
+ * last_seen_at, cert_fetched_at, login_page_fetched_at and the router state (router_state*) are local
+ * status (not replicated). Read-only router API access (api_*) is replicated; user and password with
+ * the federation data key.
  */
-#[Fillable(['name', 'nas_ip', 'nas_identifier', 'coa_port'])]
-#[Hidden(['radius_secret', 'cert_token'])]
+#[Fillable(['name', 'nas_ip', 'nas_identifier', 'coa_port', 'api_host', 'api_type', 'api_port', 'api_user', 'api_password', 'api_pin'])]
+#[Hidden(['radius_secret', 'cert_token', 'api_user', 'api_password', 'router_state'])]
 class NasClient extends Model
 {
     use Replicated;
 
+    /** Router API types: RouterOS REST (www-ssl, /rest) or the RouterOS API over TLS (api-ssl). */
+    public const API_TYPES = ['rest', 'api-ssl'];
+
     protected function casts(): array
     {
         return ['radius_secret' => Federated::class, 'cert_token' => Federated::class, 'coa_port' => 'integer', 'legacy_id' => 'integer',
-            'last_seen_at' => 'datetime', 'cert_fetched_at' => 'datetime', 'login_page_fetched_at' => 'datetime'];
+            'last_seen_at' => 'datetime', 'cert_fetched_at' => 'datetime', 'login_page_fetched_at' => 'datetime',
+            'api_user' => Federated::class, 'api_password' => Federated::class, 'api_port' => 'integer',
+            'router_state' => 'array', 'router_state_at' => 'datetime', 'router_state_error' => 'array'];
     }
 
     protected static function booted(): void
@@ -69,6 +76,40 @@ class NasClient extends Model
         $this->{$column} = now();
         static::query()->whereKey($this->id)->toBase()->update([$column => $this->{$column}]);
         $this->syncOriginalAttribute($column);
+    }
+
+    /** Read-only router API configured (host, type, user and password); see App\Nas\RouterOs. */
+    public function hasApiAccess(): bool
+    {
+        return $this->api_host !== null && $this->api_host !== '' && in_array($this->api_type, self::API_TYPES, true)
+            && $this->api_user !== null && $this->api_user !== '' && $this->api_password !== null;
+    }
+
+    /** API port: the configured one or the RouterOS default of the type (www-ssl 443, api-ssl 8729). */
+    public function apiPort(): int
+    {
+        return $this->api_port ?: ($this->api_type === 'api-ssl' ? 8729 : 443);
+    }
+
+    /**
+     * Store the result of a router state query (local status, no model events: saving would rewrite the
+     * FreeRADIUS clients file and replicate). A failed query keeps the previous state and records the error.
+     *
+     * @param  array{kind: string, detail: string}|null  $error
+     */
+    public function storeRouterState(?array $state, ?array $error = null): void
+    {
+        $values = $error === null
+            ? ['router_state' => $state, 'router_state_at' => now(), 'router_state_error' => null]
+            : ['router_state_error' => $error + ['at' => now()->toIso8601String()]];
+        foreach ($values as $column => $value) {
+            $this->{$column} = $value;
+        }
+        $raw = array_intersect_key($this->getAttributes(), $values);
+        static::query()->whereKey($this->id)->toBase()->update($raw);
+        foreach (array_keys($values) as $column) {
+            $this->syncOriginalAttribute($column);
+        }
     }
 
     /** Client name in the FreeRADIUS clients file; passed back by FreeRADIUS to identify the NAS. */

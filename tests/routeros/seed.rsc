@@ -26,7 +26,7 @@ add chain=input action=accept connection-state=established,related,untracked com
 add chain=input action=drop connection-state=invalid comment="defconf: drop invalid"
 add chain=input action=accept protocol=icmp comment="defconf: accept ICMP"
 add chain=input action=accept dst-address=127.0.0.1 comment="defconf: accept to local loopback (for CAPsMAN)"
-add chain=input action=accept in-interface-list=WAN protocol=tcp dst-port=22,8728 comment="test: harness access"
+add chain=input action=accept in-interface-list=WAN protocol=tcp dst-port=22,443,8728,8729 comment="test: harness access"
 add chain=input action=drop in-interface-list=!LAN comment="defconf: drop all not coming from LAN"
 add chain=forward action=accept ipsec-policy=in,ipsec comment="defconf: accept in ipsec policy"
 add chain=forward action=accept ipsec-policy=out,ipsec comment="defconf: accept out ipsec policy"
