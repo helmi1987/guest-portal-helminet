@@ -92,6 +92,8 @@ return [
         'keep' => 14,
         'env_file' => env('PORTAL_DATA_DIR') ? $dataDir.'/.env' : base_path('.env'),
         'certs_dir' => $dataDir.'/certs',
+        // Extracted with a backup into the data folder: marks a restore (federation resync, CONCEPT.md §10.3).
+        'restore_marker' => $dataDir.'/backup-manifest.json',
         // SQLite file to snapshot; null = the sqlite connection's database.
         'database' => null,
     ],

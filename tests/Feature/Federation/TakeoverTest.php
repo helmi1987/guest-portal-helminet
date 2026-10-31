@@ -4,9 +4,11 @@ namespace Tests\Feature\Federation;
 
 use App\Enums\ExpiryMode;
 use App\Enums\GrantType;
+use App\Federation\DataKey;
 use App\Federation\Pairing;
 use App\Federation\Topology;
 use App\Models\AuditLog;
+use App\Models\Channel;
 use App\Models\Grant;
 use App\Models\Instance;
 use App\Models\LocalSetting;
@@ -73,7 +75,10 @@ class TakeoverTest extends TestCase
         $oldHub = $this->idOf('hub');
         $idA = $this->idOf('a');
         $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'admin@example.com']));
+        $channelId = $this->on('hub', fn () => Channel::create(['kind' => 'notification', 'driver' => 'gotify', 'name' => 'Push',
+            'enabled' => true, 'config' => ['url' => 'https://push.example.com', 'token' => 'test-secret']])->id);
         $this->syncRound();
+        $keyBefore = $this->on('a', fn () => app(DataKey::class)->currentId());
         $this->down = ['hub'];
 
         // Only an admin, confirmed with the instance's name.
@@ -89,6 +94,10 @@ class TakeoverTest extends TestCase
         $this->assertSame($idA, $this->on('a', fn () => app(Topology::class)->hubId()));
         $this->assertNotNull($this->rowOn('a', 'instances', $oldHub)['deleted_at']);
         $this->assertTrue($this->on('a', fn () => AuditLog::where('action', 'federation.promoted')->exists()));
+        // The old hub knew the data key: rotated, secrets re-encrypted.
+        $keyAfter = $this->on('a', fn () => app(DataKey::class)->currentId());
+        $this->assertNotSame($keyBefore, $keyAfter);
+        $this->assertSame($keyAfter, DataKey::keyIdOf($this->rowOn('a', 'channels', $channelId)['config']));
 
         // b gets a's events but not the hub change until its admin re-pairs.
         $this->syncRound();
@@ -106,6 +115,10 @@ class TakeoverTest extends TestCase
         $grant = $this->grantOn('b', '333333');
         $this->syncRound();
         $this->assertNotNull($this->rowOn('a', 'grants', $grant->id));
+        // b has the new key and the re-encrypted secrets.
+        $this->assertSame($keyAfter, $this->on('b', fn () => app(DataKey::class)->currentId()));
+        $this->assertSame($keyAfter, DataKey::keyIdOf($this->rowOn('b', 'channels', $channelId)['config']));
+        $this->assertSame('test-secret', $this->on('b', fn () => Channel::findOrFail($channelId)->conf('token')));
 
         // The old hub returns: it learns it was replaced and does not resume as hub.
         $this->down = [];

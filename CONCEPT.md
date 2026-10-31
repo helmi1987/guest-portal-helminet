@@ -464,7 +464,7 @@ Features:
 | Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login. |
 | Retention | Retention period (default 1 year); nightly purge job. |
-| Backup | Implemented M6, per instance: daily `portal:backup` (02:45 UTC) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY), `certs/` and `branding/` (v0.10.0); entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Timestamp in the display time zone since v0.10.0 (before: UTC; known limit: two backups within the repeated DST hour may sort in the wrong order). Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. |
+| Backup | Implemented M6, per instance: daily `portal:backup` (02:45 UTC) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY), `certs/` and `branding/` (v0.10.0); entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Timestamp in the display time zone since v0.10.0 (before: UTC; known limit: two backups within the repeated DST hour may sort in the wrong order). Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. Since M7 also `federation/` (federation key and certificate); a restore of a federated instance triggers the resync (§10.3). |
 | Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create (bulk: one entry with count)/edit/extend/expiry/revoke/disconnect/CSV export, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), MAC whitelist changes, settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |
 | Federation | Peers, status, lag, join token, Telegram owner. |
 | RouterOS generator | Per site: copy-paste script (hotspot, RADIUS client, `/radius incoming`, walled garden, cert fetch), `login.html` download and upload instructions. |
@@ -476,7 +476,8 @@ Features:
 
 Decisions 2026-10-29 (M7). Implementation status: parts A-I (change log, data key, apply engine,
 federation listener with mTLS, pairing and admin page, sync, session hooks/roaming/limited mode,
-Telegram forwarding, branding files) implemented; purge, restore resync follow (§14).
+Telegram forwarding, branding files), J (purge) and K (restore resync) implemented; integration tests
+and docs follow (§14).
 
 ### 10.1 Model
 
@@ -497,7 +498,8 @@ Telegram forwarding, branding files) implemented; purge, restore resync follow (
 - **Hub takeover** (decision 2026-10-31, implemented): when the hub is lost for good, an admin of another
   instance makes it the hub (federation page, confirmed by typing the instance name, audited): it sets the
   hub setting itself (the only exception to "only the hub changes the hub") and tombstones the old hub's
-  row. The other instances drop these changes until their admin **re-pairs** with the new hub (page
+  row; like removing a peer it rotates the data key and lists the secrets to renew (decision 2026-10-31;
+  the other instances get the new key with the re-pairing answer). The other instances drop these changes until their admin **re-pairs** with the new hub (page
   "Re-pair with a new hub": hub URL, join token of the new hub, its pin; `POST /federation/repair`, the
   new hub checks the instance's registered pin, a removed instance is restored): data stays, the new hub's
   instance rows and hub setting are taken over (trusted, LWW), replication continues from the cursors.
@@ -606,9 +608,33 @@ Telegram forwarding, branding files) implemented; purge, restore resync follow (
   the rule above unbinds the older device.
 - Deletes: tombstones only; hard delete after all peers acknowledged + retention; events for unknown rows
   older than the purge horizon (retention period) are dropped (no resurrection); the local retention
-  purge emits no events.
+  purge emits no events. Implemented (part J, `App\Federation\Retention`, daily `portal:purge`): a
+  replicated row is purged only when its last change (`version`) is beyond the horizon as well (rows changed
+  within the retention period stay, so no pending event can bring a purged row back); a tombstone (all
+  replicated tables except `instances`: a removed instance stays known as removed) is hard-deleted beyond the
+  horizon once every direct peer acknowledged its event (star: the hub keeps it until every instance has it)
+  and no replicated child row referring to it changed within the horizon (those go with it by foreign key
+  cascade). The change log is compacted the same way: an event is deleted when it is beyond the horizon,
+  acknowledged by every direct peer, no longer the current version of a stored row (conflict rules and
+  snapshots read those) and not the highest sequence of its origin (numbering and clock continue from it).
+  A direct peer that acknowledges nothing (down longer than the retention period) holds back tombstone and
+  log purges until it catches up or is removed. Expired join tokens are deleted after a day.
 - Backups/restore: a restore sets `federation_resync_required`; the instance fetches its own events back
-  from peers and continues its sequence after the highest one before accepting writes.
+  from peers and continues its sequence after the highest one before accepting writes. Implemented (part K,
+  `App\Federation\Resync`): detected at start by `backup-manifest.json` in the data folder (renamed to
+  `backup-manifest.restored-<time>.json`) or by a heartbeat in which a peer reports own events beyond the
+  local sequence (restore without the manifest). Meanwhile every write of a replicated row fails
+  (`Outbox::record()`, HTTP 503, e.g. new guest logins and admin changes; sessions and RADIUS keep working).
+  The sync run fetches the own events from every direct peer (signature checked with the own key, applied
+  like remote events, gaps not skipped) and lifts the block once every direct peer was caught up. A peer
+  that stays unreachable keeps the block: `artisan portal:federation:repair skip-resync --force` lifts it
+  when that peer is gone for good (its own events would collide with new ones). A backup older than the
+  retention period may not resync (the peers compacted the events in between): join again as a new instance.
+  Backups include `/data/federation` (key and certificate), so a restored instance keeps its pin.
+- Repair command (decision 2026-10-31): `artisan portal:federation:repair` with `status`, `resume <instance>`,
+  `repin <instance> --pin=` (local trust of a regenerated peer certificate, no event; the peer's own instance
+  event confirms it), `reset-cursor <instance> [--seq=]` (apply that origin's events again, idempotent; a
+  direct peer's acknowledgements are learnt again), `resync`, `skip-resync --force`; audited.
 - Clocks: NTP required. Heartbeats compare clocks: warning above 30 s skew, replication with that peer
   paused above 5 min.
 - Branding files: settings reference logo/favicon by content hash; an apply hook fetches a missing file
@@ -690,6 +716,11 @@ Telegram forwarding, branding files) implemented; purge, restore resync follow (
   hub (the UI allows it only there). Disallowed fields keep the local value, a disallowed registration or
   hub change is dropped (logged). An event with a missing or invalid signature is dropped and the peer
   that sent it is paused (not the origin, so a peer cannot block another origin).
+- Known limits (parts J, K): a compromised direct peer can claim own events of this instance beyond its
+  sequence and so start the restore resync, which blocks replicated writes here until it delivers validly
+  signed events or the admin lifts the block (`portal:federation:repair skip-resync --force`); it cannot
+  forge them. Purges follow the smallest acknowledgement of all direct peers: too high acknowledgements of
+  a peer harm only that peer (and on a spoke its hub, i.e. the instance trusted for relaying anyway).
 
 ## 11. Data model
 
@@ -727,8 +758,9 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | Laravel defaults | `jobs`, `failed_jobs`, `cache`, `sessions`, `migrations` |
 
 Purge job removes guests, devices, summaries, accounting, attempts, acceptances, OTP challenges,
-sent SMS records, audit entries and deleted MAC whitelist entries/site links older than the retention period (active grants kept); tombstones
-are purged after all peers have acknowledged them.
+sent SMS records and audit entries older than the retention period (active grants kept; replicated rows
+only when also unchanged for the retention period); tombstones (e.g. deleted MAC whitelist entries/site
+links) and change log events are purged after all direct peers have acknowledged them (§10.3).
 
 ## 12. Security
 
@@ -812,7 +844,8 @@ M7 in progress: parts A (change log, persistent HLC), B (federation data key, ca
 (apply engine with conflict rules), D (federation listener, mTLS pin, peer client), E (pairing, federation
 page), F (signed events, push/pull/relay, heartbeat, skew and protocol pause) and G (apply hooks, remote
 sessions and disconnect, home instance, roaming, limited mode), H (Telegram owner and forwarding) and I
-(branding files) implemented; J-L open.
+(branding files), J (tombstone purge, log compaction) and K (restore resync, repair command) implemented;
+L open.
 
 | # | Content | Acceptance criteria |
 |---|---|---|

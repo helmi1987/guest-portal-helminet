@@ -29,6 +29,7 @@ class Sync
         private PeerClient $client,
         private Inbox $inbox,
         private DataKey $keys,
+        private Resync $resync,
     ) {}
 
     /** Heartbeat, pull and push for every direct peer. @return array<string, string> peer id => outcome */
@@ -50,13 +51,20 @@ class Sync
                 continue;
             }
             try {
+                // Restore: own events back first (CONCEPT.md §10.3).
+                $this->resync->checkPeer($peer, $state->origins ?? []);
+                $recovered = Resync::required() ? $this->resync->recoverFrom($peer, $state) : 0;
                 $pulled = $this->pull($peer, $state);
                 $pushed = $this->push($peer, $state);
-                $outcomes[$peer->id] = "ok (pulled $pulled, pushed $pushed)";
+                $outcomes[$peer->id] = "ok (pulled $pulled, pushed $pushed".($recovered > 0 ? ", own events recovered $recovered" : '').')';
             } catch (Throwable $e) {
                 $this->fail($state, $e);
                 $outcomes[$peer->id] = $state->last_error;
             }
+        }
+        if (Resync::required()) {
+            $outcomes['resync'] = $this->resync->completeIfDone($this->topology->directPeers()->pluck('id')->all())
+                ? 'finished: writes allowed again' : 'waiting for own events from every direct peer (writes blocked)';
         }
 
         return $outcomes;

@@ -4,6 +4,7 @@ namespace Tests;
 
 use App\Federation\Applier;
 use App\Federation\Federation;
+use App\Federation\Retention;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
@@ -34,9 +35,10 @@ final class FederationWriteGuard
     /** @return list<string> */
     public static function violations(): array
     {
+        // Events beyond the purge horizon may have been compacted (Retention::compactLog()).
         $rows = DB::select('SELECT w.tbl, w.id, w.version, w.kind FROM _federation_writes w '
-            ."WHERE w.kind = 'same_version' OR NOT EXISTS (SELECT 1 FROM federation_events e "
-            .'WHERE e."table" = w.tbl AND e.record_id = w.id AND e.version IS w.version)');
+            ."WHERE w.kind = 'same_version' OR (w.version >= ? AND NOT EXISTS (SELECT 1 FROM federation_events e "
+            .'WHERE e."table" = w.tbl AND e.record_id = w.id AND e.version IS w.version))', [Retention::horizonVersion()]);
 
         return array_map(fn ($r) => "{$r->kind} {$r->tbl}#{$r->id} version {$r->version}", $rows);
     }

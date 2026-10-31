@@ -12,6 +12,8 @@ use App\Models\Guest;
 use App\Models\Site;
 use App\Models\User;
 use App\Support\Audit;
+use App\Support\Hlc;
+use App\Support\LocalInstance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -84,7 +86,8 @@ class AuditLogTest extends TestCase
 
         // Backdating raw (test setup only, no outbox event).
         $this->withoutFederationWriteGuard();
-        AuditLog::query()->where('action', 'grant.revoked')->update(['created_at' => now()->subDays(400)]);
+        AuditLog::query()->where('action', 'grant.revoked')->update(['created_at' => now()->subDays(400),
+            'version' => Hlc::format(now()->subDays(400)->getTimestampMs(), 0, app(LocalInstance::class)->id())]);
         $this->artisan('portal:purge')->assertSuccessful();
         $this->assertSame(0, AuditLog::where('action', 'grant.revoked')->count());
         $this->assertSame(1, AuditLog::where('action', 'settings.updated')->count());

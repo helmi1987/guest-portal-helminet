@@ -39,6 +39,9 @@ class Applier
 
     private ApplyResult $result;
 
+    /** Recovering own events (no cursor, no pause state for the own origin). */
+    private bool $own = false;
+
     public function __construct(private LocalInstance $instance, private Hlc $hlc, private ApplyHooks $hooks) {}
 
     /** True while the engine changes a local row because of a conflict rule (version kept on purpose). */
@@ -53,9 +56,26 @@ class Applier
      */
     public function apply(string $origin, iterable $events, bool $snapshot = false): ApplyResult
     {
+        return $this->run($origin, $events, $snapshot, false);
+    }
+
+    /**
+     * Own events fetched back from a peer after a restore (Resync, CONCEPT.md §10.3): applied like
+     * remote events after the highest own sequence stored here (signatures checked by the caller).
+     *
+     * @param  iterable<array<string, mixed>|object>  $events
+     */
+    public function recoverOwn(iterable $events): ApplyResult
+    {
+        return $this->run($this->instance->id(), $events, false, true);
+    }
+
+    private function run(string $origin, iterable $events, bool $snapshot, bool $own): ApplyResult
+    {
         $this->result = $result = new ApplyResult($origin);
         $this->changes = [];
-        if ($origin === $this->instance->id()) {
+        $this->own = $own;
+        if ($origin === $this->instance->id() && ! $own) {
             $result->stop('own', 'events of this instance');
 
             return $result;
@@ -77,8 +97,9 @@ class Applier
         }
         usort($batch, fn ($a, $b) => $a['seq'] <=> $b['seq']);
 
-        DB::transaction(function () use ($origin, $batch, $snapshot, $result) {
-            $cursor = DB::table('peer_cursors')->where('origin', $origin)->first();
+        DB::transaction(function () use ($origin, $batch, $snapshot, $result, $own) {
+            // Own events have no cursor: they continue after the highest own sequence stored here.
+            $cursor = $own ? null : DB::table('peer_cursors')->where('origin', $origin)->first();
             if ($cursor?->paused_at !== null) {
                 $result->stop('paused', (string) $cursor->pause_reason);
                 $result->lastSeq = (int) $cursor->last_seq;
@@ -88,7 +109,7 @@ class Applier
             if (DB::getDriverName() === 'sqlite') {
                 DB::statement('PRAGMA defer_foreign_keys = ON');
             }
-            $last = (int) ($cursor->last_seq ?? 0);
+            $last = $own ? (int) DB::table(Outbox::TABLE)->where('origin', $origin)->max('seq') : (int) ($cursor->last_seq ?? 0);
 
             foreach ($batch as $event) {
                 if ($event['seq'] <= $last) {
@@ -139,7 +160,9 @@ class Applier
             }
 
             $result->lastSeq = $last;
-            $this->saveCursor($origin, $last);
+            if (! $own) {
+                $this->saveCursor($origin, $last);
+            }
             $changes = $this->changes;
             DB::afterCommit(function () use ($changes) {
                 foreach ($changes as $change) {
@@ -219,6 +242,7 @@ class Applier
     /** Pause an origin (e.g. invalid event signature) until an admin resumes it. */
     public function pauseOrigin(string $origin, string $reason): void
     {
+        $this->own = false;
         DB::transaction(fn () => $this->pause($origin, $reason, new ApplyResult($origin)));
         Log::error('Federation apply paused', ['origin' => $origin, 'reason' => $reason]);
     }
@@ -283,6 +307,11 @@ class Applier
      */
     private function waitForParent(string $origin, ?object $cursor, array $event, ApplyResult $result): void
     {
+        if ($this->own) {
+            $result->stop('stopped', "missing parent row for {$event['table']}#{$event['record_id']} at seq {$event['seq']}");
+
+            return;
+        }
         $reason = "missing parent row for {$event['table']}#{$event['record_id']} at seq {$event['seq']}";
         $same = $cursor !== null && (int) $cursor->blocked_seq === $event['seq'];
         $attempts = $same ? (int) $cursor->blocked_attempts + 1 : 1;
@@ -594,6 +623,11 @@ class Applier
 
     private function pause(string $origin, string $reason, ApplyResult $result): void
     {
+        if ($this->own) {
+            $result->stop('stopped', $reason);
+
+            return;
+        }
         DB::table('peer_cursors')->upsert([['origin' => $origin, 'paused_at' => now(), 'pause_reason' => mb_substr($reason, 0, 255),
             'created_at' => now(), 'updated_at' => now()]], ['origin'], ['paused_at', 'pause_reason', 'updated_at']);
         $result->stop('paused', $reason);

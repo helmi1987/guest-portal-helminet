@@ -12,9 +12,9 @@ use Throwable;
 /**
  * Backups per instance (CONCEPT.md §9): one tar.gz with a consistent SQLite snapshot (VACUUM INTO on
  * a separate connection, safe with WAL), the env file (APP_KEY decrypts the stored secrets), the
- * certificate folder and the branding files (logo/favicon). Archives contain secrets: mode 0600,
+ * certificate folder, the branding files (logo/favicon) and the federation key and certificate. Archives contain secrets: mode 0600,
  * folder outside the web root. Entry paths mirror the data folder (db/database.sqlite, .env,
- * certs/..., branding/...), so a restore is an extract into the stopped container's data folder.
+ * certs/..., branding/..., federation/...), so a restore is an extract into the stopped container's data folder.
  */
 class BackupManager
 {
@@ -79,6 +79,8 @@ class BackupManager
 
             $this->addFolder($tar, 'certs', (string) config('portal.backup.certs_dir'), $files, $skipped);
             $this->addFolder($tar, 'branding', (string) config('portal.branding.dir'), $files, $skipped);
+            // Federation key and certificate: a restored instance keeps its pin (peers trust it).
+            $this->addFolder($tar, 'federation', (string) config('portal.federation.dir'), $files, $skipped);
 
             $tar->addString(self::MANIFEST, json_encode([
                 'created_at' => now()->toIso8601String(),

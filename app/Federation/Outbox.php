@@ -22,6 +22,10 @@ class Outbox
     /** Record the current state of a row (also a tombstone) as a local event. */
     public function record(string $table, string $id): void
     {
+        // After a restore the own sequence continues only once the own events are back (Resync).
+        if (Resync::required()) {
+            throw new ResyncRequiredException;
+        }
         $row = DB::table($table)->where('id', $id)->first();
         if ($row === null) {
             return;

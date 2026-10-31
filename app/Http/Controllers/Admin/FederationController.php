@@ -121,9 +121,10 @@ class FederationController extends Controller
 
     /**
      * Hub takeover (CONCEPT.md §10.1): this instance becomes the hub when the hub is lost for good.
-     * Confirmed by typing this instance's name; the other instances follow when they re-pair.
+     * Confirmed by typing this instance's name; the other instances follow when they re-pair (they get
+     * the rotated data key with the re-pairing answer).
      */
-    public function promote(Request $request, Pairing $pairing, LocalInstance $local): RedirectResponse
+    public function promote(Request $request, Pairing $pairing, LocalInstance $local, FederatedSecrets $secrets): RedirectResponse
     {
         $self = Instance::query()->findOrFail($local->id());
         $request->validate(['confirm_name' => ['required', 'string']]);
@@ -135,8 +136,11 @@ class FederationController extends Controller
         } catch (PairingException $e) {
             return back()->withErrors(['federation' => $e->getMessage()]);
         }
+        // The old hub is removed: like removing a peer, a new data key and the secrets it knew to renew.
+        $kid = $secrets->rotate();
+        Audit::log('federation.data_key_rotated', null, ['data_key_id' => $kid, 'reason' => 'hub takeover']);
 
-        return back()->with('status', __('portal.federation.promoted'));
+        return back()->with('status', __('portal.federation.promoted'))->with('federation_checklist', $this->checklist());
     }
 
     /** Re-pairing page: connect to a (new) hub, data stays. */
