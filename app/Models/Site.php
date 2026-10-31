@@ -47,8 +47,9 @@ class Site extends Model
             if ($site->renderOnly) {
                 throw new \LogicException('A site copy with derived setup values must not be saved.');
             }
-            // A shared password lives in the replicated setting only: no stale local copy stays.
-            if ($site->wifiPasswordShared()) {
+            // A shared password lives in the replicated setting only: no stale local copy stays. Without a
+            // shared value the local one is the only copy and is kept (never lost to a bare flag).
+            if ($site->wifiPasswordShared() && $site->hasSharedWifiPasswordValue()) {
                 $site->wifi_password_local = null;
             }
         });
@@ -56,8 +57,10 @@ class Site extends Model
 
     /**
      * Clear the instance-local Wi-Fi password of sites (all, or the given one) whose password is shared
-     * (CONCEPT.md §9, decision 2026-10-31): after a replicated change switched a site to shared, the
-     * local value of this instance is stale. Raw write of a local column: no version, no event.
+     * and carry a shared value (CONCEPT.md §9, decision 2026-10-31): after a replicated change switched a
+     * site to shared, the local value of this instance is stale. A shared flag without a shared value
+     * never clears it (the local value may be the only copy). Raw write of a local column: no version,
+     * no event.
      *
      * @return int sites cleared
      */
@@ -66,7 +69,7 @@ class Site extends Model
         $cleared = 0;
         $sites = static::query()->whereNotNull('wifi_password_local')->when($id !== null, fn ($q) => $q->whereKey($id))->get();
         foreach ($sites as $site) {
-            if ($site->wifiPasswordShared()) {
+            if ($site->wifiPasswordShared() && $site->hasSharedWifiPasswordValue()) {
                 $cleared += DB::table('sites')->where('id', $site->id)->update(['wifi_password_local' => null]);
             }
         }
@@ -135,6 +138,31 @@ class Site extends Model
         return is_string($this->setting(self::WIFI_PASSWORD)) && $this->setting(self::WIFI_PASSWORD) !== '';
     }
 
+    /** Whether the replicated setting "setup.wifi_password" holds a (non-empty) encrypted value. */
+    public function hasSharedWifiPasswordValue(): bool
+    {
+        $stored = $this->setting(self::WIFI_PASSWORD);
+
+        return is_string($stored) && $stored !== '';
+    }
+
+    /**
+     * Instance-local Wi-Fi password (APP_KEY), regardless of the shared flag. Null when not set or not
+     * decryptable (never logged).
+     */
+    public function localWifiPassword(): ?string
+    {
+        try {
+            $local = $this->wifi_password_local;
+        } catch (Throwable) {
+            Log::warning('Local guest Wi-Fi password of the site cannot be decrypted; enter it again in the setup assistant.', ['site' => $this->slug]);
+
+            return null;
+        }
+
+        return is_string($local) && $local !== '' ? $local : null;
+    }
+
     /** "wpa" (a password is set, on some instance) or "open"; replicated, carries no secret. */
     public function wifiSecurity(): string
     {
@@ -161,15 +189,7 @@ class Site extends Model
     public function wifiPassword(): ?string
     {
         if (! $this->wifiPasswordShared()) {
-            try {
-                $local = $this->wifi_password_local;
-            } catch (Throwable) {
-                Log::warning('Local guest Wi-Fi password of the site cannot be decrypted; enter it again in the setup assistant.', ['site' => $this->slug]);
-
-                return null;
-            }
-
-            return is_string($local) && $local !== '' ? $local : null;
+            return $this->localWifiPassword();
         }
         $stored = $this->setting(self::WIFI_PASSWORD);
         if (! is_string($stored) || $stored === '') {

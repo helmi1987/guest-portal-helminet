@@ -295,6 +295,7 @@ return [
             'wifi_password_clear' => 'Passwort entfernen (offenes WLAN)',
             'wifi_password_shared' => 'An andere Instanzen weitergeben',
             'wifi_password_shared_help' => 'Aus: Das Passwort bleibt nur auf dieser Instanz (mit APP_KEY verschlüsselt) und wird nicht repliziert. An: Es wird verschlüsselt mit dem Föderationsschlüssel an die anderen Instanzen repliziert. Umschalten verschiebt den gespeicherten Wert. Andere Instanzen erfahren nur, ob das WLAN ein Passwort hat.',
+            'wifi_password_share_missing' => 'Kein Passwort zum Weitergeben: Auf dieser Instanz ist keines gespeichert. Passwort eintragen oder nicht weitergeben.',
             'wifi_password_unavailable' => 'Das Passwort dieses Standorts ist auf dieser Instanz nicht verfügbar (auf einer anderen Instanz lokal gespeichert): kein WLAN-QR-Code, kein Passwort auf Gutscheinen, das Router-Skript erzeugt kein offenes WLAN. Passwort hier eintragen, um es zu verwenden.',
             'subnet' => 'Gäste-Subnetz (CIDR)',
             'gateway' => 'Gateway (Router-IP)',

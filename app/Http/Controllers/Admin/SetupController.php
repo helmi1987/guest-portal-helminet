@@ -17,6 +17,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Validator as ValidatorInstance;
 use Illuminate\View\View;
 
@@ -154,11 +155,17 @@ class SetupController extends Controller
         // instances: replicated setting encrypted with the federation data key; otherwise only in the local
         // column (APP_KEY). Toggling moves the value, no copy stays in the other storage. Only the non-secret
         // flags wifi_security (wpa|open) and wifi_password_shared are replicated. Never audited or logged.
+        // A local value of this instance is the fallback (also when the site is already flagged shared but
+        // carries no shared value). Sharing a WPA password that exists nowhere here is refused: the bare
+        // flag would replicate without a value.
         $password = (string) ($data['wifi_password'] ?? '');
         $clear = (bool) ($data['wifi_password_clear'] ?? false);
         $shared = (bool) ($data['wifi_password_shared'] ?? false);
         unset($data['wifi_password'], $data['wifi_password_clear']);
-        $plain = $clear ? null : ($password !== '' ? $password : $site->wifiPassword());
+        $plain = $clear ? null : ($password !== '' ? $password : ($site->wifiPassword() ?? $site->localWifiPassword()));
+        if ($shared && ! $clear && $plain === null && ! $site->hasSharedWifiPasswordValue() && $site->wifiSecurity() === 'wpa') {
+            throw ValidationException::withMessages(['wifi_password' => __('portal.setup.network.wifi_password_share_missing')]);
+        }
         $data['wifi_security'] = $clear ? 'open' : ($plain !== null ? 'wpa' : $site->wifiSecurity());
         $data['wifi_password_shared'] = $shared;
         $local = null;
@@ -169,7 +176,7 @@ class SetupController extends Controller
                 $data['wifi_password'] = $cipher;
             }
         } else {
-            $local = $plain ?? ($clear ? null : $site->wifi_password_local);
+            $local = $plain;
         }
         $site->forceFill(['settings' => array_merge($site->settings ?? [], ['setup' => $data]), 'wifi_password_local' => $local])->save();
         Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true]));

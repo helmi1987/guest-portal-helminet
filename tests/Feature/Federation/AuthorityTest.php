@@ -163,6 +163,24 @@ class AuthorityTest extends TestCase
         $this->assertSame('A local pass 1', $local('a'));
     }
 
+    public function test_a_replicated_shared_flag_without_a_value_keeps_local_wifi_passwords(): void
+    {
+        $setup = ['ssid' => 'Guest', 'wifi_security' => 'wpa', 'wifi_password_shared' => false];
+        $site = $this->on('hub', fn () => Site::create(['slug' => 's', 'name' => 'S', 'driver' => 'mikrotik_ros7',
+            'home_instance_id' => app(LocalInstance::class)->id(), 'settings' => ['setup' => $setup]]));
+        $this->syncRound();
+        $this->on('a', fn () => Site::find($site->id)->forceFill(['wifi_password_local' => 'A only pass 1'])->save());
+        $this->syncRound();
+
+        // The hub sets the flag without a shared value: a keeps its local password (the only copy)
+        $this->on('hub', fn () => Site::find($site->id)->update(['settings' => ['setup' => ['wifi_password_shared' => true] + $setup]]));
+        $this->syncRound();
+        $this->assertTrue($this->on('a', fn () => Site::find($site->id)->wifiPasswordShared()));
+        $this->assertSame('A only pass 1', $this->on('a', fn () => Site::find($site->id)->localWifiPassword()));
+        $this->assertSame(0, $this->on('a', fn () => Site::dropSharedLocalWifiPasswords()));
+        $this->assertSame('A only pass 1', $this->on('a', fn () => Site::find($site->id)->localWifiPassword()));
+    }
+
     public function test_switching_a_site_to_a_shared_wifi_password_drops_local_copies_everywhere(): void
     {
         $setup = ['ssid' => 'Guest', 'wifi_security' => 'wpa', 'wifi_password_shared' => false];

@@ -295,6 +295,7 @@ return [
             'wifi_password_clear' => 'Remove password (open Wi-Fi)',
             'wifi_password_shared' => 'Share with other instances',
             'wifi_password_shared_help' => 'Off: the password stays on this instance only (encrypted with APP_KEY) and is not replicated. On: it is replicated to the other instances, encrypted with the federation data key. Toggling moves the stored value. Other instances only learn that the network has a password.',
+            'wifi_password_share_missing' => 'No password to share: none is stored on this instance. Enter the password or do not share it.',
             'wifi_password_unavailable' => 'The password of this site is not available on this instance (kept local on another one): no Wi-Fi QR code, no password on vouchers, and the router script does not create an open network. Enter the password here to use it.',
             'subnet' => 'Guest subnet (CIDR)',
             'gateway' => 'Gateway (router IP)',

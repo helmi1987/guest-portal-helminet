@@ -263,6 +263,49 @@ class WifiPasswordTest extends TestCase
         $this->assertSame(0, Site::dropSharedLocalWifiPasswords());
     }
 
+    public function test_sharing_a_password_that_is_not_on_this_instance_is_refused(): void
+    {
+        // WPA, password kept local on another instance: ticking "share" with an empty field has no value
+        $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => self::NETWORK
+            + ['wifi_security' => 'wpa', 'wifi_password_shared' => false]])]);
+        $before = $this->rawSetup();
+        $events = DB::table('federation_events')->where('table', 'sites')->count();
+
+        $this->save(['wifi_password_shared' => '1'])->assertSessionHasErrors(['wifi_password' => __('portal.setup.network.wifi_password_share_missing')]);
+        $this->assertSame($before, $this->rawSetup());
+        $this->assertSame($events, DB::table('federation_events')->where('table', 'sites')->count());
+
+        // With a password entered it is shared
+        $this->save(['wifi_password' => 'entered-here-1', 'wifi_password_shared' => '1'])->assertSessionHasNoErrors();
+        $this->assertTrue($this->rawSetup()['wifi_password_shared']);
+        $this->assertSame('entered-here-1', $this->site->fresh()->wifiPassword());
+
+        // An open network has nothing to lose: the flag alone is accepted
+        $this->save(['wifi_password_clear' => '1'])->assertSessionHasNoErrors();
+        $this->save(['wifi_password_shared' => '1'])->assertSessionHasNoErrors();
+        $this->assertSame('open', $this->rawSetup()['wifi_security']);
+    }
+
+    public function test_a_shared_flag_without_a_shared_value_never_deletes_the_local_password(): void
+    {
+        $this->save(['wifi_password' => 'only-copy-123'])->assertSessionHasNoErrors();
+
+        // Flag set without a value (as replicated from another instance): the local copy stays
+        $site = $this->site->fresh();
+        $site->update(['settings' => array_merge($site->settings, ['setup' => array_merge($site->settings['setup'],
+            ['wifi_password_shared' => true])])]);
+        $this->assertSame('only-copy-123', Crypt::decryptString($this->rawLocal()));
+        $this->assertSame(0, Site::dropSharedLocalWifiPasswords());
+        $this->assertSame(0, Site::dropSharedLocalWifiPasswords($this->site->id));
+        $this->assertSame('only-copy-123', Crypt::decryptString($this->rawLocal()));
+
+        // Saving the form with "share" ticked and an empty field moves the local value into the shared setting
+        $this->save(['wifi_password_shared' => '1'])->assertSessionHasNoErrors();
+        $this->assertNull($this->rawLocal());
+        $this->assertSame('only-copy-123', app(DataKey::class)->decrypt($this->rawSetup()['wifi_password']));
+        $this->assertSame('only-copy-123', $this->site->fresh()->wifiPassword());
+    }
+
     public function test_unavailable_password_gives_no_qr_no_text_and_no_open_network(): void
     {
         // Replicated flag says WPA, but the password is local on another instance

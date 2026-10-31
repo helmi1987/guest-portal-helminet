@@ -295,6 +295,7 @@ return [
             'wifi_password_clear' => 'Supprimer le mot de passe (Wi-Fi ouvert)',
             'wifi_password_shared' => 'Partager avec les autres instances',
             'wifi_password_shared_help' => 'Désactivé : le mot de passe reste sur cette instance uniquement (chiffré avec APP_KEY) et n\'est pas répliqué. Activé : il est répliqué vers les autres instances, chiffré avec la clé de données de fédération. Basculer déplace la valeur enregistrée. Les autres instances savent seulement que le réseau a un mot de passe.',
+            'wifi_password_share_missing' => 'Aucun mot de passe à partager : aucun n\'est enregistré sur cette instance. Saisissez le mot de passe ou ne le partagez pas.',
             'wifi_password_unavailable' => 'Le mot de passe de ce site n\'est pas disponible sur cette instance (conservé localement sur une autre) : pas de code QR Wi-Fi, pas de mot de passe sur les bons, et le script du routeur ne crée pas de réseau ouvert. Saisissez le mot de passe ici pour l\'utiliser.',
             'subnet' => 'Sous-réseau invités (CIDR)',
             'gateway' => 'Passerelle (IP du routeur)',

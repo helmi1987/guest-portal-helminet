@@ -295,6 +295,7 @@ return [
             'wifi_password_clear' => 'Rimuovi la password (Wi-Fi aperto)',
             'wifi_password_shared' => 'Condividi con altre istanze',
             'wifi_password_shared_help' => 'Disattivato: la password resta solo su questa istanza (cifrata con APP_KEY) e non viene replicata. Attivato: viene replicata alle altre istanze, cifrata con la chiave dati della federazione. Cambiare sposta il valore salvato. Le altre istanze sanno solo che la rete ha una password.',
+            'wifi_password_share_missing' => 'Nessuna password da condividere: su questa istanza non ne è salvata nessuna. Inserire la password o non condividerla.',
             'wifi_password_unavailable' => 'La password di questa sede non è disponibile su questa istanza (salvata localmente su un\'altra): nessun codice QR Wi-Fi, nessuna password sui buoni e lo script del router non crea una rete aperta. Inserire qui la password per usarla.',
             'subnet' => 'Sottorete ospiti (CIDR)',
             'gateway' => 'Gateway (IP del router)',
