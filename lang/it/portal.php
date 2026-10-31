@@ -289,6 +289,9 @@ return [
             'wifi_password_help' => '8-63 caratteri (ASCII). Vuota: Wi-Fi aperto; lasciarla vuota mantiene una password salvata. Salvata cifrata; mostrata nel blocco Wi-Fi, nel codice QR Wi-Fi e sui voucher.',
             'wifi_password_stored' => 'Password salvata (WPA2/WPA3).',
             'wifi_password_clear' => 'Rimuovi la password (Wi-Fi aperto)',
+            'wifi_password_shared' => 'Condividi con altre istanze',
+            'wifi_password_shared_help' => 'Disattivato: la password resta solo su questa istanza (cifrata con APP_KEY) e non viene replicata. Attivato: viene replicata alle altre istanze, cifrata con la chiave dati della federazione. Cambiare sposta il valore salvato. Le altre istanze sanno solo che la rete ha una password.',
+            'wifi_password_unavailable' => 'La password di questa sede non è disponibile su questa istanza (salvata localmente su un\'altra): nessun codice QR Wi-Fi, nessuna password sui buoni e lo script del router non crea una rete aperta. Inserire qui la password per usarla.',
             'subnet' => 'Sottorete ospiti (CIDR)',
             'gateway' => 'Gateway (IP del router)',
             'pool' => 'Pool DHCP (da-a)',
@@ -438,6 +441,7 @@ return [
         'print_a6' => 'Stampa avviso A6',
         'notice_title' => 'Avviso',
         'no_ssid' => 'Nessun SSID ospiti impostato per questa sede (assistente): nessun codice QR Wi-Fi.',
+        'wifi_unavailable' => 'La password Wi-Fi di questa sede non è disponibile su questa istanza: nessun codice QR Wi-Fi.',
         'no_hotspot_host' => 'Nessun host hotspot impostato per questa sede: il codice QR di accesso apre direttamente il portale.',
         'notice' => [
             'step_wifi' => '1. Connettiti al Wi-Fi',

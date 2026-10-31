@@ -11,6 +11,8 @@ use App\Models\User;
 use App\Nas\MikrotikRos7Driver;
 use App\Services\VoucherQr;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use App\Federation\Federation;
+use App\Federation\Outbox;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Testing\TestResponse;
 use Tests\TestCase;
@@ -56,7 +58,7 @@ class WifiPasswordTest extends TestCase
         $this->assertArrayNotHasKey('wifi_password', $this->rawSetup());
 
         $password = 'Sec "ret\\ $pass?';
-        $this->save(['wifi_password' => $password])->assertRedirect()->assertSessionHasNoErrors();
+        $this->save(['wifi_password' => $password, 'wifi_password_shared' => '1'])->assertRedirect()->assertSessionHasNoErrors();
         $raw = $this->rawSetup();
         $this->assertNotSame($password, $raw['wifi_password']);
         $this->assertStringNotContainsString('ret', DB::table('sites')->where('id', $this->site->id)->value('settings'));
@@ -67,7 +69,7 @@ class WifiPasswordTest extends TestCase
         $this->assertStringNotContainsString($raw['wifi_password'], json_encode($audit->data));
 
         // Empty field keeps the stored password; the page never renders it into the input.
-        $this->save(['wifi_password' => ''])->assertSessionHasNoErrors();
+        $this->save(['wifi_password' => '', 'wifi_password_shared' => '1'])->assertSessionHasNoErrors();
         $this->assertSame($password, $this->site->fresh()->wifiPassword());
         $admin = User::factory()->admin()->create();
         $page = $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
@@ -75,7 +77,7 @@ class WifiPasswordTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/name="wifi_password"[^>]*value=/', $page->getContent());
 
         // Checkbox removes it: open SSID again.
-        $this->save(['wifi_password_clear' => '1'])->assertSessionHasNoErrors();
+        $this->save(['wifi_password_clear' => '1', 'wifi_password_shared' => '1'])->assertSessionHasNoErrors();
         $this->assertNull($this->site->fresh()->wifiPassword());
         $this->assertArrayNotHasKey('wifi_password', $this->rawSetup());
         $this->assertSame('open', AuditLog::query()->where('action', 'site.setup_network')->latest('id')->first()->data['wifi_security']);
@@ -83,7 +85,7 @@ class WifiPasswordTest extends TestCase
 
     public function test_password_survives_a_data_key_rotation(): void
     {
-        $this->save(['wifi_password' => 'rotate-me-123'])->assertSessionHasNoErrors();
+        $this->save(['wifi_password' => 'rotate-me-123', 'wifi_password_shared' => '1'])->assertSessionHasNoErrors();
         $before = $this->rawSetup()['wifi_password'];
 
         app(FederatedSecrets::class)->rotate();
@@ -192,5 +194,85 @@ class WifiPasswordTest extends TestCase
         $this->assertNull((new VoucherQr)->ssidFor($all));
         $same->update(['settings' => ['setup' => ['ssid' => 'Guest A', 'wifi_password' => Site::encryptWifiPassword('voucher-pass-1')]]]);
         $this->assertSame('voucher-pass-1', (new VoucherQr)->passwordFor($all));
+    }
+
+    private function rawLocal(): ?string
+    {
+        return DB::table('sites')->where('id', $this->site->id)->value('wifi_password_local');
+    }
+
+    public function test_default_is_local_encrypted_with_app_key_and_not_replicated(): void
+    {
+        $this->save(['wifi_password' => 'local-secret-1'])->assertSessionHasNoErrors();
+        $raw = DB::table('sites')->where('id', $this->site->id)->value('settings');
+        $this->assertArrayNotHasKey('wifi_password', $this->rawSetup());
+        $this->assertSame('wpa', $this->rawSetup()['wifi_security']);
+        $this->assertFalse($this->rawSetup()['wifi_password_shared']);
+        $this->assertStringNotContainsString('local-secret-1', $raw);
+        $this->assertNotNull($this->rawLocal());
+        $this->assertSame('local-secret-1', \Illuminate\Support\Facades\Crypt::decryptString($this->rawLocal()));
+        $this->assertSame('local-secret-1', $this->site->fresh()->wifiPassword());
+        $this->assertSame(['wifi_password_local'], Federation::localColumns('sites'));
+
+        // Replication payload carries neither the secret nor the local column
+        app(Outbox::class)->record('sites', $this->site->id);
+        $payload = (string) DB::table('federation_events')->where('table', 'sites')->latest('seq')->value('payload');
+        $this->assertStringNotContainsString('local-secret-1', $payload);
+        $this->assertStringNotContainsString('wifi_password_local', $payload);
+        $this->assertStringNotContainsString($this->rawLocal(), $payload);
+        $this->assertStringContainsString('wpa', $payload);
+    }
+
+    public function test_toggle_moves_the_value_between_storages(): void
+    {
+        $this->save(['wifi_password' => 'move-me-1234', 'wifi_password_shared' => '1'])->assertSessionHasNoErrors();
+        $this->assertNull($this->rawLocal());
+        $this->assertArrayHasKey('wifi_password', $this->rawSetup());
+
+        $this->save([])->assertSessionHasNoErrors(); // checkbox off, empty password: move to local
+        $this->assertArrayNotHasKey('wifi_password', $this->rawSetup());
+        $this->assertSame('move-me-1234', $this->site->fresh()->wifiPassword());
+        $this->assertSame('move-me-1234', \Illuminate\Support\Facades\Crypt::decryptString($this->rawLocal()));
+
+        $this->save(['wifi_password_shared' => '1'])->assertSessionHasNoErrors(); // back to shared
+        $this->assertNull($this->rawLocal());
+        $this->assertSame('move-me-1234', $this->site->fresh()->wifiPassword());
+        $this->assertSame('move-me-1234', app(\App\Federation\DataKey::class)->decrypt($this->rawSetup()['wifi_password']));
+        $this->assertSame('wpa', $this->rawSetup()['wifi_security']);
+    }
+
+    public function test_unavailable_password_gives_no_qr_no_text_and_no_open_network(): void
+    {
+        // Replicated flag says WPA, but the password is local on another instance
+        $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => self::NETWORK
+            + ['wifi_security' => 'wpa', 'wifi_password_shared' => false]])]);
+        $site = $this->site->fresh();
+        $this->assertNull($site->wifiPassword());
+        $this->assertTrue($site->wifiPasswordUnavailable());
+
+        $manager = User::factory()->create();
+        $this->onZone('admin')->actingAs($manager)->post('/admin/grants', [
+            'quantity' => 1, 'duration' => '1d', 'expiry_mode' => 'first_login', 'site_ids' => [$this->site->id],
+        ]);
+        $grant = Grant::query()->sole()->load('siteLinks');
+        $this->assertNull((new VoucherQr)->networkFor($grant));
+        $this->assertNull((new VoucherQr)->ssidFor($grant));
+        $this->assertNull((new VoucherQr)->passwordFor($grant));
+
+        $wifi = $site->driver()->setupCommands($site, [])['network']['wifi'];
+        $this->assertStringContainsString('not available on this instance', $wifi);
+        $this->assertStringNotContainsString('security add', $wifi);
+        $this->assertStringNotContainsString('unset', $wifi);
+
+        $admin = User::factory()->admin()->create();
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
+            ->assertSee(__('portal.setup.network.wifi_password_unavailable'));
+
+        // Saving without a new password keeps WPA (never silently open); a new one makes it available
+        $this->save([])->assertSessionHasNoErrors();
+        $this->assertSame('wpa', $this->rawSetup()['wifi_security']);
+        $this->assertTrue($this->site->fresh()->wifiPasswordUnavailable());
+        $this->save(['wifi_password' => 'now-here-123'])->assertSessionHasNoErrors();
+        $this->assertFalse($this->site->fresh()->wifiPasswordUnavailable());
     }
 }

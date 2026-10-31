@@ -289,6 +289,9 @@ return [
             'wifi_password_help' => '8 à 63 caractères (ASCII). Vide : Wi-Fi ouvert ; laisser vide conserve un mot de passe enregistré. Enregistré chiffré ; affiché dans le bloc Wi-Fi, le code QR Wi-Fi et sur les bons.',
             'wifi_password_stored' => 'Mot de passe enregistré (WPA2/WPA3).',
             'wifi_password_clear' => 'Supprimer le mot de passe (Wi-Fi ouvert)',
+            'wifi_password_shared' => 'Partager avec les autres instances',
+            'wifi_password_shared_help' => 'Désactivé : le mot de passe reste sur cette instance uniquement (chiffré avec APP_KEY) et n\'est pas répliqué. Activé : il est répliqué vers les autres instances, chiffré avec la clé de données de fédération. Basculer déplace la valeur enregistrée. Les autres instances savent seulement que le réseau a un mot de passe.',
+            'wifi_password_unavailable' => 'Le mot de passe de ce site n\'est pas disponible sur cette instance (conservé localement sur une autre) : pas de code QR Wi-Fi, pas de mot de passe sur les bons, et le script du routeur ne crée pas de réseau ouvert. Saisissez le mot de passe ici pour l\'utiliser.',
             'subnet' => 'Sous-réseau invités (CIDR)',
             'gateway' => 'Passerelle (IP du routeur)',
             'pool' => 'Pool DHCP (de-à)',
@@ -438,6 +441,7 @@ return [
         'print_a6' => 'Imprimer l\'affiche A6',
         'notice_title' => 'Affiche',
         'no_ssid' => 'Aucun SSID invités défini pour ce site (assistant) : pas de code QR Wi-Fi.',
+        'wifi_unavailable' => 'Le mot de passe Wi-Fi de ce site n\'est pas disponible sur cette instance : pas de code QR Wi-Fi.',
         'no_hotspot_host' => 'Aucun hôte hotspot défini pour ce site : le code QR de connexion ouvre directement le portail.',
         'notice' => [
             'step_wifi' => '1. Se connecter au Wi-Fi',

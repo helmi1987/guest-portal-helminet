@@ -59,6 +59,8 @@ class SetupController extends Controller
             'derived' => $derived,
             'derivedFrom' => $source?->name,
             'wifiPasswordSet' => $site->wifiPassword() !== null,
+            'wifiPasswordUnavailable' => $site->wifiPasswordUnavailable(),
+            'wifiPasswordShared' => $site->wifiPasswordShared(),
             'portalAddressProblem' => PortalAddress::problem($site->setting('portal_address'), (array) $view->setting('setup', [])),
             'container' => $container,
             'commands' => $driver->setupCommands($view, $container),
@@ -140,19 +142,29 @@ class SetupController extends Controller
     {
         $data = $this->validateWithin($request, $site->driver()->setupFields()['network'], 'subnet', ['gateway', 'pool']);
         $data['vlan_id'] = (int) $data['vlan_id'];
-        // Guest Wi-Fi password: empty field keeps the stored one, the checkbox removes it. Stored encrypted,
-        // never audited or logged.
+        // Guest Wi-Fi password: empty field keeps the stored one, the checkbox removes it. Shared with other
+        // instances: replicated setting encrypted with the federation data key; otherwise only in the local
+        // column (APP_KEY). Toggling moves the value, no copy stays in the other storage. Only the non-secret
+        // flags wifi_security (wpa|open) and wifi_password_shared are replicated. Never audited or logged.
         $password = (string) ($data['wifi_password'] ?? '');
         $clear = (bool) ($data['wifi_password_clear'] ?? false);
+        $shared = (bool) ($data['wifi_password_shared'] ?? false);
         unset($data['wifi_password'], $data['wifi_password_clear']);
-        $stored = $site->setting(Site::WIFI_PASSWORD);
-        $data['wifi_password'] = $clear ? null : ($password !== '' ? Site::encryptWifiPassword($password) : $stored);
-        if ($data['wifi_password'] === null) {
-            unset($data['wifi_password']);
+        $plain = $clear ? null : ($password !== '' ? $password : $site->wifiPassword());
+        $data['wifi_security'] = $clear ? 'open' : ($plain !== null ? 'wpa' : $site->wifiSecurity());
+        $data['wifi_password_shared'] = $shared;
+        $local = null;
+        if ($shared) {
+            $stored = $site->setting(Site::WIFI_PASSWORD);
+            $cipher = $plain !== null ? Site::encryptWifiPassword($plain) : ($clear || ! is_string($stored) ? null : $stored);
+            if ($cipher !== null) {
+                $data['wifi_password'] = $cipher;
+            }
+        } else {
+            $local = $plain ?? ($clear ? null : $site->wifi_password_local);
         }
-        $site->update(['settings' => array_merge($site->settings ?? [], ['setup' => $data])]);
-        Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true])
-            + ['wifi_security' => isset($data['wifi_password']) ? 'wpa' : 'open']);
+        $site->forceFill(['settings' => array_merge($site->settings ?? [], ['setup' => $data]), 'wifi_password_local' => $local])->save();
+        Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true]));
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-network')->with('status', __('portal.saved'));
     }

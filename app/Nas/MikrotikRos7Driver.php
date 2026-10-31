@@ -338,6 +338,8 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
                 // Optional; empty keeps the stored password, wifi_password_clear removes it (open SSID)
                 'wifi_password' => ['nullable', 'string', self::WIFI_PASSWORD_RULE],
                 'wifi_password_clear' => ['nullable', 'boolean'],
+                // Share the password with other instances (replicated, data key); off: this instance only (APP_KEY)
+                'wifi_password_shared' => ['nullable', 'boolean'],
                 'wifi_mode' => ['required', 'in:capsman1,capsman2,local'],
                 'html_directory' => ['nullable', 'in:'.implode(',', self::HTML_DIRECTORIES)],
             ],
@@ -392,7 +394,11 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             ? "bridge={$g['bridge']} vlan-id={$g['vlan_id']} vlan-mode=use-tag local-forwarding=no client-to-client-forwarding=no"
             : "bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes";
         $security = $up("{$wifiPath} security", 'name=sec-guest', $kSec, 'name=sec-guest', '');
-        if ($g['wifi_password'] !== '') {
+        if ($g['wifi_unavailable']) {
+            // WPA site whose password is kept on another instance: never fall back to an open network
+            $security = "# Guest Wi-Fi password is set for this site but not available on this instance (kept local on another one).\n"
+                ."# sec-guest is NOT created or changed here: enter the password in step 2 on this instance, or run this on the instance that has it.";
+        } elseif ($g['wifi_password'] !== '') {
             $pass = self::quoted($g['wifi_password']);
             $auth = $g['wifi_mode'] === 'capsman1' ? 'authentication-types=wpa2-psk encryption=aes-ccm' : 'authentication-types=wpa2-psk,wpa3-psk';
             $security .= "\n# Guest Wi-Fi password of the setup assistant (WPA2/WPA3 personal); re-running updates it\n"
@@ -772,7 +778,7 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
      * Guest network values saved in the setup assistant (site setting "setup"), sanitized;
      * placeholders for missing values.
      *
-     * @return array<string, string>
+     * @return array<string, mixed>
      */
     private function guestValues(Site $site): array
     {
@@ -794,6 +800,7 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             'wifi_mode' => in_array($s['wifi_mode'] ?? null, ['capsman1', 'capsman2', 'local'], true) ? $s['wifi_mode'] : 'capsman2',
             'html_directory' => in_array($s['html_directory'] ?? null, self::HTML_DIRECTORIES, true) ? $s['html_directory'] : 'hotspot',
             // Decrypted guest Wi-Fi password, '' for an open SSID; only printable ASCII is kept
+            'wifi_unavailable' => $site->wifiPasswordUnavailable(),
             'wifi_password' => (string) preg_replace('/[^\x20-\x7E]/', '', (string) $site->wifiPassword()),
         ];
     }
