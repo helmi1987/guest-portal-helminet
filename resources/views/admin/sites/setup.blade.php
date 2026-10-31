@@ -45,6 +45,10 @@
                     @if ($router->hasApiAccess())
                         <x-admin.step-status :ok="$st['fresh']" :label="$router->router_state_at ? __('portal.router_api.queried_at', ['when' => $router->router_state_at->diffForHumans()]) : __('portal.router_api.never_queried')" />
                         @if ($st['version']) <span class="text-xs text-slate-500">RouterOS {{ $st['version'] }}</span> @endif
+                        @if ($st['queued'])
+                            <span class="rounded bg-sky-100 px-1 text-xs text-sky-800" role="status" data-state-queued>{{ __('portal.router_api.queued', ['when' => \Illuminate\Support\Carbon::parse($st['queued'])->diffForHumans()]) }}</span>
+                            <a href="{{ route('admin.sites.setup', $site) }}#step-state" class="text-sm underline">{{ __('portal.router_api.reload') }}</a>
+                        @endif
                         <form method="POST" action="{{ route('admin.sites.setup.router-state', [$site, $router]) }}">@csrf
                             <button class="btn-light">{{ __('portal.router_api.query') }}</button></form>
                     @else

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\QueryRouterState;
 use App\Models\AuditLog;
 use App\Models\NasClient;
 use App\Models\Site;
@@ -14,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Queue;
 use Tests\TestCase;
 use Tests\Unit\RouterOs\FakeApiConnection;
 
@@ -335,21 +337,39 @@ class RouterStateTest extends TestCase
         $this->assertStringNotContainsString('data-derived="interface"', $page);
     }
 
-    public function test_refresh_uses_one_overall_deadline_and_is_throttled(): void
+    public function test_refresh_queues_one_low_priority_job_per_router_and_is_throttled(): void
     {
         $this->configureApi();
         $second = NasClient::find($this->site->nasClients()->create(['name' => 'Router B', 'nas_ip' => '10.0.1.2', 'coa_port' => 3799])->id);
         $second->forceFill(['api_host' => '10.0.1.2', 'api_type' => 'rest', 'api_user' => 'portal-ro', 'api_password' => 'x', 'api_pin' => self::PIN])->save();
-        $this->fakeRest($this->routerMenus());
-        config(['portal.router_api.total_deadline' => 0]);
-        $this->admin()->post("/admin/sites/{$this->site->id}/setup/state")->assertRedirect();
-        foreach ([$this->nas->fresh(), $second->fresh()] as $nas) {
-            $this->assertSame('timeout', $nas->router_state_error['kind']);
-            $this->assertSame('skipped: time limit', $nas->router_state_error['detail']);
-        }
-        Http::assertNothingSent();
+        // Router without API access gets no job
+        $this->site->nasClients()->create(['name' => 'Router C', 'nas_ip' => '10.0.1.3', 'coa_port' => 3799]);
 
-        config(['portal.router_api.total_deadline' => 40]);
+        Queue::fake();
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/state")->assertRedirect()
+            ->assertSessionHas('status', trans('portal.router_api.refresh_queued'));
+        Queue::assertPushedOn(QueryRouterState::QUEUE, QueryRouterState::class);
+        Queue::assertPushed(QueryRouterState::class, 2);
+        foreach ([$this->nas, $second] as $nas) {
+            Queue::assertPushed(QueryRouterState::class, fn (QueryRouterState $job) => $job->nasId === (string) $nas->id
+                && $job->timeout > (int) config('portal.router_api.deadline'));
+        }
+        // The page shows the routers still queued
+        $page = $this->page();
+        $this->assertSame(2, substr_count($page, 'data-state-queued'));
+        $this->assertStringContainsString(e(trans('portal.router_api.reload')), $page);
+
+        // The job queries the router and removes the marker
+        $this->fakeRest($this->routerMenus());
+        app()->call([new QueryRouterState((string) $this->nas->id), 'handle']);
+        $this->assertNull($this->nas->fresh()->router_state_error);
+        $this->assertNotNull($this->nas->fresh()->router_state);
+        $this->assertNull(QueryRouterState::queuedAt((string) $this->nas->id));
+        $this->assertSame(1, substr_count($this->page(), 'data-state-queued'));
+        // A failed job removes the marker too
+        (new QueryRouterState((string) $second->id))->failed();
+        $this->assertStringNotContainsString('data-state-queued', $this->page());
+
         for ($i = 0; $i < 12; $i++) {
             $response = $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state");
         }

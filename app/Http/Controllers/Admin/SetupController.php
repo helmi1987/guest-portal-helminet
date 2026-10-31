@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\QueryRouterState;
 use App\Models\LocalSetting;
 use App\Models\NasClient;
 use App\Models\Site;
@@ -51,6 +52,7 @@ class SetupController extends Controller
             'fresh' => $this->fresh($nas, $inputsAt),
             'compare' => $stateDriver && is_array($nas->router_state) ? $stateDriver->compareState($view, $nas->router_state) : null,
             'version' => $nas->router_state['menus']['/system resource']['rows'][0]['version'] ?? null,
+            'queued' => QueryRouterState::queuedAt((string) $nas->id),
         ]]);
         $stale = $apiRouters->contains(fn (NasClient $nas) => ! $states[$nas->id]['fresh']);
 
@@ -82,28 +84,20 @@ class SetupController extends Controller
             ->with('status', $error === null ? __('portal.router_api.queried', ['name' => $router->name]) : null);
     }
 
-    /** Query every router of the site with API access ("Refresh"). */
-    public function refreshState(Site $site, RouterStateQuery $query): RedirectResponse
+    /**
+     * Queue the state query of every router of the site with API access ("Refresh"): one low-priority
+     * job per router (worker of the container), the page shows the routers still queued.
+     */
+    public function refreshState(Site $site): RedirectResponse
     {
-        // One overall deadline for the whole request; routers not reached get an error state
-        $until = microtime(true) + (int) config('portal.router_api.total_deadline', 40);
-        $failed = 0;
         foreach ($site->nasClients as $router) {
-            if (! $router->hasApiAccess()) {
-                continue;
+            if ($router->hasApiAccess()) {
+                QueryRouterState::request($router);
             }
-            $router->setRelation('site', $site);
-            if (microtime(true) >= $until) {
-                $router->storeRouterState(null, ['kind' => 'timeout', 'detail' => 'skipped: time limit']);
-                $failed++;
-
-                continue;
-            }
-            $failed += $query->run($router, $until) === null ? 0 : 1;
         }
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-state')
-            ->with('status', $failed === 0 ? __('portal.router_api.refreshed') : null);
+            ->with('status', __('portal.router_api.refresh_queued'));
     }
 
     /**

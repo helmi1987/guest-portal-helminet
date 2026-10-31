@@ -75,15 +75,14 @@ return [
 
     // Read-only router API of the setup assistant (CONCEPT.md §9): state query per router. The assistant's
     // commands are greyed out when the last query is older than max_age_minutes or than the last change of
-    // the setup inputs. Timeouts in seconds; deadline = whole query of one router; total_deadline = the
-    // whole "Refresh" request over all routers (below the usual 60 s PHP/nginx limit). max_bytes = response
-    // size cap (API sentences in total, REST body); max_word = one API word.
+    // the setup inputs. Timeouts in seconds; deadline = whole query of one router ("Refresh" queues one job
+    // per router on the low-priority queue "router-state"). max_bytes = response size cap (API sentences in
+    // total, REST body); max_word = one API word.
     'router_api' => [
         'max_age_minutes' => (int) env('PORTAL_ROUTER_STATE_MAX_AGE', 15),
         'connect_timeout' => 5,
         'timeout' => 10,
         'deadline' => 45,
-        'total_deadline' => 40,
         'max_rows' => 2000,
         'max_bytes' => 8388608,
         'max_word' => 65536,

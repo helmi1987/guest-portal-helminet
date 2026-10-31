@@ -15,7 +15,7 @@ class RouterStateQuery
     public function __construct(private readonly RouterOsClients $clients) {}
 
     /**
-     * @param  float|null  $until  overall deadline (microtime) of the caller, e.g. the whole "Refresh" request
+     * @param  float|null  $until  optional overall deadline (microtime) of the caller
      * @return array{kind: string, detail: string}|null error, null on success
      */
     public function run(NasClient $nas, ?float $until = null): ?array
