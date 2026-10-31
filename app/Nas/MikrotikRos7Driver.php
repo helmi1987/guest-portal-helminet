@@ -21,6 +21,9 @@ class MikrotikRos7Driver implements NasDriver
      */
     public const NAME = 'guest-portal';
 
+    /** html-directory of the hotspot profile: RouterOS default, or on devices with a flash folder. */
+    public const HTML_DIRECTORIES = ['hotspot', 'flash/hotspot'];
+
     public function label(): string
     {
         return 'MikroTik RouterOS 7';
@@ -136,6 +139,7 @@ class MikrotikRos7Driver implements NasDriver
         $nasIp = self::safe($nas->nas_ip);
         $secret = self::safe($nas->radius_secret);
         $hotspot = $this->hotspotSection($site, $dnsName);
+        $hotspotDir = $this->guestValues($site)['html_directory'];
         $certScript = $this->certScript($portalUrl.'/router-cert/'.$nas->id, self::safe($nas->certToken()), $nasIp);
         $n = self::NAME;
 
@@ -165,13 +169,15 @@ class MikrotikRos7Driver implements NasDriver
         /ip hotspot walled-garden
         remove [find comment="{$n}"]
         add dst-host={$portalHost} action=allow comment="{$n}"
-        # IP walled garden: action=accept (manual ambiguous between accept/allow, to verify)
+        # IP walled garden: action=accept. Only the own entry is replaced; entries of others are never
+        # changed. An existing drop entry covering {$portalIp} (e.g. dst-address=<LAN>/24 action=drop)
+        # blocks the portal for guests: check with the print of the diagnostics block, remove it manually.
         /ip hotspot walled-garden ip
         remove [find comment="{$n}"]
         add dst-address={$portalIp} protocol=tcp dst-port=443 action=accept comment="{$n}"
 
         {$certScript}
-        # Finally upload login.html into the hotspot HTML directory (default: hotspot/ or flash/hotspot/),
+        # Finally upload login.html into the html-directory of the profile ({$hotspotDir}),
         # replacing the existing login.html: download it from the admin UI or use the fetch command
         # of the setup assistant.
 
@@ -201,8 +207,10 @@ class MikrotikRos7Driver implements NasDriver
         remove [find name="{$n}"]
         /ip hotspot profile
         remove [find name="{$n}"]
-        add name={$n} dns-name={$dnsName} hotspot-address={$g['gateway']} use-radius=yes \\
-            radius-accounting=yes radius-interim-update=received nas-port-type=wireless-802.11 login-by=mac
+        # html-directory as on this device: "hotspot", or "flash/hotspot" on devices with a flash folder
+        # (see html-directory of: /ip hotspot profile print where default=yes)
+        add name={$n} dns-name={$dnsName} hotspot-address={$g['gateway']} html-directory={$g['html_directory']} \\
+            use-radius=yes radius-accounting=yes radius-interim-update=received nas-port-type=wireless-802.11 login-by=mac
         :if ([:len [/certificate find where name="{$n}"]] > 0) do={
             /ip hotspot profile set [find where name="{$n}"] ssl-certificate={$n} login-by=https,mac
         }
@@ -224,6 +232,7 @@ class MikrotikRos7Driver implements NasDriver
                 'pool' => ['required', 'string', 'max:64', 'regex:/^(\d{1,3}\.){3}\d{1,3}-(\d{1,3}\.){3}\d{1,3}$/'],
                 'ssid' => ['required', 'string', 'max:32', 'regex:/^[\p{L}\p{N} ._-]+$/u'],
                 'wifi_mode' => ['required', 'in:capsman1,capsman2,local'],
+                'html_directory' => ['nullable', 'in:'.implode(',', self::HTML_DIRECTORIES)],
             ],
             'container' => [
                 'veth_address' => ['required', 'string', 'regex:/^(\d{1,3}\.){3}\d{1,3}\/(1[6-9]|2[0-9]|30)$/'],
@@ -268,10 +277,10 @@ class MikrotikRos7Driver implements NasDriver
             'capsman1' => <<<RSC
             # Legacy CAPsMAN (/caps-man, wireless package): manager forwarding, VLAN tagged by the manager
             /caps-man datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} vlan-mode=use-tag \\
-                local-forwarding=no client-to-client-forwarding=no
-            /caps-man security add name=sec-guest
+                local-forwarding=no client-to-client-forwarding=no comment="{$n}"
+            /caps-man security add name=sec-guest comment="{$n}"
             /caps-man configuration add name=cfg-guest ssid="{$g['ssid']}" country=<COUNTRY> \\
-                security=sec-guest datapath=dp-guest
+                security=sec-guest datapath=dp-guest comment="{$n}"
             # Guest SSID as slave of your existing master configuration. "set" replaces the list: keep
             # existing slaves (see print) in <EXISTING_SLAVES>, or remove "<EXISTING_SLAVES>," if there are none.
             /caps-man provisioning print
@@ -281,10 +290,10 @@ class MikrotikRos7Driver implements NasDriver
             'capsman2' => <<<RSC
             # CAPsMAN of the wifi package (/interface wifi). wifi-qcom-ac CAPs: do NOT set vlan-id
             # (no VLAN offload); set PVID {$g['vlan_id']} on the CAP's bridge port instead.
-            /interface wifi datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes
-            /interface wifi security add name=sec-guest
+            /interface wifi datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes comment="{$n}"
+            /interface wifi security add name=sec-guest comment="{$n}"
             /interface wifi configuration add name=cfg-guest ssid="{$g['ssid']}" country=<COUNTRY> \\
-                security=sec-guest datapath=dp-guest
+                security=sec-guest datapath=dp-guest comment="{$n}"
             # Guest SSID as slave of your existing master configuration. "set" replaces the list: keep
             # existing slaves (see print) in <EXISTING_SLAVES>, or remove "<EXISTING_SLAVES>," if there are none.
             /interface wifi provisioning print
@@ -294,31 +303,31 @@ class MikrotikRos7Driver implements NasDriver
             RSC,
             default => <<<RSC
             # Local radio of this router (wifi package): virtual AP on an existing radio
-            /interface wifi datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes
-            /interface wifi security add name=sec-guest
+            /interface wifi datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes comment="{$n}"
+            /interface wifi security add name=sec-guest comment="{$n}"
             /interface wifi configuration add name=cfg-guest ssid="{$g['ssid']}" country=<COUNTRY> \\
-                security=sec-guest datapath=dp-guest
+                security=sec-guest datapath=dp-guest comment="{$n}"
             # configuration=<name> on a virtual AP (to verify); alternative: inline configuration.ssid="{$g['ssid']}"
-            /interface wifi add name=wifi-guest master-interface=<WIFI_INTERFACE> configuration=cfg-guest disabled=no
+            /interface wifi add name=wifi-guest master-interface=<WIFI_INTERFACE> configuration=cfg-guest disabled=no comment="{$n}"
             RSC,
         };
 
         $wifiRemove = match ($g['wifi_mode']) {
             'capsman1' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
                 ."/caps-man provisioning print\n"
-                ."/caps-man configuration remove [find where name=cfg-guest]\n"
-                ."/caps-man security remove [find where name=sec-guest]\n"
-                .'/caps-man datapath remove [find where name=dp-guest]',
+                ."/caps-man configuration remove [find where name=cfg-guest && comment=\"{$n}\"]\n"
+                ."/caps-man security remove [find where name=sec-guest && comment=\"{$n}\"]\n"
+                ."/caps-man datapath remove [find where name=dp-guest && comment=\"{$n}\"]",
             'capsman2' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
                 ."/interface wifi provisioning print\n"
-                ."/interface wifi configuration remove [find where name=cfg-guest]\n"
-                ."/interface wifi security remove [find where name=sec-guest]\n"
-                .'/interface wifi datapath remove [find where name=dp-guest]',
+                ."/interface wifi configuration remove [find where name=cfg-guest && comment=\"{$n}\"]\n"
+                ."/interface wifi security remove [find where name=sec-guest && comment=\"{$n}\"]\n"
+                ."/interface wifi datapath remove [find where name=dp-guest && comment=\"{$n}\"]",
             default => "# only if created for the guest network: virtual AP and its configuration\n"
-                ."/interface wifi remove [find where name=wifi-guest]\n"
-                ."/interface wifi configuration remove [find where name=cfg-guest]\n"
-                ."/interface wifi security remove [find where name=sec-guest]\n"
-                .'/interface wifi datapath remove [find where name=dp-guest]',
+                ."/interface wifi remove [find where name=wifi-guest && comment=\"{$n}\"]\n"
+                ."/interface wifi configuration remove [find where name=cfg-guest && comment=\"{$n}\"]\n"
+                ."/interface wifi security remove [find where name=sec-guest && comment=\"{$n}\"]\n"
+                ."/interface wifi datapath remove [find where name=dp-guest && comment=\"{$n}\"]",
         };
 
         return [
@@ -328,16 +337,16 @@ class MikrotikRos7Driver implements NasDriver
                 /system/device-mode/update container=yes
                 RSC,
                 'container_network' => <<<RSC
-                /interface/veth add name=veth-portal address={$c['veth_address']} gateway={$c['veth_gateway']}
-                /interface/bridge add name={$c['bridge']}
-                /interface/bridge/port add bridge={$c['bridge']} interface=veth-portal
-                /ip/address add address={$c['veth_gateway']}{$c['prefix']} interface={$c['bridge']}
+                /interface/veth add name=veth-portal address={$c['veth_address']} gateway={$c['veth_gateway']} comment="{$n}"
+                /interface/bridge add name={$c['bridge']} comment="{$n}"
+                /interface/bridge/port add bridge={$c['bridge']} interface=veth-portal comment="{$n}"
+                /ip/address add address={$c['veth_gateway']}{$c['prefix']} interface={$c['bridge']} comment="{$n}: container gateway"
                 RSC,
                 'container_add' => <<<RSC
                 /container/config set registry-url=https://ghcr.io tmpdir={$c['disk']}/tmp
                 # Private image only: /container/config set username=<GITHUB_USER> password=<READ_ONLY_TOKEN>
-                /container/mounts add list=portal-data src={$c['disk']}/portal-data dst=/data
-                /container/envs add list=portal key=APP_URL value="{$appUrl}"
+                /container/mounts add list=portal-data src={$c['disk']}/portal-data dst=/data comment="{$n}"
+                /container/envs add list=portal key=APP_URL value="{$appUrl}" comment="{$n}"
                 /container add remote-image={$c['image']} interface=veth-portal \\
                     root-dir={$c['disk']}/portal-root mountlists=portal-data envlist=portal start-on-boot=yes logging=yes
                 /container/start [find]
@@ -354,7 +363,7 @@ class MikrotikRos7Driver implements NasDriver
                 # Shows vlan-filtering of the bridge (see the optional block below)
                 /interface bridge print where name={$g['bridge']}
                 {$trunk}
-                /interface vlan add name={$g['interface']} interface={$g['bridge']} vlan-id={$g['vlan_id']}
+                /interface vlan add name={$g['interface']} interface={$g['bridge']} vlan-id={$g['vlan_id']} comment="{$n}"
                 RSC,
                 'vlan_filtering' => <<<RSC
                 # OPTIONAL, only if bridge "{$g['bridge']}" has vlan-filtering=yes.
@@ -369,10 +378,10 @@ class MikrotikRos7Driver implements NasDriver
                 'wifi' => $wifi,
                 'dhcp' => <<<RSC
                 /ip address add address={$g['gateway']}{$g['prefix']} interface={$g['interface']} comment="{$n}: guest gateway"
-                /ip pool add name={$g['pool_name']} ranges={$g['pool']}
+                /ip pool add name={$g['pool_name']} ranges={$g['pool']} comment="{$n}"
                 /ip dhcp-server add name=guest-dhcp interface={$g['interface']} address-pool={$g['pool_name']} \\
-                    lease-time=30m disabled=no
-                /ip dhcp-server network add address={$g['subnet']} gateway={$g['gateway']} dns-server={$g['gateway']}
+                    lease-time=30m disabled=no comment="{$n}"
+                /ip dhcp-server network add address={$g['subnet']} gateway={$g['gateway']} dns-server={$g['gateway']} comment="{$n}"
                 # The router serves DNS to guests; upstream servers if not yet set:
                 # /ip dns set servers=<UPSTREAM_DNS_1>,<UPSTREAM_DNS_2>
                 /ip dns set allow-remote-requests=yes
@@ -381,18 +390,30 @@ class MikrotikRos7Driver implements NasDriver
                 # Optional: Captive Portal API URI (RFC 8910/8908) via DHCP option 114.
                 # Device support for option 114 varies (to verify per client OS).
                 # Only if guests reach the portal with their own IP (no source NAT of guests).
-                /ip dhcp-server option add code=114 name=captive-portal value="'{$captiveUrl}'" comment="{$n}"
-                /ip dhcp-server network set [find where address="{$g['subnet']}"] dhcp-option=captive-portal
+                # Re-runnable: updates the value of the own option; an option "captive-portal" of others is not
+                # changed (the add then fails: rename yours or remove it first).
+                /ip dhcp-server option
+                :if ([:len [find where name="captive-portal" && comment="{$n}"]] = 0) do={
+                    add code=114 name=captive-portal value="'{$captiveUrl}'" comment="{$n}"
+                } else={
+                    set [find where name="captive-portal" && comment="{$n}"] code=114 value="'{$captiveUrl}'"
+                }
+                # Sets the option list of the guest network (created in the DHCP block, comment "{$n}")
+                /ip dhcp-server network set [find where address="{$g['subnet']}" && comment="{$n}"] dhcp-option=captive-portal
                 RSC,
                 'firewall' => <<<RSC
-                /interface list add name=GUEST comment="{$n}"
-                /interface list member add list=GUEST interface={$g['interface']} comment="{$n}"
+                # Re-runnable: list, member and address-list entries are added only if missing; an existing
+                # entry with the same list and address (e.g. your own RFC1918 list) is used as it is.
+                :if ([:len [/interface list find where name=GUEST]] = 0) do={ /interface list add name=GUEST comment="{$n}" }
+                :if ([:len [/interface list member find where list=GUEST && interface={$g['interface']}]] = 0) do={ /interface list member add list=GUEST interface={$g['interface']} comment="{$n}" }
                 /ip firewall address-list
-                add list=PORTAL address={$portalIp} comment="{$n}: portal instance (guest port)"
-                add list=PORTAL_RADIUS address={$radiusIp} comment="{$n}: portal instance (RADIUS, Disconnect)"
-                add list=RFC1918 address=10.0.0.0/8 comment="{$n}"
-                add list=RFC1918 address=172.16.0.0/12 comment="{$n}"
-                add list=RFC1918 address=192.168.0.0/16 comment="{$n}"
+                # Own entries of an earlier run (portal IP may have changed); entries of others are kept
+                remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="{$n}" || comment~"^{$n}: ")]
+                :if ([:len [find where list=PORTAL && address={$portalIp}]] = 0) do={ add list=PORTAL address={$portalIp} comment="{$n}: portal instance (guest port)" }
+                :if ([:len [find where list=PORTAL_RADIUS && address={$radiusIp}]] = 0) do={ add list=PORTAL_RADIUS address={$radiusIp} comment="{$n}: portal instance (RADIUS, Disconnect)" }
+                :if ([:len [find where list=RFC1918 && address=10.0.0.0/8]] = 0) do={ add list=RFC1918 address=10.0.0.0/8 comment="{$n}" }
+                :if ([:len [find where list=RFC1918 && address=172.16.0.0/12]] = 0) do={ add list=RFC1918 address=172.16.0.0/12 comment="{$n}" }
+                :if ([:len [find where list=RFC1918 && address=192.168.0.0/16]] = 0) do={ add list=RFC1918 address=192.168.0.0/16 comment="{$n}" }
                 # Filter rules: all comments start with "{$n}: ". Re-running this block replaces them.
                 /ip firewall filter remove [find where comment~"^{$n}: "]
                 /ip firewall filter
@@ -463,11 +484,18 @@ class MikrotikRos7Driver implements NasDriver
                 # 1. portal certificate, 2. router certificate pulled in the portal, 3. certificate script
                 # on this router, 4. login.html uploaded, 5. these checks:
                 # imported router certificate (leaf "{$n}" with flag K = private key, CAs "{$n}-ca-<n>")
-                /certificate print where name~"{$n}"
-                # expected: login-by=https,mac and ssl-certificate set
+                /certificate print where name="{$n}" || name~"^{$n}-ca-[0-9]+\\$"
+                # expected: login-by=mac,https and ssl-certificate={$n}
                 /ip hotspot profile print where name={$n}
-                # expected: login.html in the html-directory of the profile (default hotspot/)
+                # expected: login.html in the html-directory of the profile ({$g['html_directory']}/login.html)
                 /file print where name~"login.html"
+                # html-directory of the default profile: where this device keeps hotspot files ("hotspot", or
+                # "flash/hotspot" on devices with a flash folder); the assistant setting must match it
+                /ip hotspot profile print where default=yes
+                # IP walled garden: an entry of others with action=drop covering the portal IP {$portalIp}
+                # (e.g. dst-address=<LAN>/24 action=drop) blocks the portal for guests before login. The
+                # scripts never change entries they did not create: remove or narrow such an entry manually.
+                /ip hotspot walled-garden ip print
                 # last runs of the certificate script
                 /log print where message~"{$n}"
                 # firewall: the "{$n}: " rules must come before any drop rule of chain input and forward
@@ -476,9 +504,7 @@ class MikrotikRos7Driver implements NasDriver
                 RSC,
                 'diagnostics' => <<<'RSC'
                 /radius print
-                # Use the number of the "guest-portal" entry from /radius print, or (to verify):
-                # /radius monitor [find comment="guest-portal"] once
-                /radius monitor 0 once
+                /radius monitor [find comment="guest-portal"] once
                 /ip hotspot active print
                 /ip hotspot host print
                 /log print where topics~"hotspot|radius"
@@ -515,17 +541,20 @@ class MikrotikRos7Driver implements NasDriver
                     }
                 }
                 /ip dhcp-server option remove [find where name="captive-portal" && comment="{$n}"]
-                # Firewall rules and address lists of the assistant (comment starts with "{$n}")
-                /ip firewall filter remove [find where comment~"^{$n}"]
-                /ip firewall nat remove [find where comment~"^{$n}"]
-                /ip firewall address-list remove [find where comment~"^{$n}"]
+                # Firewall rules (comment starts with "{$n}: ") and address-list entries of the assistant (its
+                # lists and comments only; "{$n}-old" or entries without comment are not ours and stay)
+                /ip firewall filter remove [find where comment~"^{$n}: "]
+                /ip firewall nat remove [find where comment~"^{$n}: "]
+                /ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="{$n}" || comment~"^{$n}: ")]
                 # Older assistant versions used other comments; check and remove manually if present:
                 # /ip firewall filter print where comment~"^(guest|portal): |^stateful\\$|^nothing initiates"
                 # /ip firewall address-list print where list=PORTAL || list=PORTAL_RADIUS || list=RFC1918
-                # login.html: the html-directory (default hotspot/) may be shared with other hotspots, so it
-                # is not removed here. Delete it only if no other hotspot uses it (RouterOS creates the
-                # default files again for a newly created hotspot, to verify):
-                # /file remove [find where name~"hotspot/login.html"]
+                # login.html: the html-directory ({$g['html_directory']}) may be shared with other hotspots, so
+                # it is not removed here. Delete it only if no other hotspot uses it (RouterOS creates the
+                # default files again for a newly created hotspot):
+                # /file remove [find where name="{$g['html_directory']}/login.html"]
+                # RouterOS adds disabled placeholder rules "place hotspot rules here" (filter, nat, walled
+                # garden) with the first hotspot; they are not removed here (other hotspots may use them).
                 RSC,
                 'uninstall_container' => <<<RSC
                 # OPTIONAL, only if the portal runs as RouterOS container on this router (step 1).
@@ -534,29 +563,36 @@ class MikrotikRos7Driver implements NasDriver
                 /container stop [find where interface=veth-portal]
                 :delay 10s
                 /container remove [find where interface=veth-portal]
-                /container mounts remove [find where list=portal-data]
-                /container envs remove [find where list=portal]
-                /ip address remove [find where interface={$c['bridge']}]
-                /interface bridge port remove [find where interface=veth-portal]
-                /interface bridge remove [find where name={$c['bridge']}]
-                /interface veth remove [find where name=veth-portal]
+                /container mounts remove [find where list=portal-data && comment="{$n}"]
+                /container envs remove [find where list=portal && comment="{$n}"]
+                /ip address remove [find where interface={$c['bridge']} && comment="{$n}: container gateway"]
+                /interface bridge port remove [find where interface=veth-portal && comment="{$n}"]
+                /interface bridge remove [find where name={$c['bridge']} && comment="{$n}"]
+                /interface veth remove [find where name=veth-portal && comment="{$n}"]
+                # Created by assistant versions before 0.12.7 (no comment): check and remove manually
+                # /interface veth print where name=veth-portal
                 RSC,
                 'uninstall_network' => <<<RSC
-                # OPTIONAL network infrastructure of step 2. Run a line ONLY if it was created for the guest
-                # network (not if it existed before or is used otherwise). Wi-Fi first, VLAN interface last.
+                # OPTIONAL network infrastructure of step 2. Removes only objects with the comment "{$n}" (set
+                # by the assistant since 0.12.7; older ones have none: check with the prints at the end and
+                # remove them manually). Wi-Fi first, VLAN interface last.
                 {$wifiRemove}
                 # only if created for the guest network: DHCP server, network, pool, gateway address
-                /ip dhcp-server remove [find where name=guest-dhcp]
-                /ip dhcp-server network remove [find where address="{$g['subnet']}"]
-                /ip pool remove [find where name={$g['pool_name']}]
-                /ip address remove [find where interface={$g['interface']}]
-                # only if created for the guest network: interface list GUEST
-                /interface list member remove [find where list=GUEST]
-                /interface list remove [find where name=GUEST]
-                # only if created for the guest network: bridge VLAN entry (optional block of step 2)
+                /ip dhcp-server remove [find where name=guest-dhcp && comment="{$n}"]
+                /ip dhcp-server network remove [find where address="{$g['subnet']}" && comment="{$n}"]
+                /ip pool remove [find where name={$g['pool_name']} && comment="{$n}"]
+                /ip address remove [find where interface={$g['interface']} && comment="{$n}: guest gateway"]
+                # interface list GUEST (only the own list and member)
+                /interface list member remove [find where list=GUEST && comment="{$n}"]
+                # (the list only when no member of others is left in it)
+                :if ([:len [/interface list member find where list=GUEST]] = 0) do={ /interface list remove [find where name=GUEST && comment="{$n}"] }
+                # bridge VLAN entry (optional block of step 2)
                 /interface bridge vlan remove [find where comment="{$n}"]
-                # only if created for the guest network: guest VLAN interface
-                /interface vlan remove [find where name={$g['interface']}]
+                # guest VLAN interface
+                /interface vlan remove [find where name={$g['interface']} && comment="{$n}"]
+                # Left over without comment (older assistant versions)? Check:
+                # /interface vlan print where name={$g['interface']}
+                # /ip pool print where name={$g['pool_name']}
                 RSC,
             ],
         ];
@@ -567,12 +603,14 @@ class MikrotikRos7Driver implements NasDriver
         $url = rtrim(self::url($this->portalUrl($site)), '/').'/router-login/'.$nas->id.'/login.html';
         $token = self::safe($nas->certToken());
         $nasIp = self::safe($nas->nas_ip);
+        $dir = $this->guestValues($site)['html_directory'];
+        $n = self::NAME;
 
         return <<<RSC
-        # html-directory of the profile defaults to "hotspot"; check with /ip hotspot profile print and
-        # /file print (on devices with a flash folder: flash/hotspot). dst-path below: to verify.
+        # html-directory of the hotspot profile "{$n}" (setup assistant: {$dir}); must match
+        # /ip hotspot profile print where name={$n}
         /tool fetch url="{$url}" http-header-field="X-Portal-Token: {$token}" \\
-            src-address={$nasIp} check-certificate=yes dst-path=hotspot/login.html
+            src-address={$nasIp} check-certificate=yes dst-path={$dir}/login.html
         RSC;
     }
 
@@ -600,6 +638,7 @@ class MikrotikRos7Driver implements NasDriver
             'pool_name' => $pool ? 'guest-pool' : '<GUEST_POOL>',
             'ssid' => trim(self::safe($s['ssid'] ?? null)) ?: 'Guest-WiFi',
             'wifi_mode' => in_array($s['wifi_mode'] ?? null, ['capsman1', 'capsman2', 'local'], true) ? $s['wifi_mode'] : 'capsman2',
+            'html_directory' => in_array($s['html_directory'] ?? null, self::HTML_DIRECTORIES, true) ? $s['html_directory'] : 'hotspot',
         ];
     }
 

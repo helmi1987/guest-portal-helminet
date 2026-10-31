@@ -214,6 +214,8 @@ return [
             'gateway' => 'Gateway (router IP)',
             'pool' => 'DHCP pool (from-to)',
             'wifi_mode' => 'Wi-Fi',
+            'html_directory' => 'Hotspot HTML directory',
+            'html_directory_help' => 'hotspot: RouterOS default; flash/hotspot: devices with a flash folder. Must match html-directory of /ip hotspot profile print where default=yes.',
             'modes' => ['capsman2' => 'CAPsMAN (wifi package)', 'capsman1' => 'Legacy CAPsMAN (wireless package)', 'local' => 'Local radio (wifi package)'],
             'captive_help' => 'Option 114 tells modern devices (RFC 8910) where the captive portal API is. Only use it if guests reach the portal with their own IP address (no source NAT of guests), otherwise every guest is reported as not logged in.',
             'guide' => 'Firewall rules assume existing WAN/LAN interface lists and a stateful base rule set; check the order with /ip firewall filter print.',

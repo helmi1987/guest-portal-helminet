@@ -68,6 +68,13 @@
                         <option value="{{ $mode }}" @selected($field($setup, 'wifi_mode', 'capsman2') === $mode)>{{ __('portal.setup.network.modes.'.$mode) }}</option>
                     @endforeach
                 </select></label>
+            <label class="label">{{ __('portal.setup.network.html_directory') }}
+                <select name="html_directory" class="field">
+                    @foreach (\App\Nas\MikrotikRos7Driver::HTML_DIRECTORIES as $dir)
+                        <option value="{{ $dir }}" @selected($field($setup, 'html_directory', 'hotspot') === $dir)>{{ $dir }}</option>
+                    @endforeach
+                </select>
+                <span class="text-xs text-slate-500">{{ __('portal.setup.network.html_directory_help') }}</span></label>
             <div class="md:col-span-4"><button class="btn">{{ __('portal.save') }}</button></div>
         </form>
         <p class="mb-2 text-sm text-amber-800">{{ __('portal.setup.network.bridge_warning') }}</p>

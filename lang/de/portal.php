@@ -214,6 +214,8 @@ return [
             'gateway' => 'Gateway (Router-IP)',
             'pool' => 'DHCP-Pool (von-bis)',
             'wifi_mode' => 'WLAN',
+            'html_directory' => 'Hotspot-HTML-Verzeichnis',
+            'html_directory_help' => 'hotspot: RouterOS-Standard; flash/hotspot: Geräte mit flash-Ordner. Muss html-directory von /ip hotspot profile print where default=yes entsprechen.',
             'modes' => ['capsman2' => 'CAPsMAN (wifi-Paket)', 'capsman1' => 'Altes CAPsMAN (wireless-Paket)', 'local' => 'Lokales Funkmodul (wifi-Paket)'],
             'captive_help' => 'Option 114 teilt modernen Geräten (RFC 8910) mit, wo die Captive-Portal-API ist. Nur verwenden, wenn Gäste das Portal mit ihrer eigenen IP-Adresse erreichen (kein Source-NAT der Gäste), sonst gilt jeder Gast als nicht angemeldet.',
             'guide' => 'Die Firewall-Regeln setzen bestehende WAN/LAN-Interface-Listen und ein zustandsbehaftetes Grundregelwerk voraus; Reihenfolge mit /ip firewall filter print prüfen.',

@@ -196,6 +196,7 @@ return [
         'pool' => 'intervallo di indirizzi',
         'ssid' => 'SSID',
         'wifi_mode' => 'modalità Wi-Fi',
+        'html_directory' => 'cartella HTML dell\'hotspot',
         'veth_address' => 'indirizzo VETH',
         'veth_gateway' => 'gateway VETH',
         'disk' => 'percorso di archiviazione',

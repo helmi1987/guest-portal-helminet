@@ -196,6 +196,7 @@ return [
         'pool' => 'Adressbereich',
         'ssid' => 'SSID',
         'wifi_mode' => 'WLAN-Modus',
+        'html_directory' => 'Hotspot-HTML-Verzeichnis',
         'veth_address' => 'VETH-Adresse',
         'veth_gateway' => 'VETH-Gateway',
         'disk' => 'Speicherort',

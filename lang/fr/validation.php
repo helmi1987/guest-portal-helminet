@@ -196,6 +196,7 @@ return [
         'pool' => 'plage d\'adresses',
         'ssid' => 'SSID',
         'wifi_mode' => 'mode Wi-Fi',
+        'html_directory' => 'répertoire HTML du hotspot',
         'veth_address' => 'adresse VETH',
         'veth_gateway' => 'passerelle VETH',
         'disk' => 'emplacement de stockage',

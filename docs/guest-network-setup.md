@@ -404,10 +404,12 @@ guest network gets IPv6 and the hotspot name has a public AAAA record, use the C
 
 ### 6.4 Upload the custom login page
 1. Download `login.html` from the admin UI (same site page).
-2. Upload it into the hotspot HTML directory of the router (default `hotspot`; check with
-   `/ip hotspot profile print` -> `html-directory`), replacing the default file. On devices with
-   a flash folder the full path includes `flash/` (e.g. `flash/hotspot`). `html-directory-override`
-   exists as an alternative. The directory is created by the wizard. Resetting the pages:
+2. Upload it into the hotspot HTML directory of the router, replacing the default file. The
+   generated profile sets `html-directory` from the setup assistant field "Hotspot HTML directory":
+   `hotspot` (RouterOS default) or `flash/hotspot` for devices with a flash folder; choose the value
+   shown by `/ip hotspot profile print where default=yes`. The fetch command of the assistant writes
+   to `<html-directory>/login.html`. `html-directory-override` exists as an alternative. RouterOS
+   creates the default files when a hotspot with a new html-directory starts (verified on CHR). Resetting the pages:
    `/ip hotspot reset-html` is not in the official docs (documented: Winbox button
    IP > Hotspot > Reset HTML) **(to verify the CLI command)**.
 3. Methods: Winbox -> Files drag & drop, or `/tool fetch` from an internal HTTP(S) server, or

@@ -214,6 +214,8 @@ return [
             'gateway' => 'Passerelle (IP du routeur)',
             'pool' => 'Pool DHCP (de-à)',
             'wifi_mode' => 'Wi-Fi',
+            'html_directory' => 'Répertoire HTML du hotspot',
+            'html_directory_help' => 'hotspot : valeur par défaut de RouterOS ; flash/hotspot : appareils avec un dossier flash. Doit correspondre à html-directory de /ip hotspot profile print where default=yes.',
             'modes' => ['capsman2' => 'CAPsMAN (paquet wifi)', 'capsman1' => 'Ancien CAPsMAN (paquet wireless)', 'local' => 'Radio locale (paquet wifi)'],
             'captive_help' => 'L\'option 114 indique aux appareils récents (RFC 8910) où se trouve l\'API du captive portal. À utiliser seulement si les invités atteignent le portail avec leur propre adresse IP (pas de source NAT des invités), sinon chaque invité est considéré comme non connecté.',
             'guide' => 'Les règles de pare-feu supposent des listes d\'interfaces WAN/LAN existantes et un jeu de règles de base stateful ; vérifier l\'ordre avec /ip firewall filter print.',

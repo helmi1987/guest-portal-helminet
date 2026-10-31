@@ -132,6 +132,7 @@ return [
         'pool' => 'address range',
         'ssid' => 'SSID',
         'wifi_mode' => 'Wi-Fi mode',
+        'html_directory' => 'hotspot HTML directory',
         'veth_address' => 'VETH address',
         'veth_gateway' => 'VETH gateway',
         'disk' => 'storage location',

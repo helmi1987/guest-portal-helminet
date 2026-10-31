@@ -61,7 +61,7 @@ class SetupAssistantTest extends TestCase
             ->assertSee('remote-image=ghcr.io/owner/repo:latest', false)
             ->assertSee("/router-login/{$this->nas->id}/login.html", false)
             ->assertSee('X-Portal-Token: '.$this->nas->cert_token, false)
-            ->assertSee('/radius monitor 0 once', false)
+            ->assertSee('/radius monitor [find comment="guest-portal"] once')
             ->assertSee('key=APP_URL value="https://portal.example.com"')
             ->assertSee('slave-configurations=<EXISTING_SLAVES>,cfg-guest');
 
@@ -280,7 +280,9 @@ class SetupAssistantTest extends TestCase
             ->assertSee('add name=guest-portal-v4.internal address=10.0.0.10', false)
             ->assertSee('add name=portal.example.com type=CNAME cname=guest-portal-v4.internal', false)
             ->assertSee('/ip hotspot profile print where name=guest-portal', false)
-            ->assertSee('/certificate print where name~"guest-portal"')
+            ->assertSee('/certificate print where name="guest-portal" || name~"^guest-portal-ca-[0-9]+\\$"')
+            ->assertSee('/ip hotspot profile print where default=yes', false)
+            ->assertSee('/ip hotspot walled-garden ip print', false)
             ->assertSee('/file print where name~"login.html"')
             ->assertSee(__('portal.setup.uninstall.title'));
         $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/edit")->assertOk()
@@ -295,7 +297,8 @@ class SetupAssistantTest extends TestCase
             '/certificate remove [find where name="guest-portal" || name~"^guest-portal-ca-[0-9]+\\$" || name~"^guest-portal-import" || name="guest-portal-new" || name~"^guest-portal-new_"]',
             '/ip dns static remove [find where comment="guest-portal"]', '/ip dhcp-server network find where address="10.30.0.0/24"',
             '/ip dhcp-server network set $i dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal" && comment="guest-portal"]',
-            '/ip firewall filter remove [find where comment~"^guest-portal"]', '/ip firewall address-list remove [find where comment~"^guest-portal"]'] as $line) {
+            '/ip firewall filter remove [find where comment~"^guest-portal: "]', '/ip firewall nat remove [find where comment~"^guest-portal: "]',
+            '/ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal" || comment~"^guest-portal: ")]'] as $line) {
             $this->assertStringContainsString($line, $script);
         }
         // Order: hotspot before profile, profile before certificates, option reference before the option.
@@ -305,15 +308,86 @@ class SetupAssistantTest extends TestCase
         // Never a prefix match that would hit user certificates like "guest-portal.example.com".
         $this->assertStringNotContainsString('name~"^guest-portal"', $script);
         $this->assertStringNotContainsString('dhcp-option~', $script);
+        // No prefix match without the ": " separator (foreign comments like "guest-portal-old" stay).
+        $this->assertStringNotContainsString('comment~"^guest-portal"]', $script);
         $this->assertStringContainsString('name=captive-portal value="\'https://portal.example.com/captive/site-a\'" comment="guest-portal"',
             $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['network']['captive_option']);
         $this->assertStringContainsString('/interface/veth remove', str_replace('/interface veth', '/interface/veth', $u['uninstall_container']));
-        foreach (['/interface wifi configuration remove [find where name=cfg-guest]', '/ip dhcp-server remove [find where name=guest-dhcp]',
-            '/ip pool remove [find where name=guest-pool]', '/interface vlan remove [find where name=vlan30-guest]',
-            '/interface list remove [find where name=GUEST]'] as $line) {
+        foreach (['/interface wifi configuration remove [find where name=cfg-guest && comment="guest-portal"]',
+            '/ip dhcp-server remove [find where name=guest-dhcp && comment="guest-portal"]',
+            '/ip pool remove [find where name=guest-pool && comment="guest-portal"]',
+            '/interface vlan remove [find where name=vlan30-guest && comment="guest-portal"]',
+            '/interface list remove [find where name=GUEST && comment="guest-portal"]',
+            '/ip address remove [find where interface=vlan30-guest && comment="guest-portal: guest gateway"]'] as $line) {
             $this->assertStringContainsString($line, $u['uninstall_network']);
         }
+        // Every remove of the optional blocks is limited to objects with the assistant's comment.
+        foreach (['uninstall_network', 'uninstall_container'] as $block) {
+            foreach (preg_split('/\n/', $u[$block]) as $line) {
+                if (preg_match('/^\/\S.* remove \[find/', $line) && ! str_contains($line, 'interface=veth-portal]')) {
+                    $this->assertStringContainsString('comment="guest-portal', $line, $line);
+                }
+            }
+        }
         $this->assertLessThan(strpos($u['uninstall_network'], '/interface vlan remove'), strpos($u['uninstall_network'], '/ip address remove'));
+    }
+
+    /** Findings of the RouterOS CHR harness (tests/routeros): re-runnable blocks, no foreign objects touched. */
+    public function test_blocks_never_touch_foreign_objects_and_are_re_runnable(): void
+    {
+        $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['vlan_id' => 30, 'bridge' => 'bridge1',
+            'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250',
+            'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2']])]);
+        $site = $this->site->fresh();
+        $c = $site->driver()->setupCommands($site, []);
+        $firewall = $c['network']['firewall'];
+
+        // An existing RFC1918 entry without our comment made "add" fail ("already have such entry").
+        $this->assertStringContainsString(':if ([:len [find where list=RFC1918 && address=10.0.0.0/8]] = 0) do={ add list=RFC1918 address=10.0.0.0/8 comment="guest-portal" }', $firewall);
+        $this->assertStringContainsString(':if ([:len [/interface list find where name=GUEST]] = 0) do={ /interface list add name=GUEST comment="guest-portal" }', $firewall);
+        $this->assertStringContainsString('remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal" || comment~"^guest-portal: ")]', $firewall);
+        $this->assertDoesNotMatchRegularExpression('/^add list=/m', $firewall);
+
+        // Option 114: updated in place when it is ours, the network is matched by subnet and comment.
+        $this->assertStringContainsString('set [find where name="captive-portal" && comment="guest-portal"] code=114', $c['network']['captive_option']);
+        $this->assertStringContainsString('[find where address="10.30.0.0/24" && comment="guest-portal"] dhcp-option=captive-portal', $c['network']['captive_option']);
+        foreach (['/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30 comment="guest-portal"',
+            '/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250 comment="guest-portal"',
+            'dns-server=10.30.0.1 comment="guest-portal"'] as $line) {
+            $this->assertStringContainsString($line, $c['network']['vlan'].$c['network']['dhcp']);
+        }
+
+        // Walled garden ip: only the own entry is replaced; a foreign drop entry is reported, not changed.
+        $script = $site->driver()->configScript($site, $this->nas);
+        $this->assertStringContainsString("/ip hotspot walled-garden ip\nremove [find comment=\"guest-portal\"]", $script);
+        $this->assertSame(1, substr_count($script, 'walled-garden ip'."\n".'remove'));
+        $this->assertStringContainsString('/ip hotspot walled-garden ip print', $c['diagnostics']['verify']);
+        $this->assertStringContainsString('action=drop', $c['diagnostics']['verify']);
+    }
+
+    public function test_hotspot_html_directory_is_set_on_the_profile_and_used_by_the_fetch(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $form = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+            'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2'];
+        $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", $form + ['html_directory' => '../etc'])
+            ->assertSessionHasErrors('html_directory');
+
+        // Default (older saved setups without the field): "hotspot"
+        $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", $form)->assertRedirect();
+        $site = $this->site->fresh();
+        $this->assertStringContainsString('html-directory=hotspot ', $site->driver()->configScript($site, $this->nas));
+        $this->assertStringContainsString('dst-path=hotspot/login.html', $site->driver()->loginPageFetch($site, $this->nas));
+
+        $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", $form + ['html_directory' => 'flash/hotspot'])
+            ->assertRedirect();
+        $site = $this->site->fresh();
+        $this->assertSame('flash/hotspot', $site->setting('setup.html_directory'));
+        $this->assertStringContainsString('html-directory=flash/hotspot ', $site->driver()->setupCommands($site, [])['hotspot']['hotspot']);
+        $this->assertStringContainsString('dst-path=flash/hotspot/login.html', $site->driver()->loginPageFetch($site, $this->nas));
+        $this->assertStringContainsString('/ip hotspot profile print where default=yes', $site->driver()->setupCommands($site, [])['diagnostics']['verify']);
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
+            ->assertSee('<option value="flash/hotspot" selected>', false);
     }
 
     public function test_certificate_script_identifies_leaf_by_fingerprint_and_profile_reference(): void
