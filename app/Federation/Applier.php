@@ -109,7 +109,7 @@ class Applier
             if (DB::getDriverName() === 'sqlite') {
                 DB::statement('PRAGMA defer_foreign_keys = ON');
             }
-            $last = $own ? (int) DB::table(Outbox::TABLE)->where('origin', $origin)->max('seq') : (int) ($cursor->last_seq ?? 0);
+            $last = $own ? Outbox::lastSeq($origin) : (int) ($cursor->last_seq ?? 0);
 
             foreach ($batch as $event) {
                 if ($event['seq'] <= $last) {

@@ -6,7 +6,6 @@ use App\Federation\Applier;
 use App\Federation\Outbox;
 use App\Federation\PeerCertificate;
 use App\Federation\Resync;
-use App\Federation\ResyncRequiredException;
 use App\Federation\Topology;
 use App\Models\FederationPeer;
 use App\Models\Instance;
@@ -30,7 +29,9 @@ use Illuminate\Support\Facades\Log;
  *   learnt anew (push from its next heartbeat);
  * - resync: fetch the own events back from the peers (as after a restore), writes blocked meanwhile;
  * - skip-resync --force: lift the resync block without the own events of every peer. Only when the
- *   missing peers are gone for good: own events another peer still has would collide with new ones.
+ *   missing peers are gone for good, or recovery fails for good (e.g. an event that cannot be applied):
+ *   the own sequence continues above everything the peers reported (no reuse), and those reports do not
+ *   start the resync again (Resync::skip()).
  */
 class FederationRepair extends Command
 {
@@ -43,7 +44,7 @@ class FederationRepair extends Command
 
     protected $description = 'Inspect and repair the federation state of this instance';
 
-    public function handle(LocalInstance $local, Topology $topology, Applier $applier): int
+    public function handle(LocalInstance $local, Topology $topology, Applier $applier, Resync $resync): int
     {
         $action = (string) $this->argument('action');
         if ($action === 'status') {
@@ -68,9 +69,11 @@ class FederationRepair extends Command
 
                 return self::FAILURE;
             }
-            Resync::clear('skipped on the command line');
-            $this->audit('federation.resync_skipped', null);
-            $this->warn('Resync block lifted; the own sequence continues at '.((int) DB::table(Outbox::TABLE)->where('origin', $local->id())->max('seq') + 1).'.');
+            $skipped = $resync->skip();
+            // A list: peer ids as keys could be taken for secrets by the audit filter.
+            $this->audit('federation.resync_skipped', null, ['skipped_until' => array_map(fn ($id, $seq) => ['peer' => $id, 'seq' => $seq],
+                array_keys($skipped), $skipped)]);
+            $this->warn('Resync block lifted; the own sequence continues at '.(Outbox::lastSeq($local->id()) + 1).'.');
 
             return self::SUCCESS;
         }
@@ -104,11 +107,15 @@ class FederationRepair extends Command
         $direct = $topology->directPeers()->pluck('id')->all();
         $states = FederationPeer::query()->get()->keyBy('instance_id');
         $cursors = DB::table('peer_cursors')->get()->keyBy('origin');
-        $ownSeq = (int) DB::table(Outbox::TABLE)->where('origin', $local->id())->max('seq');
+        $ownSeq = Outbox::lastSeq($local->id());
         $this->line("This instance: {$local->id()}, own sequence $ownSeq, hub ".($topology->hubId() ?? 'not set')
             .($topology->isHub() ? ' (this instance)' : ''));
         if (($resync = Resync::state()) !== null) {
             $this->warn("Resync required since {$resync['since']}: {$resync['reason']}; done with: ".(implode(', ', $resync['done']) ?: 'none'));
+        }
+        if (($skipped = Resync::skipped()) !== []) {
+            $this->line('Resync skipped; own events reported by peers then (not recovered): '
+                .implode(', ', array_map(fn ($id, $seq) => "$id up to $seq", array_keys($skipped), $skipped)));
         }
         $rows = [];
         foreach (Instance::withTrashed()->orderBy('name')->get() as $instance) {
@@ -187,14 +194,9 @@ class FederationRepair extends Command
         return Instance::withTrashed()->find($key) ?? Instance::query()->where('name', $key)->first();
     }
 
-    /** Audit entry (replicated); while the resync blocks writes, the application log has it. */
+    /** Audit entry (replicated); while the resync blocks writes, Audit puts it in the application log. */
     private function audit(string $action, ?Instance $subject, array $data = []): void
     {
-        try {
-            Audit::log($action, $subject, $data);
-        } catch (ResyncRequiredException) {
-            Log::warning('Federation repair (not in the audit log: resync in progress)', ['action' => $action,
-                'instance' => $subject?->id] + $data);
-        }
+        Audit::log($action, $subject, $data);
     }
 }

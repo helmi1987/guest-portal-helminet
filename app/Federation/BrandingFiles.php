@@ -124,9 +124,12 @@ class BrandingFiles
             ->values();
         $max = max((int) config('portal.branding.logo_max_bytes'), (int) config('portal.branding.favicon_max_bytes'));
         foreach ($peers as $peer) {
+            $exceeded = false;
             try {
-                // curl aborts larger downloads early; the length is checked again below.
+                // curl aborts larger downloads early: CURLOPT_MAXFILESIZE by the announced length, the
+                // progress callback while receiving (no Content-Length); the length is checked again below.
                 $response = $this->client->to($peer, null, [CURLOPT_MAXFILESIZE => $max])
+                    ->withOptions(self::downloadLimit($max, $exceeded))
                     ->accept('application/octet-stream')
                     ->get('/federation/branding/'.$file);
                 if (! $response->successful()) {
@@ -144,12 +147,37 @@ class BrandingFiles
                 Log::warning('Branding file from federation peer rejected', ['file' => $file, 'peer' => $peer->id,
                     'reason' => $e->reason]);
             } catch (Throwable $e) {
+                if ($exceeded) {
+                    Log::warning('Branding file from federation peer rejected', ['file' => $file, 'peer' => $peer->id,
+                        'reason' => 'too_large']);
+
+                    continue;
+                }
                 Log::info('Branding file not fetched from federation peer', ['file' => $file, 'peer' => $peer->id,
                     'error' => mb_substr($e->getMessage(), 0, 200)]);
             }
         }
 
         return false;
+    }
+
+    /**
+     * Guzzle options that abort a download once more than $max bytes arrived (the progress callback
+     * returning true stops the transfer); $exceeded tells the caller why it failed.
+     *
+     * @return array{progress: \Closure}
+     */
+    public static function downloadLimit(int $max, ?bool &$exceeded): array
+    {
+        $exceeded = false;
+
+        return ['progress' => function ($downloadTotal, $downloaded) use ($max, &$exceeded): bool {
+            if ($downloaded > $max || $downloadTotal > $max) {
+                $exceeded = true;
+            }
+
+            return $exceeded;
+        }];
     }
 
     /** Instance id in an HLC version (<ms>.<counter>.<instance id>). */

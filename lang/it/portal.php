@@ -108,6 +108,7 @@ return [
         'two_factor_failed' => 'Codice non valido.',
         'two_factor_expired' => 'L\'accesso è scaduto. Accedi di nuovo.',
         'two_factor_restart' => 'Troppi codici non validi. Accedi di nuovo con la password.',
+        'two_factor_recovery_resync' => 'I codici di recupero non sono temporaneamente disponibili (risincronizzazione dopo un ripristino in corso). Usa il codice dell\'app di autenticazione o riprova più tardi.',
     ],
     'admin' => [
         'title' => 'Portale ospiti',

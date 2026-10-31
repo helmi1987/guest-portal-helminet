@@ -4,6 +4,7 @@ namespace App\Livewire\Admin;
 
 use App\Auth\Oidc\OidcSettings;
 use App\Auth\TwoFactor;
+use App\Federation\Resync;
 use App\Models\User;
 use App\Support\Audit;
 use Illuminate\Support\Facades\Auth;
@@ -98,6 +99,8 @@ class Login extends Component
         $userKey = 'admin-2fa|'.$user->id;
         $this->throttle($ipKey, 'code', self::CODE_TRIES_PER_IP);
         if (! $twoFactor->verify($user, $this->code)) {
+            // Not a 6-digit TOTP code: a recovery code, which cannot be consumed during the restore resync.
+            $recoveryBlocked = Resync::required() && ! preg_match('/^\d{6}$/', (string) preg_replace('/\s+/', '', $this->code));
             RateLimiter::hit($ipKey, 300);
             RateLimiter::hit($userKey, self::PENDING_TTL);
             Audit::log('auth.two_factor_failed', $user, [], $user);
@@ -111,7 +114,8 @@ class Login extends Component
                 throw ValidationException::withMessages(['email' => __('portal.auth.two_factor_restart')]);
             }
 
-            throw ValidationException::withMessages(['code' => __('portal.auth.two_factor_failed')]);
+            throw ValidationException::withMessages(['code' => __($recoveryBlocked
+                ? 'portal.auth.two_factor_recovery_resync' : 'portal.auth.two_factor_failed')]);
         }
         RateLimiter::clear($userKey);
         $viaOidc = (session()->get(self::PENDING)['method'] ?? null) === 'oidc';

@@ -625,10 +625,19 @@ implemented, released as v0.13.0 (§14). Setup and operation: docs/federation.md
   `backup-manifest.restored-<time>.json`) or by a heartbeat in which a peer reports own events beyond the
   local sequence (restore without the manifest). Meanwhile every write of a replicated row fails
   (`Outbox::record()`, HTTP 503, e.g. new guest logins and admin changes; sessions and RADIUS keep working).
+  Decision 2026-10-31 (v0.13.1): admin login, logout and the admin UI keep working: `Audit::log()` writes no
+  row (and no event, a low own sequence would collide with the events being recovered) but a log warning
+  with the entry; TOTP replay protection in the local cache (step not stored in the user row), recovery
+  codes rejected until the resync is finished (consuming one writes the user row); logout without a new
+  remember token.
   The sync run fetches the own events from every direct peer (signature checked with the own key, applied
   like remote events, gaps not skipped) and lifts the block once every direct peer was caught up. A peer
   that stays unreachable keeps the block: `artisan portal:federation:repair skip-resync --force` lifts it
-  when that peer is gone for good (its own events would collide with new ones). A backup older than the
+  when that peer is gone for good (its own events would collide with new ones) or recovery fails for good.
+  Decision 2026-10-31 (v0.13.1): the skip stores per direct peer the own sequence it reported
+  (`federation_resync_skipped`); the own sequence continues above the highest of them (`Outbox::lastSeq()`,
+  also for recovered own events), so a heartbeat reporting up to that value does not mark the resync again,
+  only a higher one. A peer that had less stops at the gap (no skipping): `reset-cursor` there. A backup older than the
   retention period may not resync (the peers compacted the events in between): join again as a new instance.
   Backups include `/data/federation` (key and certificate), so a restored instance keeps its pin.
 - Repair command (decision 2026-10-31): `artisan portal:federation:repair` with `status`, `resume <instance>`,
@@ -848,7 +857,8 @@ sessions and disconnect, home instance, roaming, limited mode), H (Telegram owne
 (integration tests with three simulated instances: partition and rejoin, double redemption, relay, clock
 skew, newer schema and protocol, hub takeover, restore; docs/federation.md) implemented; released as
 v0.13.0, checked with three containers on one Docker host (pairing, relay, offline SMS-only, catch-up,
-restore resync, branding files, hub takeover with re-pairing). Open: test across real sites (WireGuard, WAN outages), Telegram forwarding with a real
+restore resync, branding files, hub takeover with re-pairing); v0.13.1: admin login during the restore
+resync, skip-resync not undone by heartbeats, branding download size limit without Content-Length. Open: test across real sites (WireGuard, WAN outages), Telegram forwarding with a real
 group.
 
 | # | Content | Acceptance criteria |

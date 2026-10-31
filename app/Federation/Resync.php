@@ -19,10 +19,16 @@ use RuntimeException;
  * checked with the own key, applied like remote events), and once every direct peer was caught up the
  * block is lifted, so the own sequence continues after the highest one. A peer that stays unreachable
  * keeps the block; the admin can lift it on the command line (portal:federation:repair skip-resync).
+ * A skip stores per direct peer the own sequence it reported (federation_resync_skipped): the own
+ * sequence continues above the highest of them (no reuse of numbers a peer has seen), and a peer only
+ * starts the resync again when it later reports own events beyond that.
  */
 class Resync
 {
     public const SETTING = 'federation_resync_required';
+
+    /** Per direct peer: own sequence it reported when the resync was skipped (peer id => seq). */
+    public const SKIPPED_SETTING = 'federation_resync_skipped';
 
     public function __construct(
         private LocalInstance $instance,
@@ -60,10 +66,51 @@ class Resync
         Log::warning('Federation resync finished', ['how' => $why]);
     }
 
-    /** Highest own sequence stored here. */
+    /** @return array<string, int> peer id => own sequence it reported when the resync was skipped */
+    public static function skipped(): array
+    {
+        $skipped = LocalSetting::get(self::SKIPPED_SETTING);
+
+        return is_array($skipped) ? array_map('intval', $skipped) : [];
+    }
+
+    /** Lowest value the own sequence continues from (highest own sequence skipped, 0 without a skip). */
+    public static function seqFloor(): int
+    {
+        return max([0, ...array_values(self::skipped())]);
+    }
+
+    /**
+     * Lift the block without the missing own events (repair command, admin decision): remember what
+     * every direct peer reported, so the sequence continues above it and those reports do not mark
+     * the resync again. Values only grow (an earlier, higher report is kept).
+     *
+     * @return array<string, int> the stored skip values
+     */
+    public function skip(): array
+    {
+        $own = $this->instance->id();
+        $skipped = self::skipped();
+        foreach (FederationPeer::query()->get() as $state) {
+            $seq = (int) ($state->origins[$own] ?? 0);
+            if ($seq > 0) {
+                $skipped[$state->instance_id] = max($seq, $skipped[$state->instance_id] ?? 0);
+            }
+        }
+        DB::transaction(function () use ($skipped) {
+            if ($skipped !== []) {
+                LocalSetting::put(self::SKIPPED_SETTING, $skipped);
+            }
+            self::clear('skipped on the command line, sequence continues at '.(Outbox::lastSeq($this->instance->id()) + 1));
+        });
+
+        return $skipped;
+    }
+
+    /** Highest own sequence used so far (stored here, or skipped after a restore). */
     public function ownSeq(): int
     {
-        return (int) DB::table(Outbox::TABLE)->where('origin', $this->instance->id())->max('seq');
+        return Outbox::lastSeq($this->instance->id());
     }
 
     /**
@@ -74,6 +121,7 @@ class Resync
     public function checkPeer(Instance $peer, array $origins): void
     {
         $theirs = (int) ($origins[$this->instance->id()] ?? 0);
+        // ownSeq() includes the skipped sequences: a report up to a skipped value is no new restore.
         if ($theirs > ($own = $this->ownSeq())) {
             self::mark("peer {$peer->name} has own events up to seq $theirs, local $own (restored backup?)");
         }

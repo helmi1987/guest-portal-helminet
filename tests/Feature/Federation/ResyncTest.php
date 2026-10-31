@@ -193,4 +193,60 @@ class ResyncTest extends TestCase
             $this->assertFalse(Resync::required());
         });
     }
+
+    public function test_skip_survives_heartbeats_and_continues_above_the_peers_sequence(): void
+    {
+        $this->withoutFederationWriteGuard();
+        $idA = $this->idOf('a');
+        $this->grantOn('a', '555555');
+        $this->syncRound();
+        $backup = $this->dump('a');
+        $this->grantOn('a', '666666');
+        $this->grantOn('a', '777777');
+        $this->syncRound();
+        $highest = $this->ownSeq('a');
+
+        // Restore; the hub delivers an own event that cannot be verified: recovery fails for good.
+        $this->restore('a', $backup);
+        $this->on('hub', fn () => DB::table(Outbox::TABLE)->where('origin', $idA)->where('seq', $highest)
+            ->update(['sig' => base64_encode(random_bytes(64))]));
+        $this->on('a', fn () => Artisan::call('portal:federation:sync'));
+        $this->assertTrue($this->on('a', fn () => Resync::required()));
+        $this->assertLessThan($highest, $this->ownSeq('a'));
+
+        // Skip: the hub's report is stored, the sequence continues above it.
+        $this->on('a', function () use ($highest) {
+            $this->assertSame(0, Artisan::call('portal:federation:repair', ['action' => 'skip-resync', '--force' => true]));
+            // The audit entry of the skip is the first new own event.
+            $this->assertStringContainsString('continues at '.($highest + 2), Artisan::output());
+            $this->assertSame([$this->idOf('hub') => $highest], Resync::skipped());
+            $this->assertSame($highest + 1, (int) DB::table(Outbox::TABLE)->where('origin', app(LocalInstance::class)->id())
+                ->where('table', 'audit_logs')->max('seq'));
+            $this->assertSame(0, Artisan::call('portal:federation:repair', ['action' => 'status']));
+            $this->assertStringContainsString("up to $highest", Artisan::output());
+        });
+
+        // The next heartbeat reports the same sequence: no new resync.
+        $this->on('a', fn () => Artisan::call('portal:federation:sync'));
+        $this->assertFalse($this->on('a', fn () => Resync::required()));
+
+        // New own events do not reuse sequence numbers and reach the others.
+        $next = $this->grantOn('a', '888888');
+        $this->assertSame($highest + 2, $this->on('a', fn () => (int) DB::table(Outbox::TABLE)
+            ->where('origin', $idA)->where('record_id', $next->id)->value('seq')));
+        $this->syncRound();
+        $this->assertFalse($this->on('a', fn () => Resync::required()));
+        $this->assertNotNull($this->rowOn('hub', 'grants', $next->id));
+        $this->assertNotNull($this->rowOn('b', 'grants', $next->id));
+
+        // A peer reporting own events beyond everything used here marks the resync again.
+        $this->on('a', function () use ($idA, $highest) {
+            $resync = app(Resync::class);
+            $hub = Instance::findOrFail($this->idOf('hub'));
+            $resync->checkPeer($hub, [$idA => $highest + 2]);
+            $this->assertFalse(Resync::required());
+            $resync->checkPeer($hub, [$idA => $highest + 3]);
+            $this->assertTrue(Resync::required());
+        });
+    }
 }

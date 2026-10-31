@@ -3,6 +3,7 @@
 namespace App\Auth;
 
 use App\Federation\Outbox;
+use App\Federation\Resync;
 use App\Models\Setting;
 use App\Models\User;
 use App\Support\Hlc;
@@ -10,6 +11,7 @@ use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
 use BaconQrCode\Writer;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
@@ -25,6 +27,12 @@ class TwoFactor
     public const RECOVERY_CODES = 8;
 
     public const REQUIRED_SETTING = 'require_2fa';
+
+    /** Cache key prefix: last TOTP step used during the restore resync (user id appended). */
+    private const RESYNC_STEP_KEY = 'two-factor:resync-step:';
+
+    /** Longer than the accepted window (±1 step of 30 s). */
+    private const RESYNC_STEP_TTL = 600;
 
     private Google2FA $google2fa;
 
@@ -83,13 +91,18 @@ class TwoFactor
         if ($user->totp_secret === null || ! preg_match('/^\d{6}$/', $code)) {
             return false;
         }
+        // A step used during the restore resync counts as well (not stored in the replicated row).
+        $lastStep = max((int) $user->totp_last_step, (int) Cache::get(self::RESYNC_STEP_KEY.$user->getKey()));
         try {
-            $step = $this->google2fa->verifyKeyNewer($user->totp_secret, $code, (int) $user->totp_last_step);
+            $step = $this->google2fa->verifyKeyNewer($user->totp_secret, $code, $lastStep);
         } catch (Throwable) {
             return false;
         }
         if ($step === false) {
             return false;
+        }
+        if (Resync::required()) {
+            return $this->claimStepDuringResync($user, (int) $step);
         }
 
         // Atomic: of two concurrent uses of the same step only one wins. The conditional update
@@ -112,10 +125,37 @@ class TwoFactor
         return true;
     }
 
+    /**
+     * Replay protection while the restore resync blocks writes of the (replicated) user row: the step
+     * is claimed in the local cache under a lock (each step once, never an older one afterwards).
+     */
+    private function claimStepDuringResync(User $user, int $step): bool
+    {
+        $key = self::RESYNC_STEP_KEY.$user->getKey();
+        try {
+            return (bool) Cache::lock($key.':lock', 5)->block(3, function () use ($key, $user, $step) {
+                $stored = User::query()->whereKey($user->getKey())->toBase()->value('totp_last_step');
+                if ($step <= max((int) $stored, (int) Cache::get($key))) {
+                    return false;
+                }
+                Cache::put($key, $step, self::RESYNC_STEP_TTL);
+
+                return true;
+            });
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
     public function useRecoveryCode(User $user, string $code): bool
     {
         $code = self::normaliseRecoveryCode($code);
         if ($code === '' || ! $user->hasTwoFactor()) {
+            return false;
+        }
+        // Consuming a code writes the replicated user row; only a local note would let it be reused
+        // after the resync. Recovery codes therefore work again once the resync is finished.
+        if (Resync::required()) {
             return false;
         }
         // Work on the stored value: a stale model cannot reuse a code another request consumed.

@@ -108,6 +108,7 @@ return [
         'two_factor_failed' => 'Code invalide.',
         'two_factor_expired' => 'La connexion a expiré. Veuillez vous reconnecter.',
         'two_factor_restart' => 'Trop de codes invalides. Veuillez vous reconnecter avec votre mot de passe.',
+        'two_factor_recovery_resync' => 'Les codes de récupération sont temporairement indisponibles (resynchronisation après une restauration en cours). Veuillez utiliser le code de l\'application d\'authentification ou réessayer plus tard.',
     ],
     'admin' => [
         'title' => 'Portail invités',

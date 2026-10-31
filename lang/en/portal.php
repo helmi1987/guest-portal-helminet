@@ -108,6 +108,7 @@ return [
         'two_factor_failed' => 'Invalid code.',
         'two_factor_expired' => 'The login has expired. Please log in again.',
         'two_factor_restart' => 'Too many invalid codes. Please log in again with your password.',
+        'two_factor_recovery_resync' => 'Recovery codes are temporarily unavailable (resynchronisation after a restore in progress). Please use the code from the authenticator app or try again later.',
     ],
     'admin' => [
         'title' => 'Guest Portal',

@@ -108,6 +108,7 @@ return [
         'two_factor_failed' => 'Ungültiger Code.',
         'two_factor_expired' => 'Die Anmeldung ist abgelaufen. Bitte erneut anmelden.',
         'two_factor_restart' => 'Zu viele ungültige Codes. Bitte erneut mit dem Passwort anmelden.',
+        'two_factor_recovery_resync' => 'Wiederherstellungscodes sind vorübergehend nicht verfügbar (Synchronisation nach einer Wiederherstellung läuft). Bitte den Code aus der Authenticator-App verwenden oder später erneut versuchen.',
     ],
     'admin' => [
         'title' => 'Gästeportal',

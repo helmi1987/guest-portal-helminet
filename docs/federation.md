@@ -5,7 +5,7 @@ users, sites, routers and settings are the same everywhere and a guest's code wo
 is allowed for. Design and decisions: [CONCEPT.md](../CONCEPT.md) §10. A single instance serving several
 sites needs none of this.
 
-Status: implemented in M7 (v0.13.0), tested with simulated instances and three containers on one Docker
+Status: implemented in M7 (v0.13.0, fixes v0.13.1), tested with simulated instances and three containers on one Docker
 host; not yet tested across real sites and WAN links.
 
 ## 1. How it works
@@ -218,10 +218,17 @@ resume <instance>`.
 Backups include `/data/federation`, so a restored instance keeps its certificate pin. After a restore
 (manual extract, README) the instance first fetches the changes it made after the backup back from its
 peers; until then replicated data is read-only (new guest logins and admin changes answer "temporarily
-unavailable", running sessions keep working). This normally takes one sync run (30 s) once the hub (or,
+unavailable", running sessions keep working). Admins can still log in and out (password, OIDC, TOTP
+code; recovery codes only after the resync) and open the admin UI; audit entries of that time go to the
+application log instead of the audit log. This normally takes one sync run (30 s) once the hub (or,
 on the hub, every instance) is reachable. Status: `artisan portal:federation:repair status`.
-If an instance that has those changes is gone for good: `artisan portal:federation:repair skip-resync
---force` (changes only that instance had are lost). A backup older than the retention period cannot be
+If an instance that has those changes is gone for good, or the recovery keeps failing (e.g. an invalid
+signature in the status output): `artisan portal:federation:repair skip-resync --force` (changes not
+recovered are lost). The skip remembers the own sequence each peer reported: new changes continue
+above it (no reused numbers), and the resync starts again only if a peer later reports more. An
+instance that had fewer of those changes than the highest report stops at the gap ("gap: expected seq");
+there run `artisan portal:federation:repair reset-cursor <restored instance> --seq=<highest reported>`
+(the number is in the status output of the restored instance). A backup older than the retention period cannot be
 caught up (the others have compacted the changes in between): set the instance up fresh and join again.
 
 ### 9.7 Retention

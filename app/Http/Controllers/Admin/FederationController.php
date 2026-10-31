@@ -38,7 +38,7 @@ class FederationController extends Controller
         $self = Instance::query()->findOrFail($local->id());
         $peerStates = FederationPeer::query()->get()->keyBy('instance_id');
         $cursors = DB::table('peer_cursors')->get()->keyBy('origin');
-        $ownSeq = (int) DB::table(Outbox::TABLE)->where('origin', $local->id())->max('seq');
+        $ownSeq = Outbox::lastSeq($local->id());
         $direct = $topology->directPeers()->pluck('id')->all();
 
         $peers = $topology->others()->map(function (Instance $instance) use ($peerStates, $cursors, $ownSeq, $direct, $topology, $local) {

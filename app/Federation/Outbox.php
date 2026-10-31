@@ -71,8 +71,19 @@ class Outbox
         return json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
     }
 
+    /**
+     * Highest sequence of an origin stored here; for the own origin at least the highest sequence a
+     * peer reported when the restore resync was skipped (Resync::skip()), so numbers are never reused.
+     */
+    public static function lastSeq(string $origin): int
+    {
+        $stored = (int) DB::table(self::TABLE)->where('origin', $origin)->max('seq');
+
+        return $origin === app(LocalInstance::class)->id() ? max($stored, Resync::seqFloor()) : $stored;
+    }
+
     private function nextSeq(string $origin): int
     {
-        return (int) DB::table(self::TABLE)->where('origin', $origin)->max('seq') + 1;
+        return self::lastSeq($origin) + 1;
     }
 }
