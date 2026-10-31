@@ -285,17 +285,28 @@ add chain=input action=drop in-interface-list=GUEST comment="guest: no router ma
 
 ### 5.4 Forward chain (guest -> elsewhere)
 
-Order matters. Insert before your generic rules (use `place-before=0` or `move`).
+Order matters. Insert before your generic rules (use `place-before=0` or `move`). `add` appends at the
+end of a chain, after an existing drop rule; the setup assistant's firewall block (v0.12.6) moves its
+`guest-portal: ` rules of input and forward before the first static rule that is not its own, keeping their
+order. Check with `/ip firewall filter print where comment~"guest-portal"` and
+`/ip firewall filter print where chain=input || chain=forward`: they must come before any drop rule.
 
 ```
 /ip firewall filter
-add chain=forward action=accept connection-state=established,related comment="stateful"
+add chain=forward action=accept connection-state=established,related in-interface-list=GUEST comment="guest: stateful from guests"
+add chain=forward action=accept connection-state=established,related out-interface-list=GUEST comment="guest: stateful to guests"
 add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="guest: portal"
 add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="guest: no LAN / other VLANs / VPN"
 add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="nothing initiates towards guests"
 add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="guest: internet"
 ```
-- Rule 2 comes before rule 3 because the portal IP is private (RFC 1918).
+- The stateful accepts cover guest traffic only: a generic established/related accept above the defconf
+  FastTrack rule would turn off FastTrack for all traffic.
+- FastTrack (defconf `fasttrack-connection`) may bypass the hotspot for fasttracked connections
+  **(assumption, to verify)**. The guest stateful accepts come before it, so guest connections are not
+  fasttracked. Otherwise exclude the guest list in the FastTrack rule
+  (`in-interface-list=!GUEST out-interface-list=!GUEST`) or keep FastTrack off for guests.
+- The portal rule comes before the RFC 1918 drop because the portal IP is private (RFC 1918).
 - Guest->guest on the same L2 never passes the router; that is what client isolation (section 3) handles. Guest->guest across sites is blocked by rule 3
   (private ranges).
 - Before login the hotspot already drops everything except the walled garden; the same rules apply after login, so the portal stays reachable (re-login, logout
@@ -604,6 +615,8 @@ openssl s_client -connect portal.example.com:443 -servername portal.example.com 
 | Login returns to login page / "RADIUS timeout" | UDP 1812 blocked, wrong `address`, secret mismatch, router IP unknown to portal | `/radius monitor 0 once` (timeouts), `/log print where topics~"radius"`, portal RADIUS log, `tcpdump` on the instance |
 | Rejected although credentials fresh | Token expired (~60 s), MAC mismatch, site not allowed for the grant | Portal audit/RADIUS log; retry from the start |
 | router IP mismatch | masquerade/srcnat on the VPN or central router, `src-address` not set | Section 7.1; add a srcnat exception (`action=accept` for UDP 1812/1813/3799) above masquerade |
+| Disconnect-NAK, Error-Cause 406 (Unsupported-Extension) | RouterOS 7 hotspot accepts Disconnect only with `Framed-IP-Address` (User-Name / Acct-Session-Id are rejected). The portal sends only `Framed-IP-Address` from accounting (v0.12.6) | Instance log "RADIUS Disconnect-Request"; "not sent: Framed-IP-Address of the session unknown" = Accounting-Start without IP; "stopped or stale" = no recent accounting update (IP may be reused). Manual test: `echo 'Framed-IP-Address=<GUEST_IP>' \| radclient -x <ROUTER_IP>:3799 disconnect <SECRET>` |
+| Guest DNS/ping/Disconnect blocked, portal name not resolved | Assistant firewall rules appended after an existing drop rule (e.g. defconf "drop all not coming from LAN") | `/ip firewall filter print where chain=input \|\| chain=forward`: the `guest-portal: ` rules must come before any drop rule; re-run the firewall block of the assistant (v0.12.6 moves them to the top) |
 | Disconnect does nothing | Router not accepting (`/radius incoming accept=no`, port not 3799), UDP 3799 blocked on router input or tunnel, source of Disconnect differs from `/radius address`, wrong secret | `/radius incoming print`, input rule 5.3, central firewall 7.2, `tcpdump` UDP 3799 |
 | Session not removed after grant end | Scheduler (`portal:enforce-grants`) not running, Disconnect failing | Instance logs; see previous row |
 | Guest can reach LAN / router | Forward/input drop rules below an accept rule, interface list member missing | `/ip firewall filter print stats`, `/interface list member print` |

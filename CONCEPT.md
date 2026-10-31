@@ -143,7 +143,14 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
   (`portal:enforce-grants`, every minute) disconnects sessions of expired, revoked or rebound
   grants (M2).
 - Revoke / shorten / rebind: a job sends Disconnect-Request (`radclient`) to the router's
-  `/radius incoming` port 3799. After an extension the current session ends at the old
+  `/radius incoming` port 3799. The identifying attributes come from the NAS driver
+  (`disconnectAttributes`). Decision 2026-10-31 (v0.12.6, verified on a RouterOS 7 hotspot): RouterOS
+  answers User-Name and/or Acct-Session-Id (also with Message-Authenticator) with Disconnect-NAK, Error-Cause
+  406; only `Framed-IP-Address` alone removes the hotspot active entry. The MikroTik driver sends only
+  `Framed-IP-Address` from accounting (session summary `ip`); unknown IP: warning, nothing sent, job fails
+  (no User-Name fallback). Risk: a hotspot IP can be reused by another guest after a DHCP lease change;
+  mitigation: sent only while the accounting session is open (no Stop) and its last update is within
+  `PORTAL_RADIUS_STALE_AFTER`. The session ends with the router's Accounting-Stop as before. After an extension the current session ends at the old
   Session-Timeout and the guest is re-authenticated automatically via mac-cookie or roaming
   login (§10.4) **(to verify)**.
 - **MAC whitelist** (v0.8.0, decided): devices entered by admin/manager (MAC, required comment, all or
@@ -173,7 +180,7 @@ vendor-neutral. Vendor-specific parts sit behind a `NasDriver` interface; each s
 | Parse captive-portal redirect parameters | `login.html` query: `link-login-only`, `mac`, `ip`, `link-orig`, site id |
 | Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` |
 | Vendor RADIUS attributes | e.g. `Mikrotik-Rate-Limit` |
-| Disconnect capability | RFC 5176 via `/radius incoming` |
+| Disconnect capability | RFC 5176 via `/radius incoming`; only `Framed-IP-Address` (§5) |
 | Config generator | RouterOS script + `login.html` (§9) |
 
 Only the MikroTik RouterOS 7 driver ships. Other drivers (e.g. UniFi, Omada, OPNsense,

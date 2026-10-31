@@ -202,7 +202,7 @@ class SiteCodeTest extends TestCase
         $this->admin()->post("/admin/sites/{$this->site->id}/site-code/end-devices", ['site_code' => $siteCode->id])
             ->assertSessionHas('status');
         $this->assertNotNull($grant->refresh()->revoked_at);
-        Process::assertRan(fn (PendingProcess $p) => str_contains($p->input, 'Acct-Session-Id = "sess-a"'));
+        Process::assertRan(fn (PendingProcess $p) => $p->input === "Framed-IP-Address = \"10.5.50.10\"\n");
         $audit = AuditLog::query()->where('action', 'site_code.disconnect_all')->sole();
         $this->assertSame(1, $audit->data['count']);
 

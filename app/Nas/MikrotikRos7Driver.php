@@ -4,6 +4,7 @@ namespace App\Nas;
 
 use App\Models\Grant;
 use App\Models\NasClient;
+use App\Models\RadiusAccounting;
 use App\Models\Site;
 use App\Support\Mac;
 use Illuminate\Http\Request;
@@ -63,6 +64,40 @@ class MikrotikRos7Driver implements NasDriver
     public function replyAttributes(Grant $grant): array
     {
         return $grant->rate_limit ? ['reply:Mikrotik-Rate-Limit' => $grant->rate_limit] : [];
+    }
+
+    /**
+     * RouterOS 7 hotspot answers a Disconnect-Request carrying User-Name and/or Acct-Session-Id (with
+     * or without Message-Authenticator) with Disconnect-NAK, Error-Cause 406 (Unsupported-Extension);
+     * only Framed-IP-Address alone removes the /ip hotspot active entry (verified on RouterOS 7).
+     * The IP comes from accounting (session summary, Framed-IP-Address of the Accounting-Start).
+     *
+     * A hotspot IP can be reused for another guest after a DHCP lease change, so the request would
+     * end that guest's session instead. Mitigation: send only while the accounting session is still
+     * open (no Stop) and its last update is recent (within portal.radius.stale_after). No fallback to
+     * User-Name: it is rejected anyway.
+     */
+    public function disconnectAttributes(RadiusAccounting $acct): ?array
+    {
+        $summary = $acct->summary;
+        $ip = $summary?->ip;
+        $context = ['acct_session_id' => $acct->acct_session_id, 'session_summary_id' => $acct->session_summary_id];
+
+        if ($ip === null || filter_var($ip, FILTER_VALIDATE_IP) === false) {
+            Log::warning('RADIUS Disconnect-Request not sent: Framed-IP-Address of the session unknown', $context);
+
+            return null;
+        }
+        $staleBefore = now()->subSeconds((int) config('portal.radius.stale_after'));
+        if ($summary->stopped_at !== null || $acct->terminate_cause !== null
+            || $acct->last_update_at === null || $acct->last_update_at->lt($staleBefore)) {
+            Log::warning('RADIUS Disconnect-Request not sent: accounting session stopped or stale, IP may be reused',
+                $context + ['ip' => $ip, 'last_update_at' => $acct->last_update_at?->toIso8601String()]);
+
+            return null;
+        }
+
+        return ['Framed-IP-Address' => $ip];
     }
 
     public function loginPage(Site $site): string
@@ -358,7 +393,8 @@ class MikrotikRos7Driver implements NasDriver
                 add list=RFC1918 address=10.0.0.0/8 comment="{$n}"
                 add list=RFC1918 address=172.16.0.0/12 comment="{$n}"
                 add list=RFC1918 address=192.168.0.0/16 comment="{$n}"
-                # Input: place before your "drop all not from LAN" rule, after established/related accept
+                # Filter rules: all comments start with "{$n}: ". Re-running this block replaces them.
+                /ip firewall filter remove [find where comment~"^{$n}: "]
                 /ip firewall filter
                 add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=67 comment="{$n}: guest DHCP"
                 add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=53 comment="{$n}: guest DNS"
@@ -366,12 +402,34 @@ class MikrotikRos7Driver implements NasDriver
                 add chain=input action=accept in-interface-list=GUEST protocol=icmp limit=10,20:packet comment="{$n}: guest ping gateway"
                 add chain=input action=accept protocol=udp src-address-list=PORTAL_RADIUS dst-port={$coaPorts} comment="{$n}: Disconnect/CoA"
                 add chain=input action=drop in-interface-list=GUEST comment="{$n}: guest no router management"
-                # Forward: insert before your generic rules (order matters; assumes a WAN interface list)
-                add chain=forward action=accept connection-state=established,related comment="{$n}: stateful"
+                # Forward (order matters; assumes a WAN interface list). The stateful accepts cover guest
+                # traffic only, so FastTrack for other traffic stays as it is.
+                add chain=forward action=accept connection-state=established,related in-interface-list=GUEST comment="{$n}: stateful from guests"
+                add chain=forward action=accept connection-state=established,related out-interface-list=GUEST comment="{$n}: stateful to guests"
                 add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="{$n}: guest to portal"
                 add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="{$n}: guest no LAN / other VLANs / VPN"
                 add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="{$n}: nothing initiates towards guests"
                 add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="{$n}: guest internet"
+                # "add" appends at the end of a chain, i.e. after an existing drop rule (e.g. defconf "drop all
+                # not coming from LAN"). Move the rules above to the top of input and forward, keeping their
+                # order: each one goes before the first static rule of the chain that is not ours. Dynamic
+                # rules (hotspot) stay first. Local names differ from property names on purpose.
+                :foreach fwChain in={"input";"forward"} do={
+                    :local fwFirst [:pick [/ip firewall filter find where chain=\$fwChain && dynamic=no && !(comment~"^{$n}: ")] 0]
+                    :if ([:len \$fwFirst] > 0) do={
+                        :foreach fwRule in=[/ip firewall filter find where chain=\$fwChain && dynamic=no && comment~"^{$n}: "] do={
+                            /ip firewall filter move \$fwRule destination=\$fwFirst
+                        }
+                    }
+                }
+                # Check: the "{$n}: " rules must come before any drop rule of input and forward.
+                # /ip firewall filter print where chain=input || chain=forward
+                # /ip firewall filter print where comment~"{$n}"
+                # FastTrack (defconf "fasttrack-connection") may bypass the hotspot for fasttracked
+                # connections (assumption, to verify). The guest stateful accepts above come before it, so
+                # guest connections are not fasttracked. If guest traffic is still fasttracked, exclude the
+                # guest list in the FastTrack rule, e.g.
+                # /ip firewall filter set [find where action=fasttrack-connection] in-interface-list=!GUEST out-interface-list=!GUEST
                 RSC,
             ],
             'hotspot' => [
@@ -412,6 +470,9 @@ class MikrotikRos7Driver implements NasDriver
                 /file print where name~"login.html"
                 # last runs of the certificate script
                 /log print where message~"{$n}"
+                # firewall: the "{$n}: " rules must come before any drop rule of chain input and forward
+                /ip firewall filter print where comment~"{$n}"
+                /ip firewall filter print where chain=input || chain=forward
                 RSC,
                 'diagnostics' => <<<'RSC'
                 /radius print

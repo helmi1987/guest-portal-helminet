@@ -112,6 +112,32 @@ class SetupAssistantTest extends TestCase
         $this->assertStringContainsString('src-address-list=PORTAL_RADIUS dst-port=1700,3799 comment="guest-portal: Disconnect/CoA"', $firewall);
     }
 
+    public function test_firewall_rules_are_moved_before_foreign_rules_of_input_and_forward(): void
+    {
+        $firewall = $this->site->driver()->setupCommands($this->site, [])['network']['firewall'];
+
+        // Every filter rule carries the explicit prefix; the block replaces only those on re-run.
+        preg_match_all('/^add chain=(input|forward) .*comment="([^"]*)"$/m', $firewall, $rules);
+        $this->assertCount(12, $rules[2]);
+        foreach ($rules[2] as $comment) {
+            $this->assertStringStartsWith('guest-portal: ', $comment);
+        }
+        $this->assertStringContainsString('/ip firewall filter remove [find where comment~"^guest-portal: "]', $firewall);
+
+        // Moved rule by rule before the first static foreign rule: keeps the own order.
+        $this->assertStringContainsString(':foreach fwChain in={"input";"forward"} do={', $firewall);
+        $this->assertStringContainsString('[/ip firewall filter find where chain=$fwChain && dynamic=no && !(comment~"^guest-portal: ")] 0]', $firewall);
+        $this->assertStringContainsString('find where chain=$fwChain && dynamic=no && comment~"^guest-portal: "] do={', $firewall);
+        $this->assertStringContainsString('/ip firewall filter move $fwRule destination=$fwFirst', $firewall);
+        $this->assertLessThan(strpos($firewall, ':foreach fwChain'), strrpos($firewall, "\nadd chain="));
+
+        // Stateful accepts only for guest traffic (FastTrack of other traffic unchanged), FastTrack hint.
+        $this->assertStringNotContainsString('connection-state=established,related comment=', $firewall);
+        $this->assertStringContainsString('established,related in-interface-list=GUEST comment="guest-portal: stateful from guests"', $firewall);
+        $this->assertStringContainsString('fasttrack-connection', $firewall);
+        $this->assertStringContainsString('/ip firewall filter print where comment~"guest-portal"', $firewall);
+    }
+
     public function test_hotspot_hosts_reject_spaces_and_script_characters(): void
     {
         $admin = User::factory()->admin()->create();

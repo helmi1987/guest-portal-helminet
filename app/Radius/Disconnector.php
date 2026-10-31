@@ -18,8 +18,20 @@ class Disconnector
             return false;
         }
 
-        $attributes = sprintf("User-Name = \"%s\"\nAcct-Session-Id = \"%s\"\n",
-            addslashes($acct->username), addslashes($acct->acct_session_id));
+        // Identifying attributes depend on the router (NAS driver); null: not addressable, not sent.
+        $driver = $nas->site?->driver();
+        $map = $driver?->disconnectAttributes($acct);
+        if ($map === null || $map === []) {
+            if ($driver === null) {
+                Log::warning('RADIUS Disconnect-Request not sent: router has no site', ['nas' => $nas->nas_ip]);
+            }
+
+            return false;
+        }
+        $attributes = '';
+        foreach ($map as $name => $value) {
+            $attributes .= sprintf("%s = \"%s\"\n", $name, addslashes($value));
+        }
 
         // Secret via file (-S), not on the command line.
         $secretFile = tempnam(sys_get_temp_dir(), 'radsec');
@@ -44,6 +56,7 @@ class Disconnector
         Log::log($ack ? 'info' : 'warning', 'RADIUS Disconnect-Request', [
             'nas' => $nas->nas_ip,
             'acct_session_id' => $acct->acct_session_id,
+            'attributes' => array_keys($map),
             'result' => $ack ? 'ack' : 'failed',
             'output' => $ack ? null : trim($result->errorOutput()."\n".$result->output()),
         ]);

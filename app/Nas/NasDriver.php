@@ -4,6 +4,7 @@ namespace App\Nas;
 
 use App\Models\Grant;
 use App\Models\NasClient;
+use App\Models\RadiusAccounting;
 use App\Models\Site;
 use Illuminate\Http\Request;
 
@@ -30,6 +31,15 @@ interface NasDriver
 
     /** Vendor RADIUS reply attributes for an Access-Accept (rlm_rest JSON keys). */
     public function replyAttributes(Grant $grant): array;
+
+    /**
+     * Attributes of a Disconnect-Request (RFC 5176) for one accounting session, as radclient
+     * attribute name => value. Null: the session cannot be addressed safely; nothing is sent (the
+     * driver logs why). Routers differ in which identifying attributes they accept.
+     *
+     * @return array<string, string>|null
+     */
+    public function disconnectAttributes(RadiusAccounting $acct): ?array;
 
     /** Captive-portal page installed on the router, redirecting to this portal. */
     public function loginPage(Site $site): string;

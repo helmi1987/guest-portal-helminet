@@ -156,7 +156,7 @@ class MacWhitelistTest extends TestCase
         $this->onZone('admin')->actingAs(User::factory()->create())
             ->delete("/admin/whitelist/{$entry->id}")->assertRedirect();
         Process::assertRanTimes(fn (PendingProcess $p) => in_array('10.0.0.1:3799', $p->command, true)
-            && str_contains($p->input, 'Acct-Session-Id = "mac-1"') && str_contains($p->input, 'User-Name = "'.self::MAC.'"'), 1);
+            && $p->input === "Framed-IP-Address = \"10.5.50.20\"\n", 1);
     }
 
     public function test_accounting_start_without_valid_entry_is_recorded_and_disconnected(): void
@@ -165,12 +165,12 @@ class MacWhitelistTest extends TestCase
         $entry->update(['active' => false]);
         $this->accounting('Start', 'mac-1', self::MAC, self::MAC)->assertNoContent();
         $this->assertSame($entry->id, SessionSummary::sole()->mac_whitelist_id);
-        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, 'mac-1'), 1);
+        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, '"10.5.50.20"'), 1);
 
         $entry->delete();
-        $this->accounting('Start', 'mac-2', self::MAC, self::MAC)->assertNoContent();
+        $this->accounting('Start', 'mac-2', self::MAC, self::MAC, '10.5.50.21')->assertNoContent();
         $this->assertSame($entry->id, SessionSummary::query()->latest('id')->whereHas('accounting', fn ($q) => $q->where('acct_session_id', 'mac-2'))->value('mac_whitelist_id'));
-        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, 'mac-2'), 1);
+        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, '"10.5.50.21"'), 1);
     }
 
     public function test_reject_path_is_cached_until_the_whitelist_changes(): void
@@ -237,7 +237,7 @@ class MacWhitelistTest extends TestCase
         $this->travel(31)->minutes();
         $this->accounting('Interim-Update', 'mac-1', self::MAC, self::MAC);
         $this->artisan('portal:enforce-grants')->assertSuccessful();
-        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, 'mac-1'), 1);
+        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, '"10.5.50.20"'), 1);
     }
 
     public function test_guests_list_offers_permanent_allow_with_prefilled_form(): void
@@ -276,11 +276,11 @@ class MacWhitelistTest extends TestCase
         ], fn ($v) => $v !== null));
     }
 
-    private function accounting(string $status, string $sessionId, string $user, string $mac): TestResponse
+    private function accounting(string $status, string $sessionId, string $user, string $mac, string $ip = '10.5.50.20'): TestResponse
     {
         return $this->radius('accounting', [
             'Acct-Status-Type' => $status, 'Acct-Session-Id' => $sessionId, 'User-Name' => $user,
-            'Calling-Station-Id' => $mac, 'Framed-IP-Address' => '10.5.50.20',
+            'Calling-Station-Id' => $mac, 'Framed-IP-Address' => $ip,
         ]);
     }
 

@@ -3,17 +3,20 @@
 namespace Tests\Feature;
 
 use App\Enums\ExpiryMode;
+use App\Jobs\DisconnectSession;
 use App\Models\Grant;
 use App\Models\NasClient;
 use App\Models\SessionSummary;
 use App\Models\Site;
 use App\Models\TermsVersion;
+use App\Radius\Disconnector;
 use App\Services\GrantManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Testing\TestResponse;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -102,7 +105,7 @@ class RadiusFlowTest extends TestCase
         $this->assertSame(self::MAC_B, $grant->activeDevice()->mac);
         $this->assertSame(2, $grant->devices()->count());
         Process::assertRan(fn (PendingProcess $p) => in_array('10.0.0.1:3799', $p->command, true)
-            && str_contains($p->input, 'Acct-Session-Id = "sess-a"'));
+            && $p->input === "Framed-IP-Address = \"10.5.50.10\"\n");
     }
 
     public function test_revoked_or_expired_grant_is_rejected_and_sessions_disconnected(): void
@@ -115,7 +118,7 @@ class RadiusFlowTest extends TestCase
 
         app(GrantManager::class)->revoke($grant);
 
-        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, 'sess-1'), 1);
+        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, '"10.5.50.10"'), 1);
         $this->authorize($pending['username'], $pending['password'], self::MAC_A)->assertStatus(401);
         $this->redeem($grant->code, self::MAC_A)->assertForbidden()
             ->assertSee(__('portal.guest.error_pages.revoked.title'));
@@ -158,11 +161,52 @@ class RadiusFlowTest extends TestCase
         $this->travel(61)->minutes();
         $this->accounting('Interim-Update', 'sess-1', $fields['username'], self::MAC_A);
         $this->artisan('portal:enforce-grants')->assertSuccessful();
-        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, 'sess-1'), 1);
+        Process::assertRanTimes(fn (PendingProcess $p) => str_contains($p->input, '"10.5.50.10"'), 1);
 
         $this->travel(400)->days();
         $this->artisan('portal:purge')->assertSuccessful();
         $this->assertSame(0, Grant::withTrashed()->count());
+    }
+
+    public function test_disconnect_sends_only_framed_ip_address_and_records_attempt(): void
+    {
+        $session = $this->openSession('sess-ip', '10.5.50.33');
+
+        (new DisconnectSession($session->id))->handle(app(Disconnector::class));
+
+        Process::assertRanTimes(fn (PendingProcess $p) => in_array('10.0.0.1:3799', $p->command, true)
+            && $p->input === "Framed-IP-Address = \"10.5.50.33\"\n", 1);
+        $this->assertNotNull($session->accounting()->sole()->disconnect_sent_at);
+    }
+
+    public function test_disconnect_without_known_ip_is_not_sent_and_fails(): void
+    {
+        Log::spy();
+        $session = $this->openSession('sess-noip', '');
+        $this->assertNull($session->fresh()->ip);
+
+        try {
+            (new DisconnectSession($session->id))->handle(app(Disconnector::class));
+            $this->fail('Disconnect without IP must fail');
+        } catch (RuntimeException) {
+        }
+
+        Process::assertNothingRan();
+        Log::shouldHaveReceived('warning')
+            ->with('RADIUS Disconnect-Request not sent: Framed-IP-Address of the session unknown', \Mockery::type('array'))->once();
+    }
+
+    public function test_disconnect_of_stale_session_is_not_sent(): void
+    {
+        $session = $this->openSession('sess-stale', '10.5.50.34');
+        $this->travel((int) config('portal.radius.stale_after') + 60)->seconds();
+
+        $this->expectException(RuntimeException::class);
+        try {
+            (new DisconnectSession($session->id))->handle(app(Disconnector::class));
+        } finally {
+            Process::assertNothingRan();
+        }
     }
 
     public function test_lockout_after_repeated_failures(): void
@@ -175,6 +219,15 @@ class RadiusFlowTest extends TestCase
         $this->redeem($grant->code, self::MAC_A)->assertStatus(429)
             ->assertSee(__('portal.guest.error_pages.locked.title'));
         $this->redeem($grant->code, self::MAC_B)->assertOk();
+    }
+
+    private function openSession(string $sessionId, string $ip): SessionSummary
+    {
+        $fields = $this->redeem($this->code()->code, self::MAC_A)->viewData('fields');
+        $this->authorize($fields['username'], $fields['password'], self::MAC_A)->assertOk();
+        $this->accounting('Start', $sessionId, $fields['username'], self::MAC_A, ['Framed-IP-Address' => $ip])->assertNoContent();
+
+        return SessionSummary::query()->whereHas('accounting', fn ($q) => $q->where('acct_session_id', $sessionId))->sole();
     }
 
     private function code(int $duration = 86400): Grant
