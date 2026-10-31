@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use App\Casts\Federated;
+use App\Casts\LocalEncrypted;
 use App\Models\Concerns\Replicated;
 use App\Radius\ClientsFile;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -16,7 +17,8 @@ use Illuminate\Support\Str;
  * Only the site's home instance serves it: FreeRADIUS clients file, RADIUS, downloads, disconnects.
  * last_seen_at, cert_fetched_at, login_page_fetched_at and the router state (router_state*) are local
  * status (not replicated). Read-only router API access (api_*) is local to the instance (not
- * replicated); user and password are encrypted with APP_KEY (`encrypted` cast).
+ * replicated); user and password are encrypted with APP_KEY (`LocalEncrypted` cast; an undecryptable
+ * value reads as null).
  */
 #[Fillable(['name', 'nas_ip', 'nas_identifier', 'coa_port', 'api_host', 'api_type', 'api_port', 'api_user', 'api_password', 'api_pin'])]
 #[Hidden(['radius_secret', 'cert_token', 'api_user', 'api_password', 'router_state'])]
@@ -31,7 +33,7 @@ class NasClient extends Model
     {
         return ['radius_secret' => Federated::class, 'cert_token' => Federated::class, 'coa_port' => 'integer', 'legacy_id' => 'integer',
             'last_seen_at' => 'datetime', 'cert_fetched_at' => 'datetime', 'login_page_fetched_at' => 'datetime',
-            'api_user' => 'encrypted', 'api_password' => 'encrypted', 'api_port' => 'integer',
+            'api_user' => LocalEncrypted::class, 'api_password' => LocalEncrypted::class, 'api_port' => 'integer',
             'router_state' => 'array', 'router_state_at' => 'datetime', 'router_state_error' => 'array'];
     }
 
