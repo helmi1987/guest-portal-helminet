@@ -4,10 +4,20 @@
         <p class="gp-intro mb-4 opacity-80">{{ __('portal.guest.code_intro') }}</p>
 
         @if ($endedNotice ?? null)
-            <div class="gp-notice gp-access-ended mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
+            <div id="gp-access-ended" class="gp-notice gp-access-ended mb-4 flex flex-wrap items-center justify-between gap-3 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900" role="status">
                 <p class="gp-access-ended-text font-medium">{{ __('portal.guest.access_ended.'.$endedNotice) }}</p>
-                <a href="#gp-login-form" class="gp-access-ended-button btn-light">{{ __('portal.guest.access_ended.sign_in_again') }}</a>
+                <a href="#gp-login-form" id="gp-sign-in-again" class="gp-access-ended-button btn-light">{{ __('portal.guest.access_ended.sign_in_again') }}</a>
             </div>
+            <script>
+                document.getElementById('gp-sign-in-again').addEventListener('click', function (e) {
+                    e.preventDefault();
+                    document.getElementById('gp-access-ended').hidden = true;
+                    var form = document.getElementById('gp-login-form');
+                    form.scrollIntoView({behavior: 'smooth', block: 'start'});
+                    var input = form.querySelector('input[name="first_name"]');
+                    if (input) input.focus({preventScroll: true});
+                });
+            </script>
         @endif
 
         @if ($routerFailed)

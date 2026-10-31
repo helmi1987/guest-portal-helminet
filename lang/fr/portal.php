@@ -110,6 +110,7 @@ return [
         'two_factor_restart' => 'Trop de codes invalides. Veuillez vous reconnecter avec votre mot de passe.',
         'two_factor_recovery_resync' => 'Les codes de récupération sont temporairement indisponibles (resynchronisation après une restauration en cours). Veuillez utiliser le code de l\'application d\'authentification ou réessayer plus tard.',
     ],
+    'nav' => ['guests' => 'Invités', 'system' => 'Système'],
     'admin' => [
         'title' => 'Portail invités',
         'dashboard' => 'Vue d\'ensemble',
