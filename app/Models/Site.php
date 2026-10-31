@@ -10,6 +10,7 @@ use App\Support\LocalInstance;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -46,7 +47,31 @@ class Site extends Model
             if ($site->renderOnly) {
                 throw new \LogicException('A site copy with derived setup values must not be saved.');
             }
+            // A shared password lives in the replicated setting only: no stale local copy stays.
+            if ($site->wifiPasswordShared()) {
+                $site->wifi_password_local = null;
+            }
         });
+    }
+
+    /**
+     * Clear the instance-local Wi-Fi password of sites (all, or the given one) whose password is shared
+     * (CONCEPT.md §9, decision 2026-10-31): after a replicated change switched a site to shared, the
+     * local value of this instance is stale. Raw write of a local column: no version, no event.
+     *
+     * @return int sites cleared
+     */
+    public static function dropSharedLocalWifiPasswords(?string $id = null): int
+    {
+        $cleared = 0;
+        $sites = static::query()->whereNotNull('wifi_password_local')->when($id !== null, fn ($q) => $q->whereKey($id))->get();
+        foreach ($sites as $site) {
+            if ($site->wifiPasswordShared()) {
+                $cleared += DB::table('sites')->where('id', $site->id)->update(['wifi_password_local' => null]);
+            }
+        }
+
+        return $cleared;
     }
 
     /**

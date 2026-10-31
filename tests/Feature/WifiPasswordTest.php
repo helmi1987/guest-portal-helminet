@@ -243,6 +243,26 @@ class WifiPasswordTest extends TestCase
         $this->assertSame('wpa', $this->rawSetup()['wifi_security']);
     }
 
+    public function test_a_shared_site_keeps_no_local_copy(): void
+    {
+        $this->save(['wifi_password' => 'local-first-1'])->assertSessionHasNoErrors();
+        $this->assertNotNull($this->rawLocal());
+
+        // Any save of a shared site drops the local column (also outside the setup form)
+        $site = $this->site->fresh();
+        $site->update(['settings' => array_merge($site->settings, ['setup' => array_merge($site->settings['setup'],
+            ['wifi_password_shared' => true, 'wifi_password' => Site::encryptWifiPassword('shared-now-1')])])]);
+        $this->assertNull($this->rawLocal());
+        $this->assertSame('shared-now-1', $this->site->fresh()->wifiPassword());
+
+        // A stale local value written behind the model's back is ignored while shared and can be cleared
+        DB::table('sites')->where('id', $this->site->id)->update(['wifi_password_local' => Crypt::encryptString('stale-pass-1')]);
+        $this->assertSame('shared-now-1', $this->site->fresh()->wifiPassword());
+        $this->assertSame(1, Site::dropSharedLocalWifiPasswords());
+        $this->assertNull($this->rawLocal());
+        $this->assertSame(0, Site::dropSharedLocalWifiPasswords());
+    }
+
     public function test_unavailable_password_gives_no_qr_no_text_and_no_open_network(): void
     {
         // Replicated flag says WPA, but the password is local on another instance

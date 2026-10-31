@@ -8,6 +8,7 @@ use App\Models\Instance;
 use App\Models\LocalSetting;
 use App\Models\MacWhitelist;
 use App\Models\Setting;
+use App\Models\Site;
 use App\Models\User;
 use App\Support\Audit;
 use App\Support\LocalInstance;
@@ -258,6 +259,8 @@ class Pairing
             $this->dropBootstrap();
             $this->keys->importRing($data['data_keys'], adoptCurrent: true);
             $rows = $this->applier->applySnapshot($data['snapshot']);
+            // Snapshot rows run no apply hooks: drop local Wi-Fi passwords of sites now shared.
+            Site::dropSharedLocalWifiPasswords();
             LocalSetting::put(self::JOINED_SETTING, now()->toIso8601String());
             // A local write after the snapshot persists the clock position (versions after the hub's).
             Instance::query()->findOrFail($this->instance->id())->touch();

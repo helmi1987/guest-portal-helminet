@@ -163,6 +163,39 @@ class AuthorityTest extends TestCase
         $this->assertSame('A local pass 1', $local('a'));
     }
 
+    public function test_switching_a_site_to_a_shared_wifi_password_drops_local_copies_everywhere(): void
+    {
+        $setup = ['ssid' => 'Guest', 'wifi_security' => 'wpa', 'wifi_password_shared' => false];
+        $site = $this->on('hub', fn () => Site::create(['slug' => 's', 'name' => 'S', 'driver' => 'mikrotik_ros7',
+            'home_instance_id' => app(LocalInstance::class)->id(), 'settings' => ['setup' => $setup]]));
+        $this->syncRound();
+        $this->on('a', fn () => Site::find($site->id)->forceFill(['wifi_password_local' => 'A old pass 1'])->save());
+        $this->on('hub', fn () => Site::find($site->id)->forceFill(['wifi_password_local' => 'Hub pass 1'])->save());
+        $this->syncRound();
+        $this->assertSame('A old pass 1', $this->on('a', fn () => Site::find($site->id)->wifiPassword()));
+
+        // The hub shares its password: the hub keeps no local copy, a drops its stale one and uses the shared one
+        $this->on('hub', function () use ($site, $setup) {
+            $s = Site::find($site->id);
+            $s->update(['settings' => ['setup' => ['wifi_password_shared' => true,
+                'wifi_password' => Site::encryptWifiPassword($s->wifiPassword())] + $setup]]);
+        });
+        $this->assertNull($this->rowOn('hub', 'sites', $site->id)['wifi_password_local']);
+        $this->syncRound();
+        $this->assertNull($this->rowOn('a', 'sites', $site->id)['wifi_password_local']);
+        $this->assertSame('Hub pass 1', $this->on('a', fn () => Site::find($site->id)->wifiPassword()));
+        $this->assertSame('Hub pass 1', $this->on('b', fn () => Site::find($site->id)->wifiPassword()));
+
+        // Not shared again (value moved to the hub's local column): a has no password, it does not come back
+        $this->on('hub', function () use ($site, $setup) {
+            $s = Site::find($site->id);
+            $s->forceFill(['settings' => ['setup' => $setup], 'wifi_password_local' => $s->wifiPassword()])->save();
+        });
+        $this->syncRound();
+        $this->assertSame('Hub pass 1', $this->on('hub', fn () => Site::find($site->id)->wifiPassword()));
+        $this->assertTrue($this->on('a', fn () => Site::find($site->id)->wifiPasswordUnavailable()));
+    }
+
     public function test_only_the_hub_registers_and_removes_instances(): void
     {
         $idA = $this->idOf('a');

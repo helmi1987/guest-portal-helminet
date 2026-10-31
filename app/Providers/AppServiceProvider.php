@@ -3,12 +3,14 @@
 namespace App\Providers;
 
 use App\Database\SQLiteConnection;
+use App\Federation\AppliedChange;
 use App\Federation\ApplyHooks;
 use App\Federation\BrandingFiles;
 use App\Federation\DataKey;
 use App\Federation\Outbox;
 use App\Federation\SessionHooks;
 use App\Http\Middleware\EnsureZone;
+use App\Models\Site;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
 use Illuminate\Database\Connection;
@@ -32,6 +34,8 @@ class AppServiceProvider extends ServiceProvider
             (new SessionHooks)->register($hooks);
             // Branding files referenced by replicated settings (CONCEPT.md §10.3).
             app(BrandingFiles::class)->register($hooks);
+            // A site switched to a shared Wi-Fi password drops this instance's local copy (CONCEPT.md §9).
+            $hooks->register('sites', fn (AppliedChange $c) => Site::dropSharedLocalWifiPasswords($c->id));
         });
     }
 
