@@ -55,6 +55,7 @@
                 @if ($wifiQr)
                     <div class="qr">{!! $wifiQr !!}</div>
                     <p>{{ __('portal.grants.wifi') }}: <strong>{{ $ssid }}</strong></p>
+                    @if ($wifiPassword = $site->wifiPassword())<p>{{ __('portal.grants.wifi_password') }}: <strong class="font-mono">{{ $wifiPassword }}</strong></p>@endif
                 @else
                     <div class="qr qr-missing">{{ $wifiUnavailable ? __('portal.site_codes.wifi_unavailable') : __('portal.site_codes.no_ssid') }}</div>
                 @endif
