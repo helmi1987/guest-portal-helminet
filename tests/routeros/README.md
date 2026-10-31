@@ -14,6 +14,7 @@ Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, 
 | `seed.rsc` | "Foreign" defconf-like configuration: firewall, interface lists, bridge, certificates, hotspot profiles, DNS, DHCP, address lists, RADIUS, Wi-Fi/CAPsMAN, scripts; some names start with `guest-portal` on purpose |
 | `pki.sh` | Throw-away test PKI: portal CA + portal server certificate, router chain (root, intermediate, two leaves: RSA PKCS#1, EC PKCS#8) |
 | `stub_portal.py` | HTTPS stand-in for `/router-cert/<id>/...` and `/router-login/<id>/login.html` with the `X-Portal-Token` check |
+| `guard.sh`, `paste.py` | Placeholder guard test of the Wi-Fi block and the API access block (`{ }` + `:error` while the password placeholder is left): terminal paste (`paste.py`, interactive ssh session, line by line) and `/import`; placeholder left = error and nothing changed, filled = objects created, run twice = idempotent. Needs a router without configuration (`loadvm clean`) |
 | `run.sh` | The test: seed, snapshot, run blocks, assertions, uninstall, compare with the snapshot |
 | `chr.sh` | Download/prepare (wireless + container packages), boot (KVM or TCG), VM snapshots, stop |
 
@@ -25,6 +26,7 @@ qemu-img create -f qcow2 -b ~/chr/base.img -F raw ~/chr/work.qcow2
 tests/routeros/chr.sh start ~/chr/work.qcow2          # SSH on 127.0.0.1:2222 (admin, empty password)
 tests/routeros/chr.sh savevm clean                    # optional: fast reset point
 tests/routeros/run.sh                                 # all Wi-Fi modes, or e.g. run.sh capsman2
+tests/routeros/guard.sh                               # placeholder guard (paste + import), modes local capsman1
 tests/routeros/chr.sh loadvm clean                    # reset before the next run
 ```
 

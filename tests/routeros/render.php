@@ -113,6 +113,11 @@ foreach ($wifiModes as $i => $mode) {
             $files["{$step}.{$block}.rsc"] = $rsc;
         }
     }
+    // Display variant of the setup page (password placeholder + guard), for the paste/import guard test
+    $files['network.wifi.masked.rsc'] = $driver->setupCommands($site, [
+        'veth_address' => '172.17.0.2/24', 'veth_gateway' => '172.17.0.1', 'bridge' => 'containers',
+        'disk' => 'disk1', 'image' => 'ghcr.io/owner/repo:latest',
+    ], false)['network']['wifi'];
     $files['router.rsc'] = $driver->configScript($site, $nas);
     $files['login_fetch.rsc'] = $driver->loginPageFetch($site, $nas);
     $files['api_access.rsc'] = $driver->apiAccessCommands($site, $nas);
