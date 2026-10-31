@@ -80,6 +80,34 @@ profile_ok() { # <label>
 }
 norm_fp() { tr -d ':\n ' | tr 'A-F' 'a-f'; }
 
+# Wi-Fi security sec-guest: passphrase and authentication types as rendered for the site.
+check_wifi_security() { # <rsc dir> <label>
+    local path="/interface wifi security" want got auth
+    [ "$MODE" = capsman1 ] && path="/caps-man security"
+    want=$(cat "$1/wifi_password")
+    check "$2: exactly one sec-guest with the comment key" \
+        test "$(ros ":put [:len [$path find where name=sec-guest && comment=\"$N:wifi:sec-guest\"]]")" = 1
+    got=$(ros ":put [$path get [find where name=sec-guest && comment=\"$N:wifi:sec-guest\"] passphrase]")
+    auth=$(ros ":put [:tostr [$path get [find where name=sec-guest && comment=\"$N:wifi:sec-guest\"] authentication-types]]")
+    if [ -n "$want" ]; then
+        check "$2: passphrase set exactly (special characters escaped)" test "$got" = "$want"
+        check "$2: WPA authentication ($auth)" grep -q 'wpa2-psk' <<<"$auth"
+    else
+        check "$2: open SSID: no passphrase, no authentication types (got '$got' '$auth')" test -z "$got$auth"
+    fi
+}
+
+# Every "guest-portal:" comment on the router is one of the keys of managedObjects() (render.php).
+check_keys_known() { # <rsc dir> <label>
+    local unknown
+    unknown=$(ros '/export terse verbose' | grep -o 'comment="\?guest-portal:[^" ]*' | sed 's/comment="\?//' | sort -u \
+        | grep -vxF -f "$1/keys" || true)
+    if [ -z "$unknown" ]; then pass "$2: all comment keys are listed by managedObjects()"; else fail "$2: unknown keys: $unknown"; fi
+    local legacy
+    legacy=$(ros '/export terse verbose' | grep -E 'comment="?guest-portal("|: | |$)' || true)
+    if [ -z "$legacy" ]; then pass "$2: no legacy comments left"; else fail "$2: legacy comments left"; printf '%s\n' "$legacy" | sed 's/^/    | /'; fi
+}
+
 # Static rules of a chain as "comment" lines in order.
 chain_rules() { ros ":foreach r in=[/ip firewall filter find where chain=$1 && dynamic=no] do={ :put [/ip firewall filter get \$r comment] }"; }
 chain_all() { ros ":foreach r in=[/ip firewall filter find where chain=$1] do={ :put ([/ip firewall filter get \$r dynamic] . \"|\" . [/ip firewall filter get \$r comment]) }"; }
@@ -87,7 +115,7 @@ chain_all() { ros ":foreach r in=[/ip firewall filter find where chain=$1] do={ 
 check_firewall_order() { # <rsc dir> <label>
     local chain expected actual
     for chain in input forward; do
-        expected=$(grep -o "add chain=$chain .*comment=\"$N: [^\"]*\"" "$1/network.firewall.rsc" | sed 's/.*comment="\(.*\)"/\1/')
+        expected=$(grep -o "add chain=$chain .*comment=\"$N:fw:[^\"]*\"" "$1/network.firewall.rsc" | sed 's/.*comment="\(.*\)"/\1/')
         actual=$(chain_rules "$chain")
         local ours n
         n=$(printf '%s\n' "$expected" | grep -c .)
@@ -98,9 +126,9 @@ check_firewall_order() { # <rsc dir> <label>
             fail "$2: $chain: guest rules not first/in order"
             chain_all "$chain" | sed 's/^/    | /'
         fi
-        [ "$(printf '%s\n' "$actual" | grep -c "^$N: ")" = "$n" ] || fail "$2: $chain: duplicated guest rules"
+        [ "$(printf '%s\n' "$actual" | grep -c "^$N:fw:")" = "$n" ] || fail "$2: $chain: duplicated guest rules"
         # Foreign rules keep their relative order
-        if [ "$(printf '%s\n' "$actual" | grep -v "^$N: ")" = "$(cat "$WORK/foreign-$chain.txt")" ]; then
+        if [ "$(printf '%s\n' "$actual" | grep -v "^$N:fw:")" = "$(cat "$WORK/foreign-$chain.txt")" ]; then
             pass "$2: $chain: foreign rules unchanged and in their order"
         else
             fail "$2: $chain: foreign rules changed or reordered"
@@ -175,13 +203,32 @@ first=1
 for MODE in "${MODES[@]}"; do
     R=$WORK/rsc/$MODE
     sync_clock
+    log "[$MODE] legacy objects of scripts before the comment keys (must be migrated/replaced)"
+    run_block "$HERE/legacy.rsc" "[$MODE] legacy objects"
+    if [ "$MODE" = capsman1 ]; then ros '/caps-man security add name=sec-guest comment="guest-portal"' >/dev/null
+    else ros '/interface wifi security add name=sec-guest comment="guest-portal"' >/dev/null; fi
     log "[$MODE] network step"
     COUNTRY=Germany
     [ "$MODE" = capsman1 ] && COUNTRY=germany
     run_block "$R/network.vlan.rsc" "[$MODE] network.vlan"
     run_block "$R/network.vlan_filtering.rsc" "[$MODE] network.vlan_filtering"
     run_block "$R/network.wifi.rsc" "[$MODE] network.wifi"
+    check_wifi_security "$R" "[$MODE] wifi"
+    run_block "$R/network.wifi.rsc" "[$MODE] network.wifi (re-run)"
+    check_wifi_security "$R" "[$MODE] wifi (re-run)"
+    if [ "$MODE" = local ] && [ -f "$WORK/rsc/capsman2/network.wifi.rsc" ]; then
+        # Password change on re-run: the block of the open site (capsman2 fixture) removes the password of
+        # the own sec-guest, the site's block sets it again
+        run_block "$WORK/rsc/capsman2/network.wifi.rsc" "[$MODE] network.wifi of the open site"
+        check_wifi_security "$WORK/rsc/capsman2" "[$MODE] wifi (password removed)"
+        run_block "$R/network.wifi.rsc" "[$MODE] network.wifi (password again)"
+        check_wifi_security "$R" "[$MODE] wifi (password again)"
+    fi
     run_block "$R/network.dhcp.rsc" "[$MODE] network.dhcp"
+    check "[$MODE] legacy pool updated in place (ranges, key)" \
+        test "$(ros ':put [/ip pool get [find where name=guest-pool && comment="guest-portal:net:pool"] ranges]')" = "10.30.0.10-10.30.0.250"
+    run_block "$R/network.dhcp.rsc" "[$MODE] network.dhcp (re-run)"
+    run_block "$R/network.vlan.rsc" "[$MODE] network.vlan (re-run)"
     run_block "$R/network.captive_option.rsc" "[$MODE] network.captive_option"
     run_block "$R/network.firewall.rsc" "[$MODE] network.firewall"
     check_firewall_order "$R" "[$MODE] firewall (no hotspot yet)"
@@ -254,6 +301,7 @@ for MODE in "${MODES[@]}"; do
         run_block "$R/uninstall.uninstall_container.rsc" "[$MODE] uninstall.uninstall_container"
     fi
 
+    check_keys_known "$R" "[$MODE] before uninstall"
     log "[$MODE] uninstall"
     # Manual step described in the block: take cfg-guest out of the slave list first
     ros '/interface wifi provisioning set [find where comment="foreign"] slave-configurations=cfg-iot; /caps-man provisioning set [find where comment="foreign"] slave-configurations=cfg-iot' >/dev/null

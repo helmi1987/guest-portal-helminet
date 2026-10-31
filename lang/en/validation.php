@@ -131,6 +131,7 @@ return [
         'gateway' => 'gateway',
         'pool' => 'address range',
         'ssid' => 'SSID',
+        'wifi_password' => 'Wi-Fi password',
         'wifi_mode' => 'Wi-Fi mode',
         'html_directory' => 'hotspot HTML directory',
         'veth_address' => 'VETH address',

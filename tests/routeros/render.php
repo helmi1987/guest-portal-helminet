@@ -42,6 +42,8 @@ config(['portal.radius.clients_file' => $tmp.'/clients.conf', 'portal.router_cer
 Artisan::call('migrate', ['--force' => true]);
 
 @mkdir($out, 0755, true);
+// Fake test value (not a secret): quote, backslash, dollar, question mark, brackets and spaces
+$wifiPassword = 'te"st\\pa$s? [w] {x};';
 $portalUrl = 'https://portal.example.com'.($portalPort === 443 ? '' : ':'.$portalPort);
 
 foreach ($wifiModes as $i => $mode) {
@@ -55,6 +57,8 @@ foreach ($wifiModes as $i => $mode) {
             'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => $mode,
             // Mode "local" also covers the flash folder variant (a plain directory on the CHR).
             'html_directory' => $mode === 'local' ? 'flash/hotspot' : 'hotspot',
+            // capsman2: open SSID; the others with a password using every character RouterOS escapes
+            'wifi_password' => Site::encryptWifiPassword($mode === 'capsman2' ? null : $wifiPassword),
         ],
     ]]);
     $nas = $site->nasClients()->create(['name' => 'Test router', 'nas_ip' => $routerIp, 'coa_port' => 3799]);
@@ -81,6 +85,8 @@ foreach ($wifiModes as $i => $mode) {
     $files['login_fetch.rsc'] = $driver->loginPageFetch($site, $nas);
     file_put_contents($dir.'/login.html', $driver->loginPage($site));
     file_put_contents($dir.'/nas_id', (string) $nas->id);
+    file_put_contents($dir.'/keys', implode("\n", array_merge(...array_map('array_keys', array_values($driver->managedObjects($site)))))."\n");
+    file_put_contents($dir.'/wifi_password', $mode === 'capsman2' ? '' : $wifiPassword);
     foreach ($files as $name => $rsc) {
         file_put_contents($dir.'/'.$name, rtrim($rsc)."\n");
     }

@@ -52,16 +52,16 @@ class SetupAssistantTest extends TestCase
             ->assertSee('/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30', false)
             ->assertSee('/caps-man datapath add name=dp-guest bridge=bridge1 vlan-id=30', false)
             ->assertSee('ssid="Guest-WiFi"')
-            ->assertSee('/ip address add address=10.30.0.1/24 interface=vlan30-guest', false)
+            ->assertSee('/ip address add interface=vlan30-guest address=10.30.0.1/24', false)
             ->assertSee('/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250', false)
             ->assertSee('value="\'https://portal.example.com/captive/site-a\'"')
             ->assertSee('add name=hotspot-a.guest.example.com address=10.30.0.1', false)
-            ->assertSee('/ip/address add address=172.17.0.1/24 interface=containers', false)
+            ->assertSee('/ip/address add interface=containers address=172.17.0.1/24', false)
             ->assertSee('mountlists=portal-data envlist=portal', false)
             ->assertSee('remote-image=ghcr.io/owner/repo:latest', false)
             ->assertSee("/router-login/{$this->nas->id}/login.html", false)
             ->assertSee('X-Portal-Token: '.$this->nas->cert_token, false)
-            ->assertSee('/radius monitor [find comment="guest-portal"] once')
+            ->assertSee('/radius monitor [find where comment="guest-portal:radius:server"] once')
             ->assertSee('key=APP_URL value="https://portal.example.com"')
             ->assertSee('slave-configurations=<EXISTING_SLAVES>,cfg-guest');
 
@@ -109,31 +109,35 @@ class SetupAssistantTest extends TestCase
 
         $this->assertStringContainsString('add list=PORTAL address=10.0.0.20', $firewall);
         $this->assertStringContainsString('add list=PORTAL_RADIUS address=10.0.0.10', $firewall);
-        $this->assertStringContainsString('src-address-list=PORTAL_RADIUS dst-port=1700,3799 comment="guest-portal: Disconnect/CoA"', $firewall);
+        $this->assertStringContainsString('src-address-list=PORTAL_RADIUS dst-port=1700,3799 comment="guest-portal:fw:in-coa"', $firewall);
     }
 
     public function test_firewall_rules_are_moved_before_foreign_rules_of_input_and_forward(): void
     {
         $firewall = $this->site->driver()->setupCommands($this->site, [])['network']['firewall'];
 
-        // Every filter rule carries the explicit prefix; the block replaces only those on re-run.
+        // Every filter rule carries its own key; the block replaces only those (and legacy rules) on re-run.
         preg_match_all('/^add chain=(input|forward) .*comment="([^"]*)"$/m', $firewall, $rules);
         $this->assertCount(12, $rules[2]);
+        $this->assertCount(12, array_unique($rules[2]));
+        $keys = array_keys($this->site->driver()->managedObjects($this->site)['fw']);
         foreach ($rules[2] as $comment) {
-            $this->assertStringStartsWith('guest-portal: ', $comment);
+            $this->assertMatchesRegularExpression('/^guest-portal:fw:[a-z0-9-]+$/', $comment);
+            $this->assertContains($comment, $keys);
         }
-        $this->assertStringContainsString('/ip firewall filter remove [find where comment~"^guest-portal: "]', $firewall);
+        $exact = '('.implode(' || ', array_map(fn ($k) => 'comment="'.$k.'"', $rules[2])).')';
+        $this->assertStringContainsString('/ip firewall filter remove [find where '.substr($exact, 0, -1).' || comment="guest-portal" || comment~"^guest-portal: ")]', $firewall);
 
         // Moved rule by rule before the first static foreign rule: keeps the own order.
         $this->assertStringContainsString(':foreach fwChain in={"input";"forward"} do={', $firewall);
-        $this->assertStringContainsString('[/ip firewall filter find where chain=$fwChain && dynamic=no && !(comment~"^guest-portal: ")] 0]', $firewall);
-        $this->assertStringContainsString('find where chain=$fwChain && dynamic=no && comment~"^guest-portal: "] do={', $firewall);
+        $this->assertStringContainsString('[/ip firewall filter find where chain=$fwChain && dynamic=no && !'.$exact.'] 0]', $firewall);
+        $this->assertStringContainsString('find where chain=$fwChain && dynamic=no && '.$exact.'] do={', $firewall);
         $this->assertStringContainsString('/ip firewall filter move $fwRule destination=$fwFirst', $firewall);
         $this->assertLessThan(strpos($firewall, ':foreach fwChain'), strrpos($firewall, "\nadd chain="));
 
         // Stateful accepts only for guest traffic (FastTrack of other traffic unchanged), FastTrack hint.
         $this->assertStringNotContainsString('connection-state=established,related comment=', $firewall);
-        $this->assertStringContainsString('established,related in-interface-list=GUEST comment="guest-portal: stateful from guests"', $firewall);
+        $this->assertStringContainsString('established,related in-interface-list=GUEST comment="guest-portal:fw:fwd-from-guests"', $firewall);
         $this->assertStringContainsString('fasttrack-connection', $firewall);
         $this->assertStringContainsString('/ip firewall filter print where comment~"guest-portal"', $firewall);
     }
@@ -290,15 +294,17 @@ class SetupAssistantTest extends TestCase
 
         $u = $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['uninstall'];
         $script = $u['uninstall'];
-        foreach (['/system scheduler remove [find where name="guest-portal-cert"]', '/system script remove [find where name="guest-portal-cert"]',
+        foreach (['/system scheduler remove [find where name="guest-portal-cert" && ((comment="guest-portal:cert:scheduler" || comment="guest-portal" || comment~"^guest-portal: ") || !comment)]',
+            '/system script remove [find where name="guest-portal-cert" && ((comment="guest-portal:cert:script" || comment="guest-portal" || comment~"^guest-portal: ") || !comment)]',
             '/ip hotspot remove [find where name="guest-portal"]', '/ip hotspot profile remove [find where name="guest-portal"]',
-            '/ip hotspot walled-garden remove [find where comment="guest-portal"]', '/ip hotspot walled-garden ip remove [find where comment="guest-portal"]',
-            '/radius remove [find where comment="guest-portal"]', '# /radius incoming set accept=no',
+            '/ip hotspot walled-garden remove [find where (comment="guest-portal:walled:portal-host" || comment="guest-portal" || comment~"^guest-portal: ")]', '/ip hotspot walled-garden ip remove [find where (comment="guest-portal:walled:portal-ip" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/radius remove [find where (comment="guest-portal:radius:server" || comment="guest-portal" || comment~"^guest-portal: ")]', '# /radius incoming set accept=no',
             '/certificate remove [find where name="guest-portal" || name~"^guest-portal-ca-[0-9]+\\$" || name~"^guest-portal-import" || name="guest-portal-new" || name~"^guest-portal-new_"]',
-            '/ip dns static remove [find where comment="guest-portal"]', '/ip dhcp-server network find where address="10.30.0.0/24"',
-            '/ip dhcp-server network set $i dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal" && comment="guest-portal"]',
-            '/ip firewall filter remove [find where comment~"^guest-portal: "]', '/ip firewall nat remove [find where comment~"^guest-portal: "]',
-            '/ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal" || comment~"^guest-portal: ")]'] as $line) {
+            '/ip dns static remove [find where (comment="guest-portal:dns:hotspot-name" || comment="guest-portal:dns:portal-a" || comment="guest-portal:dns:portal-cname" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip dhcp-server network find where address="10.30.0.0/24" && (comment="guest-portal:net:dhcp-network" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip dhcp-server network set $gpNet dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal" && (comment="guest-portal:net:option-114" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip firewall nat remove [find where comment~"^guest-portal: "]',
+            '/ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal:fw:addr-portal" || comment="guest-portal:fw:addr-radius" || comment="guest-portal:fw:addr-rfc1918-10" || comment="guest-portal:fw:addr-rfc1918-172" || comment="guest-portal:fw:addr-rfc1918-192" || comment="guest-portal" || comment~"^guest-portal: ")]'] as $line) {
             $this->assertStringContainsString($line, $script);
         }
         // Order: hotspot before profile, profile before certificates, option reference before the option.
@@ -310,22 +316,23 @@ class SetupAssistantTest extends TestCase
         $this->assertStringNotContainsString('dhcp-option~', $script);
         // No prefix match without the ": " separator (foreign comments like "guest-portal-old" stay).
         $this->assertStringNotContainsString('comment~"^guest-portal"]', $script);
-        $this->assertStringContainsString('name=captive-portal value="\'https://portal.example.com/captive/site-a\'" comment="guest-portal"',
+        $this->assertStringContainsString('add name=captive-portal code=114 value="\'https://portal.example.com/captive/site-a\'" comment="guest-portal:net:option-114"',
             $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['network']['captive_option']);
         $this->assertStringContainsString('/interface/veth remove', str_replace('/interface veth', '/interface/veth', $u['uninstall_container']));
-        foreach (['/interface wifi configuration remove [find where name=cfg-guest && comment="guest-portal"]',
-            '/ip dhcp-server remove [find where name=guest-dhcp && comment="guest-portal"]',
-            '/ip pool remove [find where name=guest-pool && comment="guest-portal"]',
-            '/interface vlan remove [find where name=vlan30-guest && comment="guest-portal"]',
-            '/interface list remove [find where name=GUEST && comment="guest-portal"]',
-            '/ip address remove [find where interface=vlan30-guest && comment="guest-portal: guest gateway"]'] as $line) {
+        foreach (['/interface wifi configuration remove [find where name=cfg-guest && (comment="guest-portal:wifi:cfg-guest" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip dhcp-server remove [find where name=guest-dhcp && (comment="guest-portal:net:dhcp-server" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip pool remove [find where name=guest-pool && (comment="guest-portal:net:pool" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/interface vlan remove [find where name=vlan30-guest && (comment="guest-portal:net:vlan" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/interface list remove [find where name=GUEST && (comment="guest-portal:fw:list-guest" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip address remove [find where interface=vlan30-guest && (comment="guest-portal:net:gateway" || comment="guest-portal" || comment~"^guest-portal: ")]'] as $line) {
             $this->assertStringContainsString($line, $u['uninstall_network']);
         }
         // Every remove of the optional blocks is limited to objects with the assistant's comment.
         foreach (['uninstall_network', 'uninstall_container'] as $block) {
             foreach (preg_split('/\n/', $u[$block]) as $line) {
                 if (preg_match('/^\/\S.* remove \[find/', $line) && ! str_contains($line, 'interface=veth-portal]')) {
-                    $this->assertStringContainsString('comment="guest-portal', $line, $line);
+                    $this->assertStringContainsString(' || comment="guest-portal" || comment~"^guest-portal: ")]', $line, $line);
+                    $this->assertMatchesRegularExpression('/comment="guest-portal:(net|wifi|fw|container):[a-z0-9-]+"/', $line);
                 }
             }
         }
@@ -343,23 +350,27 @@ class SetupAssistantTest extends TestCase
         $firewall = $c['network']['firewall'];
 
         // An existing RFC1918 entry without our comment made "add" fail ("already have such entry").
-        $this->assertStringContainsString(':if ([:len [find where list=RFC1918 && address=10.0.0.0/8]] = 0) do={ add list=RFC1918 address=10.0.0.0/8 comment="guest-portal" }', $firewall);
-        $this->assertStringContainsString(':if ([:len [/interface list find where name=GUEST]] = 0) do={ /interface list add name=GUEST comment="guest-portal" }', $firewall);
-        $this->assertStringContainsString('remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal" || comment~"^guest-portal: ")]', $firewall);
+        $this->assertStringContainsString(':if ([:len [find where list=RFC1918 && address=10.0.0.0/8]] = 0) do={ add list=RFC1918 address=10.0.0.0/8 comment="guest-portal:fw:addr-rfc1918-10" }', $firewall);
+        $this->assertStringContainsString(':if ([:len [/interface list find where name=GUEST]] = 0) do={ /interface list add name=GUEST comment="guest-portal:fw:list-guest" }', $firewall);
+        $this->assertStringContainsString('remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal:fw:addr-portal" || comment="guest-portal:fw:addr-radius" || comment="guest-portal:fw:addr-rfc1918-10" || comment="guest-portal:fw:addr-rfc1918-172" || comment="guest-portal:fw:addr-rfc1918-192" || comment="guest-portal" || comment~"^guest-portal: ")]', $firewall);
         $this->assertDoesNotMatchRegularExpression('/^add list=/m', $firewall);
 
         // Option 114: updated in place when it is ours, the network is matched by subnet and comment.
-        $this->assertStringContainsString('set [find where name="captive-portal" && comment="guest-portal"] code=114', $c['network']['captive_option']);
-        $this->assertStringContainsString('[find where address="10.30.0.0/24" && comment="guest-portal"] dhcp-option=captive-portal', $c['network']['captive_option']);
-        foreach (['/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30 comment="guest-portal"',
-            '/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250 comment="guest-portal"',
-            'dns-server=10.30.0.1 comment="guest-portal"'] as $line) {
+        $this->assertStringContainsString('/ip dhcp-server option set [find where name="captive-portal" && (comment="guest-portal:net:option-114" || comment="guest-portal" || comment~"^guest-portal: ")] code=114', $c['network']['captive_option']);
+        $this->assertStringContainsString('[find where address="10.30.0.0/24" && (comment="guest-portal:net:dhcp-network" || comment="guest-portal" || comment~"^guest-portal: ")] dhcp-option=captive-portal', $c['network']['captive_option']);
+        // Network objects: added, or updated by id when they are ours (re-runnable, legacy comment replaced)
+        foreach (['/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"',
+            '/interface vlan set [find where name=vlan30-guest && (comment="guest-portal:net:vlan" || comment="guest-portal" || comment~"^guest-portal: ")] interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"',
+            ':if ([:len [/ip pool find where name=guest-pool && (comment="guest-portal:net:pool" || comment="guest-portal" || comment~"^guest-portal: ")]] = 0) do={',
+            '/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250 comment="guest-portal:net:pool"',
+            '/ip pool set [find where name=guest-pool && (comment="guest-portal:net:pool" || comment="guest-portal" || comment~"^guest-portal: ")] ranges=10.30.0.10-10.30.0.250 comment="guest-portal:net:pool"',
+            'dns-server=10.30.0.1 comment="guest-portal:net:dhcp-network"'] as $line) {
             $this->assertStringContainsString($line, $c['network']['vlan'].$c['network']['dhcp']);
         }
 
         // Walled garden ip: only the own entry is replaced; a foreign drop entry is reported, not changed.
         $script = $site->driver()->configScript($site, $this->nas);
-        $this->assertStringContainsString("/ip hotspot walled-garden ip\nremove [find comment=\"guest-portal\"]", $script);
+        $this->assertStringContainsString("/ip hotspot walled-garden ip\n".'remove [find where (comment="guest-portal:walled:portal-ip" || comment="guest-portal" || comment~"^guest-portal: ")]', $script);
         $this->assertSame(1, substr_count($script, 'walled-garden ip'."\n".'remove'));
         $this->assertStringContainsString('/ip hotspot walled-garden ip print', $c['diagnostics']['verify']);
         $this->assertStringContainsString('action=drop', $c['diagnostics']['verify']);
@@ -501,12 +512,13 @@ class SetupAssistantTest extends TestCase
             'setup' => ['subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1']])]);
         $dns = $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['hotspot']['dns'];
 
-        $this->assertStringContainsString("remove [find comment=\"guest-portal\"]\nadd name=hotspot-a.guest.example.com address=10.30.0.1 comment=\"guest-portal\"", $dns);
-        $this->assertStringContainsString('add name=guest-portal-v4.internal address=10.0.0.20 comment="guest-portal"', $dns);
-        $this->assertStringContainsString('add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment="guest-portal"', $dns);
+        $remove = 'remove [find where (comment="guest-portal:dns:hotspot-name" || comment="guest-portal:dns:portal-a" || comment="guest-portal:dns:portal-cname" || comment="guest-portal" || comment~"^guest-portal: ")]';
+        $this->assertStringContainsString($remove."\nadd name=hotspot-a.guest.example.com address=10.30.0.1 comment=\"guest-portal:dns:hotspot-name\"", $dns);
+        $this->assertStringContainsString('add name=guest-portal-v4.internal address=10.0.0.20 comment="guest-portal:dns:portal-a"', $dns);
+        $this->assertStringContainsString('add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment="guest-portal:dns:portal-cname"', $dns);
         $this->assertStringNotContainsString('add name=portal.example.com address=', $dns);
         $this->assertStringNotContainsString('type=NXDOMAIN', preg_replace('/^#.*$/m', '', $dns));
-        $this->assertLessThan(strpos($dns, 'add name=guest-portal-v4.internal'), strpos($dns, 'remove [find comment="guest-portal"]'));
+        $this->assertLessThan(strpos($dns, 'add name=guest-portal-v4.internal'), strpos($dns, $remove));
     }
 
     public function test_portal_address_must_be_ipv4_outside_the_guest_network(): void

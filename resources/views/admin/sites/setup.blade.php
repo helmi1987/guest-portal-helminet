@@ -56,6 +56,15 @@
                 <input name="interface" value="{{ $field($setup, 'interface') }}" placeholder="vlan30-guest" required class="field"></label>
             <label class="label">{{ __('portal.setup.network.ssid') }}
                 <input name="ssid" value="{{ $field($setup, 'ssid') }}" placeholder="Guest-WiFi" required class="field"></label>
+            {{-- Never rendered back in clear: empty keeps the stored password, the checkbox removes it --}}
+            <label class="label">{{ __('portal.setup.network.wifi_password') }}
+                <input name="wifi_password" type="password" autocomplete="new-password" minlength="8" maxlength="63" class="field"
+                    @if ($wifiPasswordSet) placeholder="••••••••" @endif>
+                <span class="text-xs text-slate-500">{{ $wifiPasswordSet ? __('portal.setup.network.wifi_password_stored').' ' : '' }}{{ __('portal.setup.network.wifi_password_help') }}</span>
+                @if ($wifiPasswordSet)
+                    <span class="text-xs"><input type="checkbox" name="wifi_password_clear" value="1"> {{ __('portal.setup.network.wifi_password_clear') }}</span>
+                @endif
+            </label>
             <label class="label">{{ __('portal.setup.network.subnet') }}
                 <input name="subnet" value="{{ $field($setup, 'subnet') }}" placeholder="10.30.0.0/24" required class="field"></label>
             <label class="label">{{ __('portal.setup.network.gateway') }}

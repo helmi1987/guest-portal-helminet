@@ -24,6 +24,92 @@ class MikrotikRos7Driver implements NasDriver
     /** html-directory of the hotspot profile: RouterOS default, or on devices with a flash folder. */
     public const HTML_DIRECTORIES = ['hotspot', 'flash/hotspot'];
 
+    /** Printable ASCII, 8-63 characters: WPA2/WPA3 personal passphrase of the guest SSID (optional). */
+    public const WIFI_PASSWORD_RULE = 'regex:/^[\x20-\x7E]{8,63}$/';
+
+    /**
+     * Address-list entries of the firewall block: key object => [list, address]; the address is filled
+     * per site (portal and RADIUS IP).
+     */
+    private const FW_ADDRESSES = ['addr-portal' => 'PORTAL', 'addr-radius' => 'PORTAL_RADIUS',
+        'addr-rfc1918-10' => 'RFC1918', 'addr-rfc1918-172' => 'RFC1918', 'addr-rfc1918-192' => 'RFC1918'];
+
+    /** Filter rules of the firewall block in generated order: key object => chain. */
+    private const FW_RULES = ['in-dhcp' => 'input', 'in-dns' => 'input', 'in-dns-tcp' => 'input', 'in-ping' => 'input',
+        'in-coa' => 'input', 'in-drop-mgmt' => 'input', 'fwd-from-guests' => 'forward', 'fwd-to-guests' => 'forward',
+        'fwd-portal' => 'forward', 'fwd-drop-lan' => 'forward', 'fwd-drop-new' => 'forward', 'fwd-internet' => 'forward'];
+
+    /**
+     * Comment key of one generated object: "guest-portal:<block>:<object>" (decision 2026-10-31). Every
+     * object with a comment property gets its own key; scripts match the exact key (never a prefix).
+     */
+    public static function key(string $block, string $object): string
+    {
+        return self::NAME.':'.$block.':'.$object;
+    }
+
+    /**
+     * Objects created by the generated scripts of a site, by block: [block => [key => ['path' => menu
+     * path, 'name' => name (or list/identifying value) or null]]]. Basis for a router state query and
+     * for the removal/re-run guards. Objects without a comment property (hotspot server and profile,
+     * certificates) are identified by name and are not listed. The Wi-Fi paths follow the Wi-Fi mode.
+     *
+     * @return array<string, array<string, array{path: string, name: ?string}>>
+     */
+    public function managedObjects(Site $site): array
+    {
+        $g = $this->guestValues($site);
+        $o = fn (string $path, ?string $name = null) => ['path' => $path, 'name' => $name];
+        $wifi = $g['wifi_mode'] === 'capsman1' ? '/caps-man' : '/interface wifi';
+        $blocks = [
+            'radius' => ['server' => $o('/radius')],
+            'walled' => ['portal-host' => $o('/ip hotspot walled-garden'), 'portal-ip' => $o('/ip hotspot walled-garden ip')],
+            'cert' => ['script' => $o('/system script', self::NAME.'-cert'), 'scheduler' => $o('/system scheduler', self::NAME.'-cert')],
+            'dns' => ['hotspot-name' => $o('/ip dns static'), 'portal-a' => $o('/ip dns static', self::NAME.'-v4.internal'),
+                'portal-cname' => $o('/ip dns static')],
+            'container' => ['veth' => $o('/interface veth', 'veth-portal'), 'bridge' => $o('/interface bridge'),
+                'bridge-port' => $o('/interface bridge port', 'veth-portal'), 'gateway' => $o('/ip address'),
+                'mounts' => $o('/container mounts', 'portal-data'), 'env-app-url' => $o('/container envs', 'portal')],
+            'net' => ['vlan' => $o('/interface vlan', $g['interface']), 'bridge-vlan' => $o('/interface bridge vlan', $g['bridge']),
+                'gateway' => $o('/ip address', $g['interface']), 'pool' => $o('/ip pool', $g['pool_name']),
+                'dhcp-server' => $o('/ip dhcp-server', 'guest-dhcp'), 'dhcp-network' => $o('/ip dhcp-server network', $g['subnet']),
+                'option-114' => $o('/ip dhcp-server option', 'captive-portal')],
+            'wifi' => ['dp-guest' => $o($wifi.' datapath', 'dp-guest'), 'sec-guest' => $o($wifi.' security', 'sec-guest'),
+                'cfg-guest' => $o($wifi.' configuration', 'cfg-guest')]
+                + ($g['wifi_mode'] === 'local' ? ['wifi-guest' => $o('/interface wifi', 'wifi-guest')] : []),
+            'fw' => ['list-guest' => $o('/interface list', 'GUEST'), 'list-member' => $o('/interface list member', 'GUEST')]
+                + array_map(fn ($list) => $o('/ip firewall address-list', $list), self::FW_ADDRESSES)
+                + array_map(fn () => $o('/ip firewall filter'), self::FW_RULES),
+        ];
+        $out = [];
+        foreach ($blocks as $block => $objects) {
+            foreach ($objects as $object => $entry) {
+                $out[$block][self::key($block, $object)] = $entry;
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * RouterOS find condition for own objects: the comment is one of the keys, or a legacy comment of
+     * scripts before the keys ("guest-portal" exact or "guest-portal: ..."; never a bare prefix, so
+     * "guest-portal-old" is not matched). Re-runs replace legacy comments with the key.
+     */
+    private static function owned(string ...$keys): string
+    {
+        $n = self::NAME;
+        $alts = array_map(fn ($k) => 'comment="'.$k.'"', $keys);
+
+        return '('.implode(' || ', [...$alts, "comment=\"{$n}\"", "comment~\"^{$n}: \""]).')';
+    }
+
+    /** Keys of one block, optionally only the given objects. */
+    private static function keys(string $block, array $objects): array
+    {
+        return array_map(fn ($o) => self::key($block, $o), $objects);
+    }
+
     public function label(): string
     {
         return 'MikroTik RouterOS 7';
@@ -142,6 +228,12 @@ class MikrotikRos7Driver implements NasDriver
         $hotspotDir = $this->guestValues($site)['html_directory'];
         $certScript = $this->certScript($portalUrl.'/router-cert/'.$nas->id, self::safe($nas->certToken()), $nasIp);
         $n = self::NAME;
+        $kRadius = self::key('radius', 'server');
+        $kHost = self::key('walled', 'portal-host');
+        $kIp = self::key('walled', 'portal-ip');
+        $oRadius = self::owned($kRadius);
+        $oHost = self::owned($kHost);
+        $oIp = self::owned($kIp);
 
         return <<<RSC
         # Guest portal - site "{$name}", router "{$routerName}" ({$nasIp})
@@ -152,14 +244,15 @@ class MikrotikRos7Driver implements NasDriver
         # and token) to the system log: paste this into the terminal instead of saving it as a /system
         # script, or clear the log afterwards. The certificate script below is itself a /system script
         # holding the token, so check the log after running this too (/log print where message~"{$n}").
-        # Idempotent: re-running replaces the entries named/commented "{$n}" (hotspot profile "{$n}").
-        # Re-running recreates the hotspot, which logs out connected guests.
+        # Idempotent: re-running replaces only its own entries: hotspot and profile named "{$n}", other
+        # entries by their comment key "{$n}:<block>:<object>" (or the comment "{$n}" / "{$n}: ..." of
+        # earlier versions). Re-running recreates the hotspot, which logs out connected guests.
 
         # RADIUS client (authentication + accounting) pointing to the portal instance. RouterOS >= 7.15
         # requires Message-Authenticator in replies (require-message-auth); the instance always adds it.
         /radius
-        remove [find comment="{$n}"]
-        add address={$radius} secret="{$secret}" service=hotspot src-address={$nasIp} timeout=3s comment="{$n}"
+        remove [find where {$oRadius}]
+        add address={$radius} secret="{$secret}" service=hotspot src-address={$nasIp} timeout=3s comment="{$kRadius}"
         # Accept Disconnect-Request (RFC 5176) from the instance; the RouterOS default port is 1700
         /radius incoming
         set accept=yes port={$nas->coa_port}
@@ -167,14 +260,14 @@ class MikrotikRos7Driver implements NasDriver
         {$hotspot}
         # Walled garden: guests may reach the portal (HTTPS) before login
         /ip hotspot walled-garden
-        remove [find comment="{$n}"]
-        add dst-host={$portalHost} action=allow comment="{$n}"
+        remove [find where {$oHost}]
+        add dst-host={$portalHost} action=allow comment="{$kHost}"
         # IP walled garden: action=accept. Only the own entry is replaced; entries of others are never
         # changed. An existing drop entry covering {$portalIp} (e.g. dst-address=<LAN>/24 action=drop)
         # blocks the portal for guests: check with the print of the diagnostics block, remove it manually.
         /ip hotspot walled-garden ip
-        remove [find comment="{$n}"]
-        add dst-address={$portalIp} protocol=tcp dst-port=443 action=accept comment="{$n}"
+        remove [find where {$oIp}]
+        add dst-address={$portalIp} protocol=tcp dst-port=443 action=accept comment="{$kIp}"
 
         {$certScript}
         # Finally upload login.html into the html-directory of the profile ({$hotspotDir}),
@@ -231,6 +324,9 @@ class MikrotikRos7Driver implements NasDriver
                 'gateway' => ['required', 'ipv4'],
                 'pool' => ['required', 'string', 'max:64', 'regex:/^(\d{1,3}\.){3}\d{1,3}-(\d{1,3}\.){3}\d{1,3}$/'],
                 'ssid' => ['required', 'string', 'max:32', 'regex:/^[\p{L}\p{N} ._-]+$/u'],
+                // Optional; empty keeps the stored password, wifi_password_clear removes it (open SSID)
+                'wifi_password' => ['nullable', 'string', self::WIFI_PASSWORD_RULE],
+                'wifi_password_clear' => ['nullable', 'boolean'],
                 'wifi_mode' => ['required', 'in:capsman1,capsman2,local'],
                 'html_directory' => ['nullable', 'in:'.implode(',', self::HTML_DIRECTORIES)],
             ],
@@ -273,14 +369,40 @@ class MikrotikRos7Driver implements NasDriver
             : '# No trunk port needed (guest traffic is forwarded by this router into the bridge)';
         $vlanTagged = $g['wifi_mode'] === 'capsman2' ? "{$g['bridge']},<TRUNK_PORT_TO_CAP>" : $g['bridge'];
 
+        // Keys of this site's objects (managedObjects()), short names for the heredocs below.
+        $k = fn (string $block, string $object) => self::key($block, $object);
+        $o = fn (string $block, string $object) => self::owned(self::key($block, $object));
+        $up = self::upsert(...);
+
+        // Wi-Fi: datapath, security, configuration (and the virtual AP of a local radio) re-runnable.
+        $wifiPath = $g['wifi_mode'] === 'capsman1' ? '/caps-man' : '/interface wifi';
+        $kSec = $k('wifi', 'sec-guest');
+        $datapath = $g['wifi_mode'] === 'capsman1'
+            ? "bridge={$g['bridge']} vlan-id={$g['vlan_id']} vlan-mode=use-tag local-forwarding=no client-to-client-forwarding=no"
+            : "bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes";
+        $security = $up("{$wifiPath} security", 'name=sec-guest', $kSec, 'name=sec-guest', '');
+        if ($g['wifi_password'] !== '') {
+            $pass = self::quoted($g['wifi_password']);
+            $auth = $g['wifi_mode'] === 'capsman1' ? 'authentication-types=wpa2-psk encryption=aes-ccm' : 'authentication-types=wpa2-psk,wpa3-psk';
+            $security .= "\n# Guest Wi-Fi password of the setup assistant (WPA2/WPA3 personal); re-running updates it\n"
+                ."{$wifiPath} security set [find where name=sec-guest && comment=\"{$kSec}\"] {$auth} passphrase=\"{$pass}\"";
+        } else {
+            $unset = $g['wifi_mode'] === 'capsman1' ? ['passphrase', 'authentication-types', 'encryption'] : ['passphrase', 'authentication-types'];
+            $security .= "\n# No guest Wi-Fi password in the setup assistant: open SSID (a password set earlier is removed)\n"
+                .implode("\n", array_map(fn ($p) => "{$wifiPath} security unset [find where name=sec-guest && comment=\"{$kSec}\"] {$p}", $unset));
+        }
+        $wifiObjects = $up("{$wifiPath} datapath", 'name=dp-guest', $k('wifi', 'dp-guest'), 'name=dp-guest', $datapath)."\n"
+            .$security."\n"
+            .$up("{$wifiPath} configuration", 'name=cfg-guest', $k('wifi', 'cfg-guest'), 'name=cfg-guest',
+                "ssid=\"{$g['ssid']}\" country=<COUNTRY> security=sec-guest datapath=dp-guest");
+        $wifiHeader = "# Re-runnable: adds dp-guest, sec-guest and cfg-guest or updates the own ones (comment key\n"
+            ."# \"{$k('wifi', 'cfg-guest')}\" etc.); objects of others with these names are never changed (the add fails).";
+
         $wifi = match ($g['wifi_mode']) {
             'capsman1' => <<<RSC
             # Legacy CAPsMAN (/caps-man, wireless package): manager forwarding, VLAN tagged by the manager
-            /caps-man datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} vlan-mode=use-tag \\
-                local-forwarding=no client-to-client-forwarding=no comment="{$n}"
-            /caps-man security add name=sec-guest comment="{$n}"
-            /caps-man configuration add name=cfg-guest ssid="{$g['ssid']}" country=<COUNTRY> \\
-                security=sec-guest datapath=dp-guest comment="{$n}"
+            {$wifiHeader}
+            {$wifiObjects}
             # Guest SSID as slave of your existing master configuration. "set" replaces the list: keep
             # existing slaves (see print) in <EXISTING_SLAVES>, or remove "<EXISTING_SLAVES>," if there are none.
             /caps-man provisioning print
@@ -290,10 +412,8 @@ class MikrotikRos7Driver implements NasDriver
             'capsman2' => <<<RSC
             # CAPsMAN of the wifi package (/interface wifi). wifi-qcom-ac CAPs: do NOT set vlan-id
             # (no VLAN offload); set PVID {$g['vlan_id']} on the CAP's bridge port instead.
-            /interface wifi datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes comment="{$n}"
-            /interface wifi security add name=sec-guest comment="{$n}"
-            /interface wifi configuration add name=cfg-guest ssid="{$g['ssid']}" country=<COUNTRY> \\
-                security=sec-guest datapath=dp-guest comment="{$n}"
+            {$wifiHeader}
+            {$wifiObjects}
             # Guest SSID as slave of your existing master configuration. "set" replaces the list: keep
             # existing slaves (see print) in <EXISTING_SLAVES>, or remove "<EXISTING_SLAVES>," if there are none.
             /interface wifi provisioning print
@@ -303,32 +423,49 @@ class MikrotikRos7Driver implements NasDriver
             RSC,
             default => <<<RSC
             # Local radio of this router (wifi package): virtual AP on an existing radio
-            /interface wifi datapath add name=dp-guest bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes comment="{$n}"
-            /interface wifi security add name=sec-guest comment="{$n}"
-            /interface wifi configuration add name=cfg-guest ssid="{$g['ssid']}" country=<COUNTRY> \\
-                security=sec-guest datapath=dp-guest comment="{$n}"
+            {$wifiHeader}
+            {$wifiObjects}
             # configuration=<name> on a virtual AP (to verify); alternative: inline configuration.ssid="{$g['ssid']}"
-            /interface wifi add name=wifi-guest master-interface=<WIFI_INTERFACE> configuration=cfg-guest disabled=no comment="{$n}"
+            :if ([:len [/interface wifi find where name=wifi-guest && {$o('wifi', 'wifi-guest')}]] = 0) do={ /interface wifi add name=wifi-guest master-interface=<WIFI_INTERFACE> configuration=cfg-guest disabled=no comment="{$k('wifi', 'wifi-guest')}" } else={ /interface wifi set [find where name=wifi-guest && {$o('wifi', 'wifi-guest')}] configuration=cfg-guest comment="{$k('wifi', 'wifi-guest')}" }
             RSC,
         };
 
+        $wifiRemoveObjects = "{$wifiPath} configuration remove [find where name=cfg-guest && {$o('wifi', 'cfg-guest')}]\n"
+            ."{$wifiPath} security remove [find where name=sec-guest && {$o('wifi', 'sec-guest')}]\n"
+            ."{$wifiPath} datapath remove [find where name=dp-guest && {$o('wifi', 'dp-guest')}]";
         $wifiRemove = match ($g['wifi_mode']) {
-            'capsman1' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
-                ."/caps-man provisioning print\n"
-                ."/caps-man configuration remove [find where name=cfg-guest && comment=\"{$n}\"]\n"
-                ."/caps-man security remove [find where name=sec-guest && comment=\"{$n}\"]\n"
-                ."/caps-man datapath remove [find where name=dp-guest && comment=\"{$n}\"]",
-            'capsman2' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
-                ."/interface wifi provisioning print\n"
-                ."/interface wifi configuration remove [find where name=cfg-guest && comment=\"{$n}\"]\n"
-                ."/interface wifi security remove [find where name=sec-guest && comment=\"{$n}\"]\n"
-                ."/interface wifi datapath remove [find where name=dp-guest && comment=\"{$n}\"]",
+            'capsman1', 'capsman2' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
+                ."{$wifiPath} provisioning print\n".$wifiRemoveObjects,
             default => "# only if created for the guest network: virtual AP and its configuration\n"
-                ."/interface wifi remove [find where name=wifi-guest && comment=\"{$n}\"]\n"
-                ."/interface wifi configuration remove [find where name=cfg-guest && comment=\"{$n}\"]\n"
-                ."/interface wifi security remove [find where name=sec-guest && comment=\"{$n}\"]\n"
-                ."/interface wifi datapath remove [find where name=dp-guest && comment=\"{$n}\"]",
+                ."/interface wifi remove [find where name=wifi-guest && {$o('wifi', 'wifi-guest')}]\n".$wifiRemoveObjects,
         };
+
+        // Firewall: exact keys of the address-list entries and filter rules
+        $addrKeys = self::keys('fw', array_keys(self::FW_ADDRESSES));
+        $ruleKeys = self::keys('fw', array_keys(self::FW_RULES));
+        $addrOwned = self::owned(...$addrKeys);
+        $rulesOwned = self::owned(...$ruleKeys);
+        // Exactly the current rule keys (legacy rules are removed before the adds)
+        $rulesExact = '('.implode(' || ', array_map(fn ($r) => 'comment="'.$r.'"', $ruleKeys)).')';
+        $kDhcpNet = $k('net', 'dhcp-network');
+        $kOpt = $k('net', 'option-114');
+        $oOpt = $o('net', 'option-114');
+        $dnsOwned = self::owned(...self::keys('dns', ['hotspot-name', 'portal-a', 'portal-cname']));
+
+        // Container network (step 1)
+        $containerNetwork = implode("\n", [
+            $up('/interface/veth', 'name=veth-portal', $k('container', 'veth'), 'name=veth-portal',
+                "address={$c['veth_address']} gateway={$c['veth_gateway']}"),
+            $up('/interface/bridge', "name={$c['bridge']}", $k('container', 'bridge'), "name={$c['bridge']}", ''),
+            $up('/interface/bridge/port', 'interface=veth-portal', $k('container', 'bridge-port'), 'interface=veth-portal', "bridge={$c['bridge']}"),
+            $up('/ip/address', "interface={$c['bridge']}", $k('container', 'gateway'), "interface={$c['bridge']}",
+                "address={$c['veth_gateway']}{$c['prefix']}"),
+        ]);
+        $containerLists = implode("\n", [
+            $up('/container/mounts', 'list=portal-data', $k('container', 'mounts'), 'list=portal-data',
+                "src={$c['disk']}/portal-data dst=/data"),
+            $up('/container/envs', 'list=portal && key=APP_URL', $k('container', 'env-app-url'), 'list=portal key=APP_URL', "value=\"{$appUrl}\""),
+        ]);
 
         return [
             'container' => [
@@ -337,16 +474,13 @@ class MikrotikRos7Driver implements NasDriver
                 /system/device-mode/update container=yes
                 RSC,
                 'container_network' => <<<RSC
-                /interface/veth add name=veth-portal address={$c['veth_address']} gateway={$c['veth_gateway']} comment="{$n}"
-                /interface/bridge add name={$c['bridge']} comment="{$n}"
-                /interface/bridge/port add bridge={$c['bridge']} interface=veth-portal comment="{$n}"
-                /ip/address add address={$c['veth_gateway']}{$c['prefix']} interface={$c['bridge']} comment="{$n}: container gateway"
+                # Re-runnable: adds the objects or updates the own ones (comment key "{$n}:container:<object>")
+                {$containerNetwork}
                 RSC,
                 'container_add' => <<<RSC
                 /container/config set registry-url=https://ghcr.io tmpdir={$c['disk']}/tmp
                 # Private image only: /container/config set username=<GITHUB_USER> password=<READ_ONLY_TOKEN>
-                /container/mounts add list=portal-data src={$c['disk']}/portal-data dst=/data comment="{$n}"
-                /container/envs add list=portal key=APP_URL value="{$appUrl}" comment="{$n}"
+                {$containerLists}
                 /container add remote-image={$c['image']} interface=veth-portal \\
                     root-dir={$c['disk']}/portal-root mountlists=portal-data envlist=portal start-on-boot=yes logging=yes
                 /container/start [find]
@@ -363,7 +497,8 @@ class MikrotikRos7Driver implements NasDriver
                 # Shows vlan-filtering of the bridge (see the optional block below)
                 /interface bridge print where name={$g['bridge']}
                 {$trunk}
-                /interface vlan add name={$g['interface']} interface={$g['bridge']} vlan-id={$g['vlan_id']} comment="{$n}"
+                # Re-runnable: adds the VLAN interface or updates the own one (comment "{$k('net', 'vlan')}")
+                {$up('/interface vlan', "name={$g['interface']}", $k('net', 'vlan'), "name={$g['interface']}", "interface={$g['bridge']} vlan-id={$g['vlan_id']}")}
                 RSC,
                 'vlan_filtering' => <<<RSC
                 # OPTIONAL, only if bridge "{$g['bridge']}" has vlan-filtering=yes.
@@ -371,17 +506,17 @@ class MikrotikRos7Driver implements NasDriver
                 #   here; skip this block and do not switch filtering on just for the guest VLAN.
                 # vlan-filtering=yes: the bridge drops VLAN {$g['vlan_id']} unless the bridge itself (for the
                 #   VLAN interface) and the trunk port are tagged members:
-                /interface bridge vlan add bridge={$g['bridge']} tagged={$vlanTagged} vlan-ids={$g['vlan_id']} comment="{$n}"
+                {$up('/interface bridge vlan', "bridge={$g['bridge']}", $k('net', 'bridge-vlan'), "bridge={$g['bridge']}", "tagged={$vlanTagged} vlan-ids={$g['vlan_id']}")}
                 # Check (VLAN {$g['vlan_id']} must list the bridge and the trunk port as tagged):
                 /interface bridge vlan print where bridge={$g['bridge']}
                 RSC,
                 'wifi' => $wifi,
                 'dhcp' => <<<RSC
-                /ip address add address={$g['gateway']}{$g['prefix']} interface={$g['interface']} comment="{$n}: guest gateway"
-                /ip pool add name={$g['pool_name']} ranges={$g['pool']} comment="{$n}"
-                /ip dhcp-server add name=guest-dhcp interface={$g['interface']} address-pool={$g['pool_name']} \\
-                    lease-time=30m disabled=no comment="{$n}"
-                /ip dhcp-server network add address={$g['subnet']} gateway={$g['gateway']} dns-server={$g['gateway']} comment="{$n}"
+                # Re-runnable: adds gateway address, pool, DHCP server and network or updates the own ones
+                {$up('/ip address', "interface={$g['interface']}", $k('net', 'gateway'), "interface={$g['interface']}", "address={$g['gateway']}{$g['prefix']}")}
+                {$up('/ip pool', "name={$g['pool_name']}", $k('net', 'pool'), "name={$g['pool_name']}", "ranges={$g['pool']}")}
+                {$up('/ip dhcp-server', 'name=guest-dhcp', $k('net', 'dhcp-server'), 'name=guest-dhcp', "interface={$g['interface']} address-pool={$g['pool_name']} lease-time=30m disabled=no")}
+                {$up('/ip dhcp-server network', "address=\"{$g['subnet']}\"", $kDhcpNet, "address={$g['subnet']}", "gateway={$g['gateway']} dns-server={$g['gateway']}")}
                 # The router serves DNS to guests; upstream servers if not yet set:
                 # /ip dns set servers=<UPSTREAM_DNS_1>,<UPSTREAM_DNS_2>
                 /ip dns set allow-remote-requests=yes
@@ -392,58 +527,58 @@ class MikrotikRos7Driver implements NasDriver
                 # Only if guests reach the portal with their own IP (no source NAT of guests).
                 # Re-runnable: updates the value of the own option; an option "captive-portal" of others is not
                 # changed (the add then fails: rename yours or remove it first).
-                /ip dhcp-server option
-                :if ([:len [find where name="captive-portal" && comment="{$n}"]] = 0) do={
-                    add code=114 name=captive-portal value="'{$captiveUrl}'" comment="{$n}"
-                } else={
-                    set [find where name="captive-portal" && comment="{$n}"] code=114 value="'{$captiveUrl}'"
-                }
-                # Sets the option list of the guest network (created in the DHCP block, comment "{$n}")
-                /ip dhcp-server network set [find where address="{$g['subnet']}" && comment="{$n}"] dhcp-option=captive-portal
+                {$up('/ip dhcp-server option', 'name="captive-portal"', $kOpt, 'name=captive-portal', "code=114 value=\"'{$captiveUrl}'\"")}
+                # Sets the option list of the guest network (created in the DHCP block, comment "{$kDhcpNet}")
+                /ip dhcp-server network set [find where address="{$g['subnet']}" && {$o('net', 'dhcp-network')}] dhcp-option=captive-portal
                 RSC,
                 'firewall' => <<<RSC
                 # Re-runnable: list, member and address-list entries are added only if missing; an existing
                 # entry with the same list and address (e.g. your own RFC1918 list) is used as it is.
-                :if ([:len [/interface list find where name=GUEST]] = 0) do={ /interface list add name=GUEST comment="{$n}" }
-                :if ([:len [/interface list member find where list=GUEST && interface={$g['interface']}]] = 0) do={ /interface list member add list=GUEST interface={$g['interface']} comment="{$n}" }
+                :if ([:len [/interface list find where name=GUEST]] = 0) do={ /interface list add name=GUEST comment="{$k('fw', 'list-guest')}" }
+                /interface list set [find where name=GUEST && {$o('fw', 'list-guest')}] comment="{$k('fw', 'list-guest')}"
+                :if ([:len [/interface list member find where list=GUEST && interface={$g['interface']}]] = 0) do={ /interface list member add list=GUEST interface={$g['interface']} comment="{$k('fw', 'list-member')}" }
+                /interface list member set [find where list=GUEST && interface={$g['interface']} && {$o('fw', 'list-member')}] comment="{$k('fw', 'list-member')}"
                 /ip firewall address-list
                 # Own entries of an earlier run (portal IP may have changed); entries of others are kept
-                remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="{$n}" || comment~"^{$n}: ")]
-                :if ([:len [find where list=PORTAL && address={$portalIp}]] = 0) do={ add list=PORTAL address={$portalIp} comment="{$n}: portal instance (guest port)" }
-                :if ([:len [find where list=PORTAL_RADIUS && address={$radiusIp}]] = 0) do={ add list=PORTAL_RADIUS address={$radiusIp} comment="{$n}: portal instance (RADIUS, Disconnect)" }
-                :if ([:len [find where list=RFC1918 && address=10.0.0.0/8]] = 0) do={ add list=RFC1918 address=10.0.0.0/8 comment="{$n}" }
-                :if ([:len [find where list=RFC1918 && address=172.16.0.0/12]] = 0) do={ add list=RFC1918 address=172.16.0.0/12 comment="{$n}" }
-                :if ([:len [find where list=RFC1918 && address=192.168.0.0/16]] = 0) do={ add list=RFC1918 address=192.168.0.0/16 comment="{$n}" }
-                # Filter rules: all comments start with "{$n}: ". Re-running this block replaces them.
-                /ip firewall filter remove [find where comment~"^{$n}: "]
+                remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && {$addrOwned}]
+                :if ([:len [find where list=PORTAL && address={$portalIp}]] = 0) do={ add list=PORTAL address={$portalIp} comment="{$k('fw', 'addr-portal')}" }
+                :if ([:len [find where list=PORTAL_RADIUS && address={$radiusIp}]] = 0) do={ add list=PORTAL_RADIUS address={$radiusIp} comment="{$k('fw', 'addr-radius')}" }
+                :if ([:len [find where list=RFC1918 && address=10.0.0.0/8]] = 0) do={ add list=RFC1918 address=10.0.0.0/8 comment="{$k('fw', 'addr-rfc1918-10')}" }
+                :if ([:len [find where list=RFC1918 && address=172.16.0.0/12]] = 0) do={ add list=RFC1918 address=172.16.0.0/12 comment="{$k('fw', 'addr-rfc1918-172')}" }
+                :if ([:len [find where list=RFC1918 && address=192.168.0.0/16]] = 0) do={ add list=RFC1918 address=192.168.0.0/16 comment="{$k('fw', 'addr-rfc1918-192')}" }
+                # Filter rules: one comment key per rule ("{$n}:fw:<rule>"). Re-running this block replaces them
+                # (and the rules of earlier versions, comment "{$n}: ...").
+                /ip firewall filter remove [find where {$rulesOwned}]
                 /ip firewall filter
-                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=67 comment="{$n}: guest DHCP"
-                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=53 comment="{$n}: guest DNS"
-                add chain=input action=accept in-interface-list=GUEST protocol=tcp dst-port=53 comment="{$n}: guest DNS tcp"
-                add chain=input action=accept in-interface-list=GUEST protocol=icmp limit=10,20:packet comment="{$n}: guest ping gateway"
-                add chain=input action=accept protocol=udp src-address-list=PORTAL_RADIUS dst-port={$coaPorts} comment="{$n}: Disconnect/CoA"
-                add chain=input action=drop in-interface-list=GUEST comment="{$n}: guest no router management"
-                # Forward (order matters; assumes a WAN interface list). The stateful accepts cover guest
-                # traffic only, so FastTrack for other traffic stays as it is.
-                add chain=forward action=accept connection-state=established,related in-interface-list=GUEST comment="{$n}: stateful from guests"
-                add chain=forward action=accept connection-state=established,related out-interface-list=GUEST comment="{$n}: stateful to guests"
-                add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="{$n}: guest to portal"
-                add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="{$n}: guest no LAN / other VLANs / VPN"
-                add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="{$n}: nothing initiates towards guests"
-                add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="{$n}: guest internet"
+                # guest DHCP, DNS (udp, tcp), ping of the gateway, Disconnect/CoA from the instance, no router management
+                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=67 comment="{$k('fw', 'in-dhcp')}"
+                add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=53 comment="{$k('fw', 'in-dns')}"
+                add chain=input action=accept in-interface-list=GUEST protocol=tcp dst-port=53 comment="{$k('fw', 'in-dns-tcp')}"
+                add chain=input action=accept in-interface-list=GUEST protocol=icmp limit=10,20:packet comment="{$k('fw', 'in-ping')}"
+                add chain=input action=accept protocol=udp src-address-list=PORTAL_RADIUS dst-port={$coaPorts} comment="{$k('fw', 'in-coa')}"
+                add chain=input action=drop in-interface-list=GUEST comment="{$k('fw', 'in-drop-mgmt')}"
+                # Forward (order matters; assumes a WAN interface list): stateful from/to guests, guest to portal,
+                # no LAN / other VLANs / VPN, nothing initiates towards guests, guest internet. The stateful
+                # accepts cover guest traffic only, so FastTrack for other traffic stays as it is.
+                add chain=forward action=accept connection-state=established,related in-interface-list=GUEST comment="{$k('fw', 'fwd-from-guests')}"
+                add chain=forward action=accept connection-state=established,related out-interface-list=GUEST comment="{$k('fw', 'fwd-to-guests')}"
+                add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="{$k('fw', 'fwd-portal')}"
+                add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="{$k('fw', 'fwd-drop-lan')}"
+                add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="{$k('fw', 'fwd-drop-new')}"
+                add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="{$k('fw', 'fwd-internet')}"
                 # "add" appends at the end of a chain, i.e. after an existing drop rule (e.g. defconf "drop all
                 # not coming from LAN"). Move the rules above to the top of input and forward, keeping their
                 # order: each one goes before the first static rule of the chain that is not ours. Dynamic
                 # rules (hotspot) stay first. Local names differ from property names on purpose.
                 :foreach fwChain in={"input";"forward"} do={
-                    :local fwFirst [:pick [/ip firewall filter find where chain=\$fwChain && dynamic=no && !(comment~"^{$n}: ")] 0]
+                    :local fwFirst [:pick [/ip firewall filter find where chain=\$fwChain && dynamic=no && !{$rulesExact}] 0]
                     :if ([:len \$fwFirst] > 0) do={
-                        :foreach fwRule in=[/ip firewall filter find where chain=\$fwChain && dynamic=no && comment~"^{$n}: "] do={
+                        :foreach fwRule in=[/ip firewall filter find where chain=\$fwChain && dynamic=no && {$rulesExact}] do={
                             /ip firewall filter move \$fwRule destination=\$fwFirst
                         }
                     }
                 }
-                # Check: the "{$n}: " rules must come before any drop rule of input and forward.
+                # Check: the "{$n}:fw:" rules must come before any drop rule of input and forward.
                 # /ip firewall filter print where chain=input || chain=forward
                 # /ip firewall filter print where comment~"{$n}"
                 # FastTrack (defconf "fasttrack-connection") may bypass the hotspot for fasttracked
@@ -468,10 +603,10 @@ class MikrotikRos7Driver implements NasDriver
                 # and guests use IPv4 on the guest network (if the guest network gets IPv6 and the hotspot name
                 # has a public AAAA, use the same CNAME pattern for it).
                 /ip dns static
-                remove [find comment="{$n}"]
-                add name={$dnsName} address={$g['gateway']} comment="{$n}"
-                add name={$n}-v4.internal address={$portalIp} comment="{$n}"
-                add name={$portalHost} type=CNAME cname={$n}-v4.internal comment="{$n}"
+                remove [find where {$dnsOwned}]
+                add name={$dnsName} address={$g['gateway']} comment="{$k('dns', 'hotspot-name')}"
+                add name={$n}-v4.internal address={$portalIp} comment="{$k('dns', 'portal-a')}"
+                add name={$portalHost} type=CNAME cname={$n}-v4.internal comment="{$k('dns', 'portal-cname')}"
                 # Check: IPv4 address, and "no appropriate record" for IPv6
                 # :put [:resolve {$portalHost}]
                 # :put [:resolve domain-name={$portalHost} type=ipv6]
@@ -498,13 +633,13 @@ class MikrotikRos7Driver implements NasDriver
                 /ip hotspot walled-garden ip print
                 # last runs of the certificate script
                 /log print where message~"{$n}"
-                # firewall: the "{$n}: " rules must come before any drop rule of chain input and forward
+                # firewall: the "{$n}:fw:" rules must come before any drop rule of chain input and forward
                 /ip firewall filter print where comment~"{$n}"
                 /ip firewall filter print where chain=input || chain=forward
                 RSC,
-                'diagnostics' => <<<'RSC'
+                'diagnostics' => <<<RSC
                 /radius print
-                /radius monitor [find comment="guest-portal"] once
+                /radius monitor [find where comment="{$k('radius', 'server')}"] once
                 /ip hotspot active print
                 /ip hotspot host print
                 /log print where topics~"hotspot|radius"
@@ -512,16 +647,18 @@ class MikrotikRos7Driver implements NasDriver
             ],
             'uninstall' => [
                 'uninstall' => <<<RSC
-                # Removes everything the router script and the setup assistant created, identified by the name
-                # or comment "{$n}". Safe to run when entries do not exist. Logs out connected guests.
+                # Removes everything the router script and the setup assistant created: hotspot, profile and
+                # certificates by name "{$n}", all other objects by name plus comment key "{$n}:<block>:<object>"
+                # (or the comment "{$n}" / "{$n}: ..." of earlier versions). Safe to run when entries do not
+                # exist. Logs out connected guests.
                 # Order matters: script/scheduler, hotspot (uses the certificate), then the certificates.
-                /system scheduler remove [find where name="{$n}-cert"]
-                /system script remove [find where name="{$n}-cert"]
+                /system scheduler remove [find where name="{$n}-cert" && ({$o('cert', 'scheduler')} || !comment)]
+                /system script remove [find where name="{$n}-cert" && ({$o('cert', 'script')} || !comment)]
                 /ip hotspot remove [find where name="{$n}"]
                 /ip hotspot profile remove [find where name="{$n}"]
-                /ip hotspot walled-garden remove [find where comment="{$n}"]
-                /ip hotspot walled-garden ip remove [find where comment="{$n}"]
-                /radius remove [find where comment="{$n}"]
+                /ip hotspot walled-garden remove [find where {$o('walled', 'portal-host')}]
+                /ip hotspot walled-garden ip remove [find where {$o('walled', 'portal-ip')}]
+                /radius remove [find where {$o('radius', 'server')}]
                 # /radius incoming has no comment: only if nothing else uses Disconnect/CoA on this router:
                 # /radius incoming set accept=no
                 # Certificates of the certificate script and of older versions, by name only (RouterOS
@@ -529,23 +666,23 @@ class MikrotikRos7Driver implements NasDriver
                 /certificate remove [find where name="{$n}" || name~"^{$n}-ca-[0-9]+\\$" || name~"^{$n}-import" || name="{$n}-new" || name~"^{$n}-new_"]
                 /file remove [find where name="{$n}.crt" || name="{$n}.key"]
                 # Static DNS entries of the assistant (hotspot name, portal CNAME and its internal A record)
-                /ip dns static remove [find where comment="{$n}"]
-                # DHCP option 114 of the guest network: the reference is cleared only if it is the network's
+                /ip dns static remove [find where {$dnsOwned}]
+                # DHCP option 114 of the own guest network: the reference is cleared only if it is the network's
                 # only option; otherwise a hint is printed (remove captive-portal from dhcp-option manually).
-                :foreach i in=[/ip dhcp-server network find where address="{$g['subnet']}"] do={
-                    :local opts [/ip dhcp-server network get \$i dhcp-option]
-                    :if ([:len \$opts] = 1 && [:tostr \$opts] = "captive-portal") do={
-                        /ip dhcp-server network set \$i dhcp-option=""
+                :foreach gpNet in=[/ip dhcp-server network find where address="{$g['subnet']}" && {$o('net', 'dhcp-network')}] do={
+                    :local gpOpts [/ip dhcp-server network get \$gpNet dhcp-option]
+                    :if ([:len \$gpOpts] = 1 && [:tostr \$gpOpts] = "captive-portal") do={
+                        /ip dhcp-server network set \$gpNet dhcp-option=""
                     } else={
-                        :if ([:len \$opts] > 1) do={ :put "{$n}: network {$g['subnet']} has more DHCP options, remove captive-portal from dhcp-option manually" }
+                        :if ([:len \$gpOpts] > 1) do={ :put "{$n}: network {$g['subnet']} has more DHCP options, remove captive-portal from dhcp-option manually" }
                     }
                 }
-                /ip dhcp-server option remove [find where name="captive-portal" && comment="{$n}"]
-                # Firewall rules (comment starts with "{$n}: ") and address-list entries of the assistant (its
-                # lists and comments only; "{$n}-old" or entries without comment are not ours and stay)
-                /ip firewall filter remove [find where comment~"^{$n}: "]
+                /ip dhcp-server option remove [find where name="captive-portal" && {$oOpt}]
+                # Firewall rules and address-list entries of the assistant (its keys and lists only; "{$n}-old"
+                # or entries without comment are not ours and stay)
+                /ip firewall filter remove [find where {$rulesOwned}]
                 /ip firewall nat remove [find where comment~"^{$n}: "]
-                /ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="{$n}" || comment~"^{$n}: ")]
+                /ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && {$addrOwned}]
                 # Older assistant versions used other comments; check and remove manually if present:
                 # /ip firewall filter print where comment~"^(guest|portal): |^stateful\\$|^nothing initiates"
                 # /ip firewall address-list print where list=PORTAL || list=PORTAL_RADIUS || list=RFC1918
@@ -563,33 +700,33 @@ class MikrotikRos7Driver implements NasDriver
                 /container stop [find where interface=veth-portal]
                 :delay 10s
                 /container remove [find where interface=veth-portal]
-                /container mounts remove [find where list=portal-data && comment="{$n}"]
-                /container envs remove [find where list=portal && comment="{$n}"]
-                /ip address remove [find where interface={$c['bridge']} && comment="{$n}: container gateway"]
-                /interface bridge port remove [find where interface=veth-portal && comment="{$n}"]
-                /interface bridge remove [find where name={$c['bridge']} && comment="{$n}"]
-                /interface veth remove [find where name=veth-portal && comment="{$n}"]
+                /container mounts remove [find where list=portal-data && {$o('container', 'mounts')}]
+                /container envs remove [find where list=portal && {$o('container', 'env-app-url')}]
+                /ip address remove [find where interface={$c['bridge']} && {$o('container', 'gateway')}]
+                /interface bridge port remove [find where interface=veth-portal && {$o('container', 'bridge-port')}]
+                /interface bridge remove [find where name={$c['bridge']} && {$o('container', 'bridge')}]
+                /interface veth remove [find where name=veth-portal && {$o('container', 'veth')}]
                 # Created by assistant versions before 0.12.7 (no comment): check and remove manually
                 # /interface veth print where name=veth-portal
                 RSC,
                 'uninstall_network' => <<<RSC
-                # OPTIONAL network infrastructure of step 2. Removes only objects with the comment "{$n}" (set
-                # by the assistant since 0.12.7; older ones have none: check with the prints at the end and
-                # remove them manually). Wi-Fi first, VLAN interface last.
+                # OPTIONAL network infrastructure of step 2. Removes only objects with an own comment key (or the
+                # comment "{$n}" of versions 0.12.7 to 0.13.x; older ones have none: check with the prints at
+                # the end and remove them manually). Wi-Fi first, VLAN interface last.
                 {$wifiRemove}
                 # only if created for the guest network: DHCP server, network, pool, gateway address
-                /ip dhcp-server remove [find where name=guest-dhcp && comment="{$n}"]
-                /ip dhcp-server network remove [find where address="{$g['subnet']}" && comment="{$n}"]
-                /ip pool remove [find where name={$g['pool_name']} && comment="{$n}"]
-                /ip address remove [find where interface={$g['interface']} && comment="{$n}: guest gateway"]
+                /ip dhcp-server remove [find where name=guest-dhcp && {$o('net', 'dhcp-server')}]
+                /ip dhcp-server network remove [find where address="{$g['subnet']}" && {$o('net', 'dhcp-network')}]
+                /ip pool remove [find where name={$g['pool_name']} && {$o('net', 'pool')}]
+                /ip address remove [find where interface={$g['interface']} && {$o('net', 'gateway')}]
                 # interface list GUEST (only the own list and member)
-                /interface list member remove [find where list=GUEST && comment="{$n}"]
+                /interface list member remove [find where list=GUEST && {$o('fw', 'list-member')}]
                 # (the list only when no member of others is left in it)
-                :if ([:len [/interface list member find where list=GUEST]] = 0) do={ /interface list remove [find where name=GUEST && comment="{$n}"] }
+                :if ([:len [/interface list member find where list=GUEST]] = 0) do={ /interface list remove [find where name=GUEST && {$o('fw', 'list-guest')}] }
                 # bridge VLAN entry (optional block of step 2)
-                /interface bridge vlan remove [find where comment="{$n}"]
+                /interface bridge vlan remove [find where bridge={$g['bridge']} && {$o('net', 'bridge-vlan')}]
                 # guest VLAN interface
-                /interface vlan remove [find where name={$g['interface']} && comment="{$n}"]
+                /interface vlan remove [find where name={$g['interface']} && {$o('net', 'vlan')}]
                 # Left over without comment (older assistant versions)? Check:
                 # /interface vlan print where name={$g['interface']}
                 # /ip pool print where name={$g['pool_name']}
@@ -639,6 +776,8 @@ class MikrotikRos7Driver implements NasDriver
             'ssid' => trim(self::safe($s['ssid'] ?? null)) ?: 'Guest-WiFi',
             'wifi_mode' => in_array($s['wifi_mode'] ?? null, ['capsman1', 'capsman2', 'local'], true) ? $s['wifi_mode'] : 'capsman2',
             'html_directory' => in_array($s['html_directory'] ?? null, self::HTML_DIRECTORIES, true) ? $s['html_directory'] : 'hotspot',
+            // Decrypted guest Wi-Fi password, '' for an open SSID; only printable ASCII is kept
+            'wifi_password' => (string) preg_replace('/[^\x20-\x7E]/', '', (string) $site->wifiPassword()),
         ];
     }
 
@@ -676,11 +815,12 @@ class MikrotikRos7Driver implements NasDriver
         # "fingerprint" property: format to verify, normalised here).
         # Errors are logged with the failing step: /log print where message~"__NAME__"
         # Uses :onerror (RouterOS >= 7.13, to verify on the installed version).
+        # Script and scheduler: by name plus own comment key (versions before the keys set no comment)
         /system scheduler
-        remove [find name="__NAME__-cert"]
+        remove [find where name="__NAME__-cert" && (__OWNED_SCHEDULER__ || !comment)]
         /system script
-        remove [find name="__NAME__-cert"]
-        add name=__NAME__-cert dont-require-permissions=no policy=read,write,policy,test source={
+        remove [find where name="__NAME__-cert" && (__OWNED_SCRIPT__ || !comment)]
+        add name=__NAME__-cert comment="__KEY_SCRIPT__" dont-require-permissions=no policy=read,write,policy,test source={
         # Local names start with "gp": inside "find where" a local with the same name as a property
         # (e.g. "name") is not substituted, so "name=$name" would match every item. Never use such names.
         :local gpBase "__BASE__"
@@ -819,18 +959,43 @@ class MikrotikRos7Driver implements NasDriver
         } do={ :log warning ($gpName . ": router certificate update failed at step '" . $gpStep . "': " . $gpErr) }
         }
         /system scheduler
-        add name=__NAME__-cert interval=__INTERVAL__ start-time=startup on-event=__NAME__-cert policy=read,write,policy,test
+        add name=__NAME__-cert comment="__KEY_SCHEDULER__" interval=__INTERVAL__ start-time=startup on-event=__NAME__-cert policy=read,write,policy,test
         /system script run __NAME__-cert
 
         RSC;
 
-        return str_replace(['__BASE__', '__TOKEN__', '__SRC__', '__NAME__', '__INTERVAL__'],
-            [$base, $token, $sourceIp, self::NAME, $interval], $script);
+        return str_replace(['__BASE__', '__TOKEN__', '__SRC__', '__OWNED_SCHEDULER__', '__OWNED_SCRIPT__', '__KEY_SCRIPT__',
+            '__KEY_SCHEDULER__', '__NAME__', '__INTERVAL__'],
+            [$base, $token, $sourceIp, self::owned(self::key('cert', 'scheduler')), self::owned(self::key('cert', 'script')),
+                self::key('cert', 'script'), self::key('cert', 'scheduler'), self::NAME, $interval], $script);
     }
 
     private function portalUrl(Site $site): string
     {
         return (string) ($site->setting('portal_url') ?: config('app.url'));
+    }
+
+    /**
+     * Add-or-update of one own object: adds it when no object matching $match with an own comment
+     * exists, otherwise sets the values by id (find) and replaces a legacy comment with the key. An
+     * object of others with the same name is never changed (the add fails on it).
+     */
+    private static function upsert(string $path, string $match, string $key, string $ident, string $props): string
+    {
+        $find = "find where {$match} && ".self::owned($key);
+        $props = $props === '' ? '' : $props.' ';
+
+        return ":if ([:len [{$path} {$find}]] = 0) do={\n"
+            ."    {$path} add {$ident} {$props}comment=\"{$key}\"\n"
+            ."} else={\n"
+            ."    {$path} set [{$find}] {$props}comment=\"{$key}\"\n"
+            .'}';
+    }
+
+    /** Value inside a quoted RouterOS string: printable ASCII with \\ " $ ? escaped (passphrase). */
+    private static function quoted(string $value): string
+    {
+        return addcslashes((string) preg_replace('/[^\x20-\x7E]/', '', $value), '\\"$?');
     }
 
     /** Strip characters with special meaning in RouterOS scripts (quotes, $, \\, newlines, ...). */

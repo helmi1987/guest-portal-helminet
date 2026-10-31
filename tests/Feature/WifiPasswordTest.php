@@ -1,0 +1,196 @@
+<?php
+
+namespace Tests\Feature;
+
+use App\Federation\FederatedSecrets;
+use App\Models\AuditLog;
+use App\Models\Grant;
+use App\Models\NasClient;
+use App\Models\Site;
+use App\Models\User;
+use App\Nas\MikrotikRos7Driver;
+use App\Services\VoucherQr;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Testing\TestResponse;
+use Tests\TestCase;
+
+/**
+ * Optional guest Wi-Fi password of the setup assistant and the comment keys of the generated RouterOS
+ * objects (CONCEPT.md §9, decision 2026-10-31).
+ */
+class WifiPasswordTest extends TestCase
+{
+    use RefreshDatabase;
+
+    private const NETWORK = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+        'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2'];
+
+    private Site $site;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['app.url' => 'https://portal.example.com']);
+        $this->site = Site::create(['slug' => 'site-a', 'name' => 'Site A', 'driver' => 'mikrotik_ros7',
+            'settings' => ['hotspot_hosts' => ['hotspot-a.guest.example.com'], 'radius_address' => '10.0.0.10']]);
+    }
+
+    private function save(array $extra): TestResponse
+    {
+        $admin = User::factory()->admin()->create();
+
+        return $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", self::NETWORK + $extra);
+    }
+
+    private function rawSetup(): array
+    {
+        return json_decode(DB::table('sites')->where('id', $this->site->id)->value('settings'), true)['setup'] ?? [];
+    }
+
+    public function test_password_is_validated_stored_encrypted_and_never_audited(): void
+    {
+        foreach (['short12', str_repeat('a', 64), "umlaut\u{e4}pass", "tab\tpassword"] as $bad) {
+            $this->save(['wifi_password' => $bad])->assertSessionHasErrors('wifi_password');
+        }
+        $this->assertArrayNotHasKey('wifi_password', $this->rawSetup());
+
+        $password = 'Sec "ret\\ $pass?';
+        $this->save(['wifi_password' => $password])->assertRedirect()->assertSessionHasNoErrors();
+        $raw = $this->rawSetup();
+        $this->assertNotSame($password, $raw['wifi_password']);
+        $this->assertStringNotContainsString('ret', DB::table('sites')->where('id', $this->site->id)->value('settings'));
+        $this->assertSame($password, $this->site->fresh()->wifiPassword());
+        $audit = AuditLog::query()->where('action', 'site.setup_network')->latest('id')->first();
+        $this->assertSame('wpa', $audit->data['wifi_security']);
+        $this->assertStringNotContainsString('ret', json_encode($audit->data));
+        $this->assertStringNotContainsString($raw['wifi_password'], json_encode($audit->data));
+
+        // Empty field keeps the stored password; the page never renders it into the input.
+        $this->save(['wifi_password' => ''])->assertSessionHasNoErrors();
+        $this->assertSame($password, $this->site->fresh()->wifiPassword());
+        $admin = User::factory()->admin()->create();
+        $page = $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
+            ->assertSee(__('portal.setup.network.wifi_password_stored'))->assertSee('name="wifi_password_clear"', false);
+        $this->assertDoesNotMatchRegularExpression('/name="wifi_password"[^>]*value=/', $page->getContent());
+
+        // Checkbox removes it: open SSID again.
+        $this->save(['wifi_password_clear' => '1'])->assertSessionHasNoErrors();
+        $this->assertNull($this->site->fresh()->wifiPassword());
+        $this->assertArrayNotHasKey('wifi_password', $this->rawSetup());
+        $this->assertSame('open', AuditLog::query()->where('action', 'site.setup_network')->latest('id')->first()->data['wifi_security']);
+    }
+
+    public function test_password_survives_a_data_key_rotation(): void
+    {
+        $this->save(['wifi_password' => 'rotate-me-123'])->assertSessionHasNoErrors();
+        $before = $this->rawSetup()['wifi_password'];
+
+        app(FederatedSecrets::class)->rotate();
+
+        $this->assertNotSame($before, $this->rawSetup()['wifi_password']);
+        $this->assertSame('rotate-me-123', $this->site->fresh()->wifiPassword());
+    }
+
+    public function test_security_profile_gets_wpa_with_an_escaped_passphrase_in_every_wifi_mode(): void
+    {
+        $password = 'a"b\\c$d?e [f] {g};';
+        $escaped = 'a\\"b\\\\c\\$d\\?e [f] {g};';
+        foreach (['capsman1' => ['/caps-man', 'authentication-types=wpa2-psk encryption=aes-ccm'],
+            'capsman2' => ['/interface wifi', 'authentication-types=wpa2-psk,wpa3-psk'],
+            'local' => ['/interface wifi', 'authentication-types=wpa2-psk,wpa3-psk']] as $mode => [$path, $auth]) {
+            $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['wifi_mode' => $mode] + self::NETWORK
+                + ['wifi_password' => Site::encryptWifiPassword($password)]])]);
+            $site = $this->site->fresh();
+            $wifi = $site->driver()->setupCommands($site, [])['network']['wifi'];
+
+            $this->assertStringContainsString(
+                "{$path} security set [find where name=sec-guest && comment=\"guest-portal:wifi:sec-guest\"] {$auth} passphrase=\"{$escaped}\"", $wifi, $mode);
+            // Add-or-update by name plus own key (or legacy comment): re-running updates the passphrase
+            $this->assertStringContainsString(":if ([:len [{$path} security find where name=sec-guest && (comment=\"guest-portal:wifi:sec-guest\" || comment=\"guest-portal\" || comment~\"^guest-portal: \")]] = 0) do={", $wifi);
+            $this->assertStringNotContainsString(' unset ', $wifi);
+            $this->assertStringNotContainsString($password, $wifi);
+
+            // Without a password: open, a password set earlier is removed from the own profile only
+            $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['wifi_mode' => $mode] + self::NETWORK])]);
+            $site = $this->site->fresh();
+            $open = $site->driver()->setupCommands($site, [])['network']['wifi'];
+            $this->assertStringContainsString("{$path} security unset [find where name=sec-guest && comment=\"guest-portal:wifi:sec-guest\"] passphrase", $open);
+            $this->assertStringContainsString("{$path} security unset [find where name=sec-guest && comment=\"guest-portal:wifi:sec-guest\"] authentication-types", $open);
+            $this->assertStringNotContainsString('passphrase=', $open);
+        }
+    }
+
+    public function test_every_generated_comment_key_is_listed_and_unique(): void
+    {
+        $nas = NasClient::find($this->site->nasClients()->create(['name' => 'Router A', 'nas_ip' => '10.0.1.1', 'coa_port' => 3799])->id);
+        foreach (['capsman1', 'capsman2', 'local'] as $mode) {
+            $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['wifi_mode' => $mode] + self::NETWORK])]);
+            $site = $this->site->fresh();
+            $driver = $site->driver();
+            $objects = $driver->managedObjects($site);
+
+            $this->assertSame(['radius', 'walled', 'cert', 'dns', 'container', 'net', 'wifi', 'fw'], array_keys($objects));
+            $keys = array_merge(...array_map('array_keys', array_values($objects)));
+            $this->assertSame($keys, array_unique($keys));
+            foreach ($objects as $block => $entries) {
+                foreach ($entries as $key => $entry) {
+                    $this->assertMatchesRegularExpression('/^guest-portal:'.$block.':[a-z0-9-]+$/', $key);
+                    $this->assertStringStartsWith('/', $entry['path']);
+                    $this->assertArrayHasKey('name', $entry);
+                }
+            }
+            $this->assertSame(MikrotikRos7Driver::key('wifi', 'sec-guest'), 'guest-portal:wifi:sec-guest');
+            $this->assertSame($mode === 'capsman1' ? '/caps-man security' : '/interface wifi security', $objects['wifi']['guest-portal:wifi:sec-guest']['path']);
+            $this->assertSame($mode === 'local', isset($objects['wifi']['guest-portal:wifi:wifi-guest']));
+            $this->assertSame(['path' => '/ip pool', 'name' => 'guest-pool'], $objects['net']['guest-portal:net:pool']);
+
+            $all = $driver->configScript($site, $nas).implode("\n", array_merge(...array_map('array_values',
+                array_values($driver->setupCommands($site, ['bridge' => 'containers'])))));
+            preg_match_all('/comment="(guest-portal[^"]*)"/', $all, $m);
+            $used = array_unique($m[1]);
+            // Exact legacy comment "guest-portal" appears only inside the removal/re-run guards
+            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal'])), $mode);
+            // Outside the find conditions no add/set writes a legacy comment
+            $outside = $all;
+            do {
+                $outside = preg_replace('/\[[^\[\]]*\]/', '', $outside, -1, $n);
+            } while ($n > 0);
+            $this->assertDoesNotMatchRegularExpression('/comment="guest-portal(: [^"]*)?"/', $outside);
+            // Never a bare prefix match on comments
+            $this->assertStringNotContainsString('comment~"^guest-portal"', $all);
+            $this->assertDoesNotMatchRegularExpression('/comment~"\^guest-portal:[^ ]/', $all);
+        }
+    }
+
+    public function test_voucher_qr_and_print_sheet_carry_the_password(): void
+    {
+        $this->assertSame('WIFI:T:WPA;S:Guest WiFi;P:pa\\;ss\\:wo\\,rd\\"\\\\;;', VoucherQr::wifiPayload('Guest WiFi', 'pa;ss:wo,rd"\\'));
+        $this->assertSame('WIFI:T:WPA;S:Guest;P:"DEADBEEF";;', VoucherQr::wifiPayload('Guest', 'DEADBEEF'));
+        $this->assertSame('WIFI:S:Guest;T:nopass;;', VoucherQr::wifiPayload('Guest', null));
+        $this->assertSame('WIFI:S:Guest;T:nopass;;', VoucherQr::wifiPayload('Guest', ''));
+
+        $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['ssid' => 'Guest A',
+            'wifi_password' => Site::encryptWifiPassword('voucher-pass-1')]])]);
+        $same = Site::create(['slug' => 'b', 'name' => 'B', 'driver' => 'mikrotik_ros7', 'settings' => ['setup' => ['ssid' => 'Guest A']]]);
+        $manager = User::factory()->create();
+
+        $response = $this->onZone('admin')->actingAs($manager)->post('/admin/grants', [
+            'quantity' => 1, 'duration' => '1d', 'expiry_mode' => 'first_login', 'site_ids' => [$this->site->id],
+        ]);
+        $grant = Grant::query()->sole();
+        $qr = new VoucherQr;
+        $this->assertSame(['ssid' => 'Guest A', 'password' => 'voucher-pass-1'], $qr->networkFor($grant->load('siteLinks')));
+        $this->assertSame('voucher-pass-1', $qr->passwordFor($grant));
+        $this->onZone('admin')->actingAs($manager)->get($response->headers->get('Location'))->assertOk()
+            ->assertSee('Guest A')->assertSee(__('portal.grants.wifi_password'))->assertSee('voucher-pass-1')->assertSee('<svg', false);
+
+        // Same SSID, different password on another site: ambiguous for an unrestricted grant (no QR)
+        $this->onZone('admin')->actingAs($manager)->post('/admin/grants', ['quantity' => 1, 'duration' => '1d', 'expiry_mode' => 'first_login']);
+        $all = Grant::query()->whereKeyNot($grant->id)->sole()->load('siteLinks');
+        $this->assertNull((new VoucherQr)->networkFor($all));
+        $this->assertNull((new VoucherQr)->ssidFor($all));
+        $same->update(['settings' => ['setup' => ['ssid' => 'Guest A', 'wifi_password' => Site::encryptWifiPassword('voucher-pass-1')]]]);
+        $this->assertSame('voucher-pass-1', (new VoucherQr)->passwordFor($all));
+    }
+}

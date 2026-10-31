@@ -195,6 +195,7 @@ return [
         'gateway' => 'Gateway',
         'pool' => 'Adressbereich',
         'ssid' => 'SSID',
+        'wifi_password' => 'WLAN-Passwort',
         'wifi_mode' => 'WLAN-Modus',
         'html_directory' => 'Hotspot-HTML-Verzeichnis',
         'veth_address' => 'VETH-Adresse',

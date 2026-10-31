@@ -287,8 +287,8 @@ add chain=input action=drop in-interface-list=GUEST comment="guest: no router ma
 
 Order matters. Insert before your generic rules (use `place-before=0` or `move`). `add` appends at the
 end of a chain, after an existing drop rule; the setup assistant's firewall block (v0.12.6) moves its
-`guest-portal: ` rules of input and forward before the first static rule that is not its own, keeping their
-order. Check with `/ip firewall filter print where comment~"guest-portal"` and
+`guest-portal:fw:` rules (`guest-portal: ` before 2026-10-31) of input and forward before the first static
+rule that is not its own, keeping their order. Check with `/ip firewall filter print where comment~"guest-portal"` and
 `/ip firewall filter print where chain=input || chain=forward`: they must come before any drop rule.
 
 ```
@@ -395,7 +395,8 @@ guest network gets IPv6 and the hotspot name has a public AAAA record, use the C
   incoming`, hotspot profile and hotspot server `guest-portal` (`use-radius=yes`, `login-by=https,mac`; `mac` for the MAC whitelist), walled garden and the certificate
   script/scheduler (6.1). Fill its `<PLACEHOLDERS>` from the worksheet: `<HOTSPOT_GATEWAY_IP>` = 10.30.0.1,
   `<GUEST_INTERFACE>` = `vlan30-guest`, `<GUEST_POOL>` = `guest-pool`.
-  All entries use the name or comment `guest-portal`; the script removes them first, so it can be re-run (re-running
+  Hotspot and profile use the name `guest-portal`, all other entries a comment key `guest-portal:<block>:<object>`
+  (e.g. `guest-portal:radius:server`; older versions: comment `guest-portal`); the script removes them first, so it can be re-run (re-running
   recreates the hotspot and logs out connected guests). Do not rename the profile: the certificate script sets
   `ssl-certificate` on the profile named `guest-portal`.
 - **Wizard:** `/ip hotspot setup` asks for interface, address, pool, certificate, SMTP, DNS and a local user. Use it only if you then align the result with the
@@ -618,7 +619,7 @@ openssl s_client -connect portal.example.com:443 -servername portal.example.com 
 | Rejected although credentials fresh | Token expired (~60 s), MAC mismatch, site not allowed for the grant | Portal audit/RADIUS log; retry from the start |
 | router IP mismatch | masquerade/srcnat on the VPN or central router, `src-address` not set | Section 7.1; add a srcnat exception (`action=accept` for UDP 1812/1813/3799) above masquerade |
 | Disconnect-NAK, Error-Cause 406 (Unsupported-Extension) | RouterOS 7 hotspot accepts Disconnect only with `Framed-IP-Address` (User-Name / Acct-Session-Id are rejected). The portal sends only `Framed-IP-Address` from accounting (v0.12.6) | Instance log "RADIUS Disconnect-Request"; "not sent: Framed-IP-Address of the session unknown" = Accounting-Start without IP; "stopped or stale" = no recent accounting update (IP may be reused). Manual test: `echo 'Framed-IP-Address=<GUEST_IP>' \| radclient -x <ROUTER_IP>:3799 disconnect <SECRET>` |
-| Guest DNS/ping/Disconnect blocked, portal name not resolved | Assistant firewall rules appended after an existing drop rule (e.g. defconf "drop all not coming from LAN") | `/ip firewall filter print where chain=input \|\| chain=forward`: the `guest-portal: ` rules must come before any drop rule; re-run the firewall block of the assistant (v0.12.6 moves them to the top) |
+| Guest DNS/ping/Disconnect blocked, portal name not resolved | Assistant firewall rules appended after an existing drop rule (e.g. defconf "drop all not coming from LAN") | `/ip firewall filter print where chain=input \|\| chain=forward`: the `guest-portal:fw:` rules must come before any drop rule; re-run the firewall block of the assistant (v0.12.6 moves them to the top) |
 | Disconnect does nothing | Router not accepting (`/radius incoming accept=no`, port not 3799), UDP 3799 blocked on router input or tunnel, source of Disconnect differs from `/radius address`, wrong secret | `/radius incoming print`, input rule 5.3, central firewall 7.2, `tcpdump` UDP 3799 |
 | Session not removed after grant end | Scheduler (`portal:enforce-grants`) not running, Disconnect failing | Instance logs; see previous row |
 | Guest can reach LAN / router | Forward/input drop rules below an accept rule, interface list member missing | `/ip firewall filter print stats`, `/interface list member print` |
@@ -645,7 +646,7 @@ Findings from a first real setup; the setup assistant shows the same checklist.
    be the portal instance as reachable from the router (usually empty = instance IP for RADIUS); the
    admin UI rejects the guest gateway and addresses inside the guest subnet.
    ```
-   /ip dns static print where comment="guest-portal"       # hotspot name -> guest gateway, portal name -> CNAME -> portal IP
+   /ip dns static print where comment~"^guest-portal:dns:"  # hotspot name -> guest gateway, portal name -> CNAME -> portal IP
    ```
 3. **Code and SMS logins fail, MAC whitelist works.** Until the router certificate is imported the
    hotspot profile has only `login-by=mac`. Order: (1) portal certificate, (2) router certificate pulled

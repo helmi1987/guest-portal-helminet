@@ -195,6 +195,7 @@ return [
         'gateway' => 'passerelle',
         'pool' => 'plage d\'adresses',
         'ssid' => 'SSID',
+        'wifi_password' => 'mot de passe Wi-Fi',
         'wifi_mode' => 'mode Wi-Fi',
         'html_directory' => 'répertoire HTML du hotspot',
         'veth_address' => 'adresse VETH',

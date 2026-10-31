@@ -1,7 +1,8 @@
 # RouterOS CHR harness
 
 Runs every script block of the setup assistant (MikroTik driver) against a real RouterOS CHR and checks
-that the scripts only create, change and remove their own objects (name/comment `guest-portal`).
+that the scripts only create, change and remove their own objects (name `guest-portal` or comment key
+`guest-portal:<block>:<object>`).
 Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, does not gate merging).
 
 ## Files
@@ -9,6 +10,7 @@ Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, 
 | File | Purpose |
 |---|---|
 | `render.php` | Renders all blocks for a fixture site/router (in-memory SQLite, fake values) into `.rsc` files, one directory per Wi-Fi mode |
+| `legacy.rsc` | Objects as created by scripts before the comment keys (migration check) |
 | `seed.rsc` | "Foreign" defconf-like configuration: firewall, interface lists, bridge, certificates, hotspot profiles, DNS, DHCP, address lists, RADIUS, Wi-Fi/CAPsMAN, scripts; some names start with `guest-portal` on purpose |
 | `pki.sh` | Throw-away test PKI: portal CA + portal server certificate, router chain (root, intermediate, two leaves: RSA PKCS#1, EC PKCS#8) |
 | `stub_portal.py` | HTTPS stand-in for `/router-cert/<id>/...` and `/router-login/<id>/login.html` with the `X-Portal-Token` check |
@@ -34,8 +36,14 @@ dependencies. The run needs a router without configuration (fresh image or `load
 - Every block runs via `/import` without a RouterOS error (placeholders replaced with test values:
   `<COUNTRY>`, `<MASTER_CFG>`, `<EXISTING_SLAVES>`, `<TRUNK_PORT_TO_CAP>`; the line with `<WIFI_INTERFACE>`
   is skipped: the CHR has no radio).
-- Firewall: the `guest-portal: ` rules are the first static rules of input and forward, in generated order,
+- Firewall: the `guest-portal:fw:` rules are the first static rules of input and forward, in generated order,
   also when re-run with dynamic hotspot rules present; foreign rules unchanged and in their order.
+- Legacy objects of scripts before the comment keys (`legacy.rsc`: comment `guest-portal` / `guest-portal: ...`,
+  certificate script without comment) are updated in place or replaced; afterwards every `guest-portal:` comment
+  on the router is a key of `managedObjects()` (file `keys` of `render.php`) and no legacy comment is left.
+- Wi-Fi: `sec-guest` with the passphrase of the fixture (every character RouterOS escapes) and WPA
+  authentication (capsman1, local), open (capsman2); re-run, and in mode local password removed and set again.
+- Network blocks re-runnable (wifi, dhcp, vlan run twice).
 - DNS: the router resolves the portal name via the CNAME.
 - Certificate script: first import (leaf `guest-portal` with key and served fingerprint, CAs
   `guest-portal-ca-1/2`, profile uses it), second run and router script re-run are no-ops, rotation to a

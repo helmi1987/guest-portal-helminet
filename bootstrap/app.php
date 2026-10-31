@@ -51,6 +51,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: env('TRUSTED_PROXIES'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
+        // Guest Wi-Fi password of the setup assistant: never flashed to the session as old input
+        $exceptions->dontFlash(['wifi_password']);
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('internal/*', 'federation/*') || $request->expectsJson()
                 || in_array(Zone::of($request), [Zone::INTERNAL, Zone::FEDERATION], true),

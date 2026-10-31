@@ -27,10 +27,11 @@
     </p>
     <div class="sheet">
         @foreach ($grants as $grant)
-            @php($ssid = $qr->ssidFor($grant))
+            @php($network = $qr->networkFor($grant))
+            @php($ssid = $network['ssid'] ?? null)
             <div class="voucher">
                 @if ($ssid)
-                    <div class="qr">{!! $qr->wifiSvg($ssid) !!}</div>
+                    <div class="qr">{!! $qr->wifiSvg($ssid, 160, $network['password']) !!}</div>
                 @endif
                 <div class="min-w-0">
                     <div class="text-sm font-semibold">{{ __('portal.guest.title') }}</div>
@@ -40,6 +41,7 @@
                     @if ($grant->expires_at)<div class="text-xs">{{ __('portal.grants.expires_at') }}: {{ \App\Support\LocalTime::format($grant->expires_at, 'Y-m-d H:i') }}</div>
                     @elseif ($grant->redeem_until)<div class="text-xs">{{ __('portal.grants.redeem_until') }}: {{ \App\Support\LocalTime::format($grant->redeem_until, 'Y-m-d H:i') }}</div>@endif
                     @if ($ssid)<div class="text-xs">{{ __('portal.grants.wifi') }}: <span class="font-semibold">{{ $ssid }}</span></div>@endif
+                    @if ($network['password'] ?? null)<div class="text-xs">{{ __('portal.grants.wifi_password') }}: <span class="font-mono font-semibold">{{ $network['password'] }}</span></div>@endif
                     <div class="mt-1 text-[10px] leading-tight text-slate-600">{{ $ssid ? __('portal.grants.voucher_hint_qr') : __('portal.grants.voucher_hint') }}</div>
                 </div>
             </div>

@@ -6,6 +6,7 @@ use App\Auth\Oidc\OidcSettings;
 use App\Models\CertificateSource;
 use App\Models\Channel;
 use App\Models\NasClient;
+use App\Models\Site;
 use App\Models\User;
 
 /**
@@ -54,6 +55,11 @@ class FederatedSecrets
                     $count++;
                 }
             }
+        }
+
+        // Guest Wi-Fi password in the site settings (setup assistant)
+        foreach (Site::withTrashed()->get() as $site) {
+            $count += $site->reencryptWifiPassword() ? 1 : 0;
         }
 
         return $count + (OidcSettings::reencryptSecret() ? 1 : 0);

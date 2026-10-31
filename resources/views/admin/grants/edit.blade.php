@@ -17,7 +17,7 @@
         <div>{{ __('portal.grants.revoked_at') }}: {{ \App\Support\LocalTime::format($grant->revoked_at, 'Y-m-d H:i') ?? '–' }}</div>
         @if ($grant->type === \App\Enums\GrantType::Code && $grant->code && ($ssid = $qr->ssidFor($grant)))
             <div class="flex items-center gap-3 md:col-span-3">
-                <div class="h-28 w-28 shrink-0 bg-white">{!! $qr->wifiSvg($ssid, 112) !!}</div>
+                <div class="h-28 w-28 shrink-0 bg-white">{!! $qr->wifiSvg($ssid, 112, $qr->passwordFor($grant)) !!}</div>
                 <div>{{ __('portal.grants.wifi_qr', ['ssid' => $ssid]) }}</div>
             </div>
         @endif

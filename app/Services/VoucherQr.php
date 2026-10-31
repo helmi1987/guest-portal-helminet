@@ -16,33 +16,68 @@ use Illuminate\Support\Collection;
  */
 class VoucherQr
 {
-    /** @var Collection<string, ?string>|null site id => SSID from the setup assistant */
-    private ?Collection $ssids = null;
+    /** @var Collection<string, ?array{ssid: string, password: ?string}>|null site id => guest Wi-Fi of the setup assistant */
+    private ?Collection $networks = null;
 
     /** @var array<string, string> payload@size => SVG */
     private array $svgs = [];
 
-    /** SSID of the grant's sites (all sites when unrestricted); null when none or ambiguous. */
-    public function ssidFor(Grant $grant): ?string
+    /**
+     * Guest Wi-Fi of the grant's sites (all sites when unrestricted): SSID and password (null: open);
+     * null when none or ambiguous (sites with different SSIDs or passwords).
+     *
+     * @return array{ssid: string, password: ?string}|null
+     */
+    public function networkFor(Grant $grant): ?array
     {
-        $this->ssids ??= Site::query()->get()
-            ->mapWithKeys(fn (Site $site) => [$site->id => trim((string) $site->setting('setup.ssid')) ?: null]);
+        $this->networks ??= Site::query()->get()->mapWithKeys(fn (Site $site) => [$site->id => self::networkForSite($site)]);
 
         $ids = $grant->siteIds();
-        $candidates = ($ids === [] ? $this->ssids : $this->ssids->only($ids))->filter()->unique()->values();
+        $candidates = ($ids === [] ? $this->networks : $this->networks->only($ids))->filter()
+            ->unique(fn (array $n) => json_encode([$n['ssid'], $n['password']]))->values();
 
         return $candidates->count() === 1 ? $candidates->first() : null;
     }
 
-    /**
-     * WIFI: payload for an open network (ZXing format; \ ; , : " escaped). An SSID of hex digits only
-     * is quoted, otherwise readers may take it for a hex-encoded name.
-     */
-    public static function wifiPayload(string $ssid): string
+    /** SSID of the grant's sites (all sites when unrestricted); null when none or ambiguous. */
+    public function ssidFor(Grant $grant): ?string
     {
-        $escaped = preg_replace('/([\\\\;,:"])/', '\\\\$1', $ssid);
+        return $this->networkFor($grant)['ssid'] ?? null;
+    }
 
-        return 'WIFI:S:'.(ctype_xdigit($ssid) ? '"'.$escaped.'"' : $escaped).';T:nopass;;';
+    /** Guest Wi-Fi password of the grant's sites; null when open, none or ambiguous. */
+    public function passwordFor(Grant $grant): ?string
+    {
+        return $this->networkFor($grant)['password'] ?? null;
+    }
+
+    /**
+     * WIFI: payload (ZXing format; \ ; , : " escaped): open network, or WPA with a password. An SSID or
+     * password of hex digits only is quoted, otherwise readers may take it for a hex-encoded value.
+     */
+    public static function wifiPayload(string $ssid, ?string $password = null): string
+    {
+        $value = function (string $v): string {
+            $escaped = preg_replace('/([\\\\;,:"])/', '\\\\$1', $v);
+
+            return ctype_xdigit($v) ? '"'.$escaped.'"' : $escaped;
+        };
+
+        return $password === null || $password === ''
+            ? 'WIFI:S:'.$value($ssid).';T:nopass;;'
+            : 'WIFI:T:WPA;S:'.$value($ssid).';P:'.$value($password).';;';
+    }
+
+    /**
+     * Guest Wi-Fi of one site (setup assistant), null when no SSID is set.
+     *
+     * @return array{ssid: string, password: ?string}|null
+     */
+    public static function networkForSite(Site $site): ?array
+    {
+        $ssid = self::ssidForSite($site);
+
+        return $ssid === null ? null : ['ssid' => $ssid, 'password' => $site->wifiPassword()];
     }
 
     /** Guest SSID of one site (setup assistant), null when not set. */
@@ -65,10 +100,10 @@ class VoucherQr
         return $host ? 'https://'.$host.'/login?'.http_build_query(['dst' => $portal]) : $portal;
     }
 
-    /** Inline SVG markup of the Wi-Fi QR (cached per SSID for print sheets). */
-    public function wifiSvg(string $ssid, int $size = 160): string
+    /** Inline SVG markup of the Wi-Fi QR (cached per network for print sheets); password null: open. */
+    public function wifiSvg(string $ssid, int $size = 160, ?string $password = null): string
     {
-        return $this->svg(self::wifiPayload($ssid), $size);
+        return $this->svg(self::wifiPayload($ssid, $password), $size);
     }
 
     /** Inline SVG markup of a QR code for any payload (cached per payload and size). */

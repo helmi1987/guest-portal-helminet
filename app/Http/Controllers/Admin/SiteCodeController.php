@@ -106,7 +106,7 @@ class SiteCodeController extends Controller
             'format' => $format,
             'branding' => BrandingSettings::resolve($site),
             'ssid' => $ssid,
-            'wifiQr' => $ssid ? $qr->wifiSvg($ssid, 240) : null,
+            'wifiQr' => $ssid ? $qr->wifiSvg($ssid, 240, $site->wifiPassword()) : null,
             'signInUrl' => $signIn,
             'signInQr' => $qr->svg($signIn, 240),
             'hasHotspotHost' => ((array) $site->setting('hotspot_hosts', [])) !== [],

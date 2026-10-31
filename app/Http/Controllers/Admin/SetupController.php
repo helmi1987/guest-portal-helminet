@@ -29,7 +29,8 @@ class SetupController extends Controller
 
         return view('admin.sites.setup', [
             'site' => $site,
-            'setup' => (array) $site->setting('setup', []),
+            'setup' => array_diff_key((array) $site->setting('setup', []), ['wifi_password' => true]),
+            'wifiPasswordSet' => $site->wifiPassword() !== null,
             'portalAddressProblem' => PortalAddress::problem($site->setting('portal_address'), (array) $site->setting('setup', [])),
             'container' => (array) LocalSetting::get(self::CONTAINER_KEY, []),
             'commands' => $driver->setupCommands($site, (array) LocalSetting::get(self::CONTAINER_KEY, [])),
@@ -41,8 +42,19 @@ class SetupController extends Controller
     {
         $data = $this->validateWithin($request, $site->driver()->setupFields()['network'], 'subnet', ['gateway', 'pool']);
         $data['vlan_id'] = (int) $data['vlan_id'];
+        // Guest Wi-Fi password: empty field keeps the stored one, the checkbox removes it. Stored encrypted,
+        // never audited or logged.
+        $password = (string) ($data['wifi_password'] ?? '');
+        $clear = (bool) ($data['wifi_password_clear'] ?? false);
+        unset($data['wifi_password'], $data['wifi_password_clear']);
+        $stored = $site->setting(Site::WIFI_PASSWORD);
+        $data['wifi_password'] = $clear ? null : ($password !== '' ? Site::encryptWifiPassword($password) : $stored);
+        if ($data['wifi_password'] === null) {
+            unset($data['wifi_password']);
+        }
         $site->update(['settings' => array_merge($site->settings ?? [], ['setup' => $data])]);
-        Audit::log('site.setup_network', $site, $data);
+        Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true])
+            + ['wifi_security' => isset($data['wifi_password']) ? 'wpa' : 'open']);
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-network')->with('status', __('portal.saved'));
     }
