@@ -118,6 +118,9 @@
                                         <label class="label">{{ __('portal.router_api.pin') }}
                                             <input name="api_pin" value="{{ old('api_pin', $router->api_pin) }}" placeholder="sha256//..." class="field">
                                             <span class="text-xs text-slate-500">{{ __('portal.router_api.pin_help') }}</span></label>
+                                        @if ($router->api_pin !== null)
+                                            <label class="text-xs md:col-span-3"><input type="checkbox" name="api_clear_pin" value="1"> {{ __('portal.router_api.pin_clear') }}</label>
+                                        @endif
                                         @foreach ($apiErrors->all() as $message)
                                             <p class="text-sm text-red-700 md:col-span-3">{{ $message }}</p>
                                         @endforeach

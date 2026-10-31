@@ -54,7 +54,8 @@
                 </div>
                 @if ($router->router_state_error)
                     <p class="mb-2 text-sm text-red-700" role="alert" data-state-error="{{ $router->router_state_error['kind'] ?? 'protocol' }}">
-                        {{ __('portal.router_api.errors.'.(in_array($router->router_state_error['kind'] ?? '', \App\Nas\RouterOs\RouterOsException::KINDS, true) ? $router->router_state_error['kind'] : 'protocol')) }}
+                        @php($stateKind = in_array($router->router_state_error['kind'] ?? '', \App\Nas\RouterOs\RouterOsException::KINDS, true) ? $router->router_state_error['kind'] : 'protocol')
+                        {{ __('portal.router_api.errors.'.($stateKind === 'tls' && $router->api_pin !== null ? 'tls_pinned' : $stateKind)) }}
                         <span class="text-xs text-slate-600">({{ $router->router_state_error['detail'] ?? '' }})</span></p>
                 @endif
                 @if ($st['compare'])

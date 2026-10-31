@@ -121,6 +121,14 @@ class SiteController extends Controller
      */
     public function updateRouterApi(Request $request, Site $site, NasClient $router): RedirectResponse
     {
+        if ($request->boolean('api_clear_pin')) {
+            // Only the stored key pin; the router certificate of this portal is used afterwards
+            $router->api_pin = null;
+            $router->save();
+            Audit::log('router.api_pin_removed', $router, ['site' => $site->slug, 'name' => $router->name]);
+
+            return back()->with('status', __('portal.saved'));
+        }
         if ($request->boolean('api_clear')) {
             $router->fill(['api_host' => null, 'api_type' => null, 'api_port' => null, 'api_user' => null, 'api_password' => null, 'api_pin' => null]);
             self::clearRouterState($router);

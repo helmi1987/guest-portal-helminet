@@ -150,6 +150,33 @@ class RouterStateTest extends TestCase
         $this->assertNull($this->nas->fresh()->api_password);
     }
 
+    public function test_stored_pin_is_named_on_tls_error_and_can_be_removed_alone(): void
+    {
+        $this->configureApi();
+        $this->nas->forceFill(['router_state_error' => ['kind' => 'tls', 'detail' => 'pin']])->save();
+
+        foreach (['en', 'de'] as $locale) {
+            $page = $this->admin()->withSession(['locale' => $locale])->get("/admin/sites/{$this->site->id}/setup")->assertOk()->getContent();
+            $this->assertStringContainsString('data-state-error="tls"', $page);
+            $this->assertStringContainsString(e(trans('portal.router_api.errors.tls_pinned', [], $locale)), $page, $locale);
+        }
+
+        // Removing the pin keeps the rest of the API access
+        $this->admin()->put("/admin/sites/{$this->site->id}/routers/{$this->nas->id}/api", ['api_clear_pin' => '1'])
+            ->assertRedirect()->assertSessionHasNoErrors();
+        $this->nas->refresh();
+        $this->assertNull($this->nas->api_pin);
+        $this->assertSame('portal-ro', $this->nas->api_user);
+        $this->assertSame('Test pass 1', $this->nas->api_password);
+        $this->assertTrue($this->nas->hasApiAccess());
+        $this->assertDatabaseHas('audit_logs', ['action' => 'router.api_pin_removed']);
+
+        // Without a pin the hint is not shown
+        $page = $this->admin()->get("/admin/sites/{$this->site->id}/setup")->assertOk()->getContent();
+        $this->assertStringContainsString('data-state-error="tls"', $page);
+        $this->assertStringNotContainsString(e(trans('portal.router_api.errors.tls_pinned')), $page);
+    }
+
     public function test_query_compares_blocks_and_ungreys_the_commands(): void
     {
         $this->saveNetwork();
