@@ -162,18 +162,18 @@ class RouterStateTest extends TestCase
         }
 
         // Removing the pin keeps the rest of the API access
-        $this->admin()->put("/admin/sites/{$this->site->id}/routers/{$this->nas->id}/api", ['api_clear_pin' => '1'])
-            ->assertRedirect()->assertSessionHasNoErrors();
-        $this->nas->refresh();
+        // and saves other changed fields of the same form submit
+        $this->configureApi(['api_clear_pin' => '1', 'api_password' => '', 'api_user' => 'other-ro']);
         $this->assertNull($this->nas->api_pin);
-        $this->assertSame('portal-ro', $this->nas->api_user);
+        $this->assertNull($this->nas->router_state_error);
+        $this->assertSame('other-ro', $this->nas->api_user);
         $this->assertSame('Test pass 1', $this->nas->api_password);
         $this->assertTrue($this->nas->hasApiAccess());
         $this->assertDatabaseHas('audit_logs', ['action' => 'router.api_pin_removed']);
 
-        // Without a pin the hint is not shown
+        // The stale error is gone
         $page = $this->admin()->get("/admin/sites/{$this->site->id}/setup")->assertOk()->getContent();
-        $this->assertStringContainsString('data-state-error="tls"', $page);
+        $this->assertStringNotContainsString('data-state-error', $page);
         $this->assertStringNotContainsString(e(trans('portal.router_api.errors.tls_pinned')), $page);
     }
 

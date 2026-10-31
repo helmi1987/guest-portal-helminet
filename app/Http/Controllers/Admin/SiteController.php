@@ -121,14 +121,6 @@ class SiteController extends Controller
      */
     public function updateRouterApi(Request $request, Site $site, NasClient $router): RedirectResponse
     {
-        if ($request->boolean('api_clear_pin')) {
-            // Only the stored key pin; the router certificate of this portal is used afterwards
-            $router->api_pin = null;
-            $router->save();
-            Audit::log('router.api_pin_removed', $router, ['site' => $site->slug, 'name' => $router->name]);
-
-            return back()->with('status', __('portal.saved'));
-        }
         if ($request->boolean('api_clear')) {
             $router->fill(['api_host' => null, 'api_type' => null, 'api_port' => null, 'api_user' => null, 'api_password' => null, 'api_pin' => null]);
             self::clearRouterState($router);
@@ -155,10 +147,22 @@ class SiteController extends Controller
         if ($router->isDirty(['api_host', 'api_type', 'api_port'])) {
             self::clearRouterState($router);
         }
+        // The checkbox removes only the stored pin (the router certificate of this portal is used afterwards)
+        $pinRemoved = $request->boolean('api_clear_pin') && $router->getOriginal('api_pin') !== null;
+        if ($request->boolean('api_clear_pin')) {
+            $router->api_pin = null;
+        }
+        if ($router->isDirty('api_pin')) {
+            // A previous TLS error belongs to the old pin; keep the last successful state
+            $router->router_state_error = null;
+        }
         if (($data['api_password'] ?? '') !== '') {
             $router->api_password = $data['api_password'];
         }
         $router->save();
+        if ($pinRemoved) {
+            Audit::log('router.api_pin_removed', $router, ['site' => $site->slug, 'name' => $router->name]);
+        }
         // Never the user name or password; only which access is configured
         Audit::log('router.api_access_updated', $router, ['site' => $site->slug, 'name' => $router->name,
             'api_type' => $router->api_type, 'api_port' => $router->apiPort(), 'pinned' => $router->api_pin !== null]);
