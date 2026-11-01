@@ -115,5 +115,6 @@
     .gp-line-missing { color: #fca5a5; border-left-color: #ef4444; }
     .gp-line-update { color: #fcd34d; border-left-color: #f59e0b; }
     .gp-line-ok { color: #86efac; border-left-color: #22c55e; }
-    .gp-line-unmanaged { color: #c4b5fd; border-left-color: #8b5cf6; }
+    .gp-line-unmanaged, .gp-line-kept { color: #c4b5fd; border-left-color: #8b5cf6; }
+    .gp-line-remove { color: #fca5a5; border-left-color: #ef4444; }
 }

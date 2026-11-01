@@ -313,9 +313,9 @@
     <details id="step-uninstall" class="card mb-6">
         <summary class="cursor-pointer text-lg font-semibold">8. {{ __('portal.setup.uninstall.title') }}</summary>
         <p class="my-3 text-sm text-slate-600">{{ __('portal.setup.uninstall.help') }}</p>
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall')" :code="$commands['uninstall']['uninstall']" :placeholders="$placeholders" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_container')" :code="$commands['uninstall']['uninstall_container']" :placeholders="$placeholders" />
-        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_network')" :code="$commands['uninstall']['uninstall_network']" :placeholders="$placeholders" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall')" :code="$commands['uninstall']['uninstall']" :placeholders="$placeholders" :lines="$lineStatus($commands['uninstall']['uninstall'], null, true)" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_container')" :code="$commands['uninstall']['uninstall_container']" :placeholders="$placeholders" :lines="$lineStatus($commands['uninstall']['uninstall_container'], null, true)" />
+        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.uninstall_network')" :code="$commands['uninstall']['uninstall_network']" :placeholders="$placeholders" :lines="$lineStatus($commands['uninstall']['uninstall_network'], null, true)" />
         <p class="text-sm text-amber-800">{{ __('portal.setup.uninstall.portal_hint') }}</p>
     </details>
 

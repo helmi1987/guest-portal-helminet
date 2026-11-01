@@ -252,7 +252,7 @@ return [
             'no_passwords' => 'Passwords not included',
             'unfilled' => 'Placeholders not filled: :count',
             'legend' => 'Router state per line:',
-            'line_status' => ['unmanaged' => 'name taken (adopt first)', 'missing' => 'missing', 'update' => 'needs update', 'ok' => 'present'],
+            'line_status' => ['unmanaged' => 'name taken (adopt first)', 'missing' => 'missing', 'update' => 'needs update', 'ok' => 'present', 'remove' => 'will be removed', 'kept' => 'not managed – kept'],
         ],
         'optional' => 'optional',
         'saved' => 'values saved',

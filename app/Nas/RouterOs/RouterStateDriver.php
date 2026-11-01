@@ -33,13 +33,13 @@ interface RouterStateDriver
     public function deriveSetup(Site $site, array $state): array;
 
     /**
-     * Display state per line of a generated script (unmanaged|missing|update|ok|null), from a map comment key
-     * (or hotspot:server|profile) => compare status. Display only.
+     * Display state per line of a generated script (unmanaged|missing|update|ok|null; uninstall scripts:
+     * remove|kept|null), from a map comment key (or hotspot:server|profile) => compare status. Display only.
      *
      * @param  array<string, string>  $statusByKey
      * @return list<?string>
      */
-    public function lineStatuses(string $script, array $statusByKey): array;
+    public function lineStatuses(string $script, array $statusByKey, bool $uninstall = false): array;
 
     /**
      * Placeholder suggestions from the stored router states and prefill values from the site.

@@ -252,7 +252,7 @@ return [
             'no_passwords' => 'Mots de passe non inclus',
             'unfilled' => 'Espaces réservés non remplis : :count',
             'legend' => 'État du routeur par ligne :',
-            'line_status' => ['unmanaged' => 'nom pris (adopter d\'abord)', 'missing' => 'manquant', 'update' => 'à mettre à jour', 'ok' => 'présent'],
+            'line_status' => ['unmanaged' => 'nom pris (adopter d\'abord)', 'missing' => 'manquant', 'update' => 'à mettre à jour', 'ok' => 'présent', 'remove' => 'sera supprimé', 'kept' => 'non géré – conservé'],
         ],
         'optional' => 'facultatif',
         'saved' => 'valeurs enregistrées',

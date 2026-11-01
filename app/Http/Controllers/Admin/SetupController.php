@@ -82,9 +82,9 @@ class SetupController extends Controller
             'stateSupported' => $stateDriver !== null,
             'cliDisabled' => $stale,
             'maxAge' => (int) config('portal.router_api.max_age_minutes', 15),
-            'lineStatus' => fn (string $code, ?string $routerId = null) => $stateDriver
+            'lineStatus' => fn (string $code, ?string $routerId = null, bool $uninstall = false) => $stateDriver
                 && ($map = $routerId === null ? $siteStatus : ($routerStatus[$routerId] ?? [])) !== []
-                ? $stateDriver->lineStatuses($code, $map) : null,
+                ? $stateDriver->lineStatuses($code, $map, $uninstall) : null,
             'placeholders' => $stateDriver ? $stateDriver->placeholderHints($view, $apiRouters) : ['options' => [], 'values' => []],
             // Guest Wi-Fi masters (decision 2026-11-01): choices from the stored router states, selection local to this instance
             'wifiMasterOptions' => $stateDriver ? $stateDriver->wifiMasterOptions($apiRouters) : array_fill_keys(Site::WIFI_MODES, []),

@@ -487,15 +487,19 @@ trait MikrotikRos7RouterState
      * lines inside a "{ ... }" group opened by a line with a state inherit it. Comment lines and lines
      * without a known key stay null. Display only: the script itself is not changed.
      *
+     * Uninstall scripts ($uninstall): "remove" where an own object exists (the line would delete it),
+     * "kept" where only an object without comment exists (not deleted, except a "!comment" match),
+     * null where nothing exists or the state is unknown.
+     *
      * @param  array<string, string>  $statusByKey  comment key (or hotspot:server|profile) => compare status
-     * @return list<?string> one entry per line of $script: unmanaged|missing|update|ok|null
+     * @return list<?string> one entry per line of $script: unmanaged|missing|update|ok|remove|kept|null
      */
-    public function lineStatuses(string $script, array $statusByKey): array
+    public function lineStatuses(string $script, array $statusByKey, bool $uninstall = false): array
     {
-        $class = fn (?string $status) => match ($status) {
-            'unmanaged' => 'unmanaged', 'missing' => 'missing', 'differs', 'legacy' => 'update', 'present', 'foreign' => 'ok', default => null,
-        };
-        $rank = ['ok' => 1, 'update' => 2, 'missing' => 3, 'unmanaged' => 4];
+        $class = fn (?string $status) => $uninstall
+            ? match ($status) { 'unmanaged' => 'kept', 'present', 'differs', 'legacy' => 'remove', default => null }
+            : match ($status) { 'unmanaged' => 'unmanaged', 'missing' => 'missing', 'differs', 'legacy' => 'update', 'present', 'foreign' => 'ok', default => null };
+        $rank = ['ok' => 1, 'kept' => 1, 'update' => 2, 'missing' => 3, 'remove' => 3, 'unmanaged' => 4];
         $worst = function (array $states) use ($rank): ?string {
             $states = array_values(array_filter($states));
             usort($states, fn ($a, $b) => $rank[$b] <=> $rank[$a]);
@@ -512,6 +516,7 @@ trait MikrotikRos7RouterState
         $continued = null;
         $removes = [];
         $menus = [];
+        $own = [];
         foreach (explode("\n", $script) as $line) {
             $t = trim($line);
             $status = null;
@@ -523,6 +528,10 @@ trait MikrotikRos7RouterState
                 preg_match_all('/provisioning find where master-configuration="([A-Za-z0-9._-]+)"/', $line, $p);
                 $keys = [...$m[1], ...array_map(fn ($master) => self::slaveKey($master), $p[1])];
                 $status = $worst(array_map(fn ($key) => $class($statusByKey[$key] ?? null), array_unique($keys)));
+                // Uninstall: "|| !comment" also deletes the object without comment
+                if ($status === 'kept' && str_contains($line, '!comment')) {
+                    $status = 'remove';
+                }
                 // Menu context ("/ip hotspot profile") or command with its menu ("/ip hotspot add ...")
                 $rest = $t;
                 if ($t[0] === '/') {
@@ -540,9 +549,11 @@ trait MikrotikRos7RouterState
                 } else {
                     $cmdMenu = $menu;
                 }
-                if ($status === null && isset($byName[$cmdMenu]) && preg_match('/^add name='.$n.'( |$)/', $rest)) {
+                $byNameCmd = $uninstall ? '/^remove \\[find (where )?name="?'.$n.'"?\\]/' : '/^add name='.$n.'( |$)/';
+                if ($status === null && isset($byName[$cmdMenu]) && preg_match($byNameCmd, $rest)) {
                     $status = $class($statusByKey[$byName[$cmdMenu]] ?? null);
                 }
+                $own[count($out)] = $status;
                 $status ??= $continued ?? ($depth > 0 ? $group : null);
                 // Group "{ ... }" outside quoted strings
                 $bare = (string) preg_replace('/"(?:\\\\.|[^"\\\\])*"/', '', $line);
@@ -567,6 +578,15 @@ trait MikrotikRos7RouterState
         }
         // A remove line shows the worst state of the later commands of its menu (the add/set it prepares),
         // and only if something has to be done there: no colour when they are all "ok".
+        // Uninstall: only lines that delete something ("remove [", also inside :if/:foreach), by their own keys;
+        // no inheritance (a foreach that only resets a DHCP option or a provisioning rule deletes nothing)
+        if ($uninstall) {
+            foreach (explode("\n", $script) as $i => $line) {
+                $out[$i] = str_contains((string) preg_replace('/"(?:\\\\.|[^"\\\\])*"/', '', $line), 'remove [') ? ($own[$i] ?? null) : null;
+            }
+
+            return $out;
+        }
         foreach ($removes as $i => $removeMenu) {
             $later = [];
             foreach ($menus as $j => $m) {

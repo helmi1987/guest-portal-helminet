@@ -252,7 +252,7 @@ return [
             'no_passwords' => 'Password non incluse',
             'unfilled' => 'Segnaposto non compilati: :count',
             'legend' => 'Stato del router per riga:',
-            'line_status' => ['unmanaged' => 'nome occupato (prima adottare)', 'missing' => 'mancante', 'update' => 'da aggiornare', 'ok' => 'presente'],
+            'line_status' => ['unmanaged' => 'nome occupato (prima adottare)', 'missing' => 'mancante', 'update' => 'da aggiornare', 'ok' => 'presente', 'remove' => 'verrà rimosso', 'kept' => 'non gestito – resta'],
         ],
         'optional' => 'facoltativo',
         'saved' => 'valori salvati',

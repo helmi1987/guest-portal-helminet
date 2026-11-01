@@ -252,7 +252,7 @@ return [
             'no_passwords' => 'Passwörter nicht enthalten',
             'unfilled' => 'Platzhalter nicht ausgefüllt: :count',
             'legend' => 'Router-Zustand pro Zeile:',
-            'line_status' => ['unmanaged' => 'Name belegt (zuerst übernehmen)', 'missing' => 'fehlt', 'update' => 'muss aktualisiert werden', 'ok' => 'vorhanden'],
+            'line_status' => ['unmanaged' => 'Name belegt (zuerst übernehmen)', 'missing' => 'fehlt', 'update' => 'muss aktualisiert werden', 'ok' => 'vorhanden', 'remove' => 'wird entfernt', 'kept' => 'nicht verwaltet – bleibt'],
         ],
         'optional' => 'optional',
         'saved' => 'Werte gespeichert',

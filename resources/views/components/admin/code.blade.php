@@ -1,7 +1,7 @@
 @props(['code', 'title' => null, 'disabled' => false, 'lines' => null, 'placeholders' => null, 'secretsUrl' => null, 'scope' => null])
 {{-- Command block with copy button (Alpine is loaded with Livewire on admin pages). Disabled: greyed out
      (router state missing or stale, CONCEPT.md §9), not copyable, marked for assistive technology.
-     lines: per-line router state (unmanaged|missing|update|ok|null), coloured with a legend. placeholders (opt-in,
+     lines: per-line router state (unmanaged|missing|update|ok|remove|kept|null), coloured with a legend. placeholders (opt-in,
      ['options' => [NAME => suggestions], 'values' => [NAME => prefill]]): one input per <PLACEHOLDER> of
      the code, replaced live in the shown and copied text (browser only, nothing saved). Password
      placeholders are never rendered: "Insert passwords" (off by default) fetches them from secretsUrl
@@ -137,7 +137,7 @@
         <p class="mb-1 flex flex-wrap items-center gap-2 text-xs" data-line-legend>
             <span>{{ __('portal.setup.script.legend') }}</span>
             {{-- only the states that occur in this block --}}
-            @foreach (['unmanaged' => 'gp-badge-unmanaged', 'missing' => 'gp-badge-error', 'update' => 'gp-badge-warn', 'ok' => 'gp-badge-ok'] as $state => $badge)
+            @foreach (['unmanaged' => 'gp-badge-unmanaged', 'missing' => 'gp-badge-error', 'update' => 'gp-badge-warn', 'ok' => 'gp-badge-ok', 'remove' => 'gp-badge-error', 'kept' => 'gp-badge-unmanaged'] as $state => $badge)
                 @if (in_array($state, $lines, true))
                     <span class="gp-badge {{ $badge }}">{{ $statusLabel($state) }}</span>
                 @endif

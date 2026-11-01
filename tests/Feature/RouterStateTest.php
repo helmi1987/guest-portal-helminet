@@ -550,9 +550,9 @@ class RouterStateTest extends TestCase
         // Access block per router: user missing, group present
         $this->assertSame(['missing'], $state('/user add name=portal-ro group=guest-portal-ro'));
         $this->assertSame(['ok'], $state('/user group add name=guest-portal-ro'));
-        // Comment lines and uninstall blocks stay neutral
+        // Comment lines stay neutral; the uninstall marks the existing own VLAN as "will be removed"
         $this->assertSame([], array_filter(array_keys($lines), fn ($text) => str_starts_with(ltrim($text), '#')));
-        $this->assertSame([], $state('remove [find where name=vlan30-guest'));
+        $this->assertSame(['remove'], $state('remove [find where name=vlan30-guest'));
 
         // Stale state: no colours (the commands are greyed out)
         $this->travel(16)->minutes();
@@ -589,6 +589,31 @@ class RouterStateTest extends TestCase
         $todo = $status(['hotspot:server' => 'missing', 'hotspot:profile' => 'differs', 'guest-portal:walled:portal-host' => 'present',
             'guest-portal:dns:a' => 'present', 'guest-portal:dns:b' => 'missing']);
         $this->assertSame([null, 'missing', null, 'update', 'update', null, null, 'ok', 'missing', null, 'missing', 'ok', 'missing'], $todo);
+    }
+
+    public function test_uninstall_lines_show_what_would_be_removed(): void
+    {
+        $driver = $this->site->driver();
+        $script = implode("\n", [
+            '# comment',
+            '/system scheduler remove [find where name="guest-portal-cert" && (comment="guest-portal:cert:scheduler" || !comment)]',
+            '/ip hotspot remove [find where name="guest-portal"]',
+            '/ip hotspot profile remove [find where name="guest-portal"]',
+            '/radius remove [find where (comment="guest-portal:radius:server" || comment="guest-portal")]',
+            '/ip dhcp-server remove [find where name=guest-dhcp && (comment="guest-portal:net:dhcp-server" || comment="guest-portal")]',
+            '/interface vlan remove [find where name=vlan30-guest && (comment="guest-portal:net:vlan" || comment="guest-portal")]',
+            '/certificate remove [find where name="guest-portal"]',
+            ':foreach gpNet in=[/ip dhcp-server network find where (comment="guest-portal:net:dhcp-network")] do={',
+            '    /ip dhcp-server network set $gpNet dhcp-option=""',
+            '}',
+            ':if (1 = 1) do={ /interface list remove [find where name=GUEST && (comment="guest-portal:fw:list-guest")] }',
+        ]);
+        $status = $driver->lineStatuses($script, ['guest-portal:cert:scheduler' => 'unmanaged', 'hotspot:server' => 'differs',
+            'hotspot:profile' => 'missing', 'guest-portal:radius:server' => 'present', 'guest-portal:net:dhcp-server' => 'unmanaged',
+            'guest-portal:net:vlan' => 'missing', 'guest-portal:net:dhcp-network' => 'present', 'guest-portal:fw:list-guest' => 'present'], true);
+        // Own object exists: remove; only an object without comment: kept (except "|| !comment"); nothing or unknown: null
+        // Only lines that delete: a foreach that only resets an option stays neutral, a remove inside :if counts
+        $this->assertSame([null, 'remove', 'remove', null, 'remove', 'kept', null, null, null, null, null, 'remove'], $status);
     }
 
     public function test_the_legend_lists_only_the_states_of_its_block(): void
