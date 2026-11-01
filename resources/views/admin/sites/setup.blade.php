@@ -137,7 +137,8 @@
         <h2 class="mb-2 text-lg font-semibold">2. {{ __('portal.setup.network.title') }}
             <x-admin.step-status :ok="$networkSaved" :label="$networkSaved ? __('portal.setup.saved') : __('portal.setup.missing')" /></h2>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.network.help') }}</p>
-        <form method="POST" action="{{ route('admin.sites.setup.network', $site) }}" class="mb-4 grid gap-3 md:grid-cols-4">
+        <form method="POST" action="{{ route('admin.sites.setup.network', $site) }}" class="mb-4 grid gap-3 md:grid-cols-4"
+            x-data="{ wifiMode: @js($net('wifi_mode', 'capsman2')) }">
             @csrf
             <label class="label">{{ __('portal.setup.network.vlan_id') }}{{ $mark('vlan_id') }}
                 <input name="vlan_id" type="number" min="1" max="4094" value="{{ $net('vlan_id') }}" placeholder="30" required class="field"></label>
@@ -169,11 +170,33 @@
             <label class="label">{{ __('portal.setup.network.pool') }}{{ $mark('pool') }}
                 <input name="pool" value="{{ $net('pool') }}" placeholder="10.30.0.10-10.30.0.250" required class="field"></label>
             <label class="label">{{ __('portal.setup.network.wifi_mode') }}{{ $mark('wifi_mode') }}
-                <select name="wifi_mode" class="field">
+                <select name="wifi_mode" class="field" x-model="wifiMode">
                     @foreach (['capsman2', 'capsman1', 'local'] as $mode)
                         <option value="{{ $mode }}" @selected($net('wifi_mode', 'capsman2') === $mode)>{{ __('portal.setup.network.modes.'.$mode) }}</option>
                     @endforeach
                 </select></label>
+            {{-- Guest Wi-Fi masters per mode (local to this instance): choices from the router state, else free text --}}
+            @foreach (\App\Models\Site::WIFI_MODES as $mode)
+                @php($chosen = array_map('strval', (array) old('wifi_masters.'.$mode, $wifiMasters[$mode] ?? [])))
+                @php($choices = array_values(array_unique([...$wifiMasterOptions[$mode] ?? [], ...$chosen])))
+                <fieldset class="label md:col-span-2" data-wifi-masters="{{ $mode }}" x-show="wifiMode === @js($mode)" x-bind:disabled="wifiMode !== @js($mode)" @if ($net('wifi_mode', 'capsman2') !== $mode) style="display: none" disabled @endif>
+                    <legend>{{ __('portal.setup.network.wifi_masters.'.$mode) }}</legend>
+                    @if (($wifiMasterOptions[$mode] ?? []) !== [])
+                        <span class="flex flex-wrap gap-x-4 gap-y-1">
+                            @foreach ($choices as $choice)
+                                <span class="text-sm"><input type="checkbox" name="wifi_masters[{{ $mode }}][]" value="{{ $choice }}" @checked(in_array($choice, $chosen, true))>
+                                    {{ $choice }}@if (! in_array($choice, $wifiMasterOptions[$mode], true)) <span class="text-xs text-amber-800">({{ __('portal.setup.network.wifi_masters_not_found') }})</span>@endif</span>
+                            @endforeach
+                        </span>
+                        <input name="wifi_masters_text[{{ $mode }}]" value="{{ old('wifi_masters_text.'.$mode) }}" class="field" placeholder="{{ __('portal.setup.network.wifi_masters_more') }}">
+                    @else
+                        <input name="wifi_masters_text[{{ $mode }}]" value="{{ old('wifi_masters_text.'.$mode, implode(', ', $chosen)) }}" class="field"
+                            placeholder="{{ $mode === 'local' ? 'wifi1, wifi2' : 'cfg-main, cfg-office' }}">
+                    @endif
+                    <span class="text-xs text-slate-500">{{ __('portal.setup.network.wifi_masters_help.'.$mode) }} {{ __('portal.setup.network.wifi_masters_local') }}</span>
+                    @error('wifi_masters_text.'.$mode) <span class="text-xs text-red-700">{{ $message }}</span> @enderror
+                </fieldset>
+            @endforeach
             <label class="label">{{ __('portal.setup.network.html_directory') }}{{ $mark('html_directory') }}
                 <select name="html_directory" class="field">
                     @foreach (\App\Nas\MikrotikRos7Driver::HTML_DIRECTORIES as $dir)

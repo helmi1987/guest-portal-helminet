@@ -86,6 +86,9 @@ class SetupController extends Controller
                 && ($map = $routerId === null ? $siteStatus : ($routerStatus[$routerId] ?? [])) !== []
                 ? $stateDriver->lineStatuses($code, $map) : null,
             'placeholders' => $stateDriver ? $stateDriver->placeholderHints($view, $apiRouters) : ['options' => [], 'values' => []],
+            // Guest Wi-Fi masters (decision 2026-11-01): choices from the stored router states, selection local to this instance
+            'wifiMasterOptions' => $stateDriver ? $stateDriver->wifiMasterOptions($apiRouters) : array_fill_keys(Site::WIFI_MODES, []),
+            'wifiMasters' => collect(Site::WIFI_MODES)->mapWithKeys(fn ($mode) => [$mode => $site->wifiMasters($mode)])->all(),
             'secretsUrl' => $stateDriver ? route('admin.sites.setup.secrets', $site) : null,
         ]);
     }
@@ -201,6 +204,7 @@ class SetupController extends Controller
     {
         $data = $this->validateWithin($request, $site->driver()->setupFields()['network'], 'subnet', ['gateway', 'pool']);
         $data['vlan_id'] = (int) $data['vlan_id'];
+        $masters = $this->wifiMastersInput($request, $site);
         // Guest Wi-Fi password: empty field keeps the stored one, the checkbox removes it. Shared with other
         // instances: replicated setting encrypted with the federation data key; otherwise only in the local
         // column (APP_KEY). Toggling moves the value, no copy stays in the other storage. Only the non-secret
@@ -228,10 +232,48 @@ class SetupController extends Controller
         } else {
             $local = $plain;
         }
-        $site->forceFill(['settings' => array_merge($site->settings ?? [], ['setup' => $data]), 'wifi_password_local' => $local])->save();
-        Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true]));
+        $site->forceFill(['settings' => array_merge($site->settings ?? [], ['setup' => $data]), 'wifi_password_local' => $local,
+            'wifi_masters_local' => $masters])->save();
+        Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true]) + ['wifi_masters' => $masters]);
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-network')->with('status', __('portal.saved'));
+    }
+
+    /**
+     * Guest Wi-Fi masters per Wi-Fi mode (decision 2026-11-01): ticked choices (wifi_masters[mode][])
+     * plus a free-text list (wifi_masters_text[mode], separated by commas or spaces). Instance-local
+     * column, not replicated. Names: RouterOS name characters, at most 16 per mode.
+     *
+     * @return array<string, list<string>>
+     */
+    private function wifiMastersInput(Request $request, Site $site): array
+    {
+        $out = [];
+        $errors = [];
+        foreach (Site::WIFI_MODES as $mode) {
+            // Hidden modes are not submitted (disabled fieldset): keep their stored masters untouched.
+            if (! $request->has("wifi_masters.{$mode}") && ! $request->has("wifi_masters_text.{$mode}")) {
+                $out[$mode] = $site->wifiMasters($mode);
+
+                continue;
+            }
+            $ticked = array_filter((array) $request->input("wifi_masters.{$mode}", []), 'is_string');
+            $text = preg_split('/[\s,]+/', (string) $request->input("wifi_masters_text.{$mode}", ''), -1, PREG_SPLIT_NO_EMPTY);
+            $list = array_values(array_unique(array_map(fn ($m) => trim((string) $m), [...$ticked, ...$text])));
+            $list = array_values(array_filter($list, fn ($m) => $m !== ''));
+            $bad = array_filter($list, fn ($m) => ! Site::validWifiMaster($m));
+            if ($bad !== []) {
+                $errors["wifi_masters_text.{$mode}"] = __('portal.setup.network.wifi_masters_invalid', ['names' => implode(', ', $bad)]);
+            } elseif (count($list) > 16) {
+                $errors["wifi_masters_text.{$mode}"] = __('portal.setup.network.wifi_masters_too_many', ['max' => 16]);
+            }
+            $out[$mode] = $list;
+        }
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        return $out;
     }
 
     public function updateContainer(Request $request, Site $site): RedirectResponse

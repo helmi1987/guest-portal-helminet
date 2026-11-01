@@ -66,6 +66,9 @@ foreach ($wifiModes as $i => $mode) {
             'wifi_password' => Site::encryptWifiPassword($mode === 'capsman2' ? null : $wifiPassword),
         ],
     ]]);
+    // Two guest Wi-Fi masters per mode (instance-local selection): local = radios (absent on the CHR: skipped),
+    // CAPsMAN = master configurations of the seed's provisioning rules (cfg-main with a slave, cfg-office without)
+    $site->forceFill(['wifi_masters_local' => [$mode => $mode === 'local' ? ['wifi1', 'wifi2'] : ['cfg-main', 'cfg-office']]])->save();
     $nas = $site->nasClients()->create(['name' => 'Test router', 'nas_ip' => $routerIp, 'coa_port' => 3799]);
     $nas = NasClient::find($nas->id);
     // Fixed test values (fake, not secrets).

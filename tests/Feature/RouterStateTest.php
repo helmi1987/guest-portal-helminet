@@ -568,7 +568,8 @@ class RouterStateTest extends TestCase
         $this->configureApi();
         $this->fakeRest(['/interface' => [['name' => 'ether1', 'type' => 'ether'], ['name' => 'ether2', 'type' => 'ether'],
             ['name' => 'bridge1', 'type' => 'bridge']], '/interface wifi configuration' => [['name' => 'cfg-main', 'ssid' => 'Office'],
-                ['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi']]] + $this->routerMenus());
+                ['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi']], '/interface wifi provisioning' => [['master-configuration' => 'cfg-main',
+                    'slave-configurations' => 'cfg-iot']]] + $this->routerMenus());
         $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
 
         $page = $this->page();

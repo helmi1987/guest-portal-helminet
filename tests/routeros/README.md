@@ -14,7 +14,7 @@ Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, 
 | `seed.rsc` | "Foreign" defconf-like configuration: firewall, interface lists, bridge, certificates, hotspot profiles, DNS, DHCP, address lists, RADIUS, Wi-Fi/CAPsMAN, scripts; some names start with `guest-portal` on purpose |
 | `pki.sh` | Throw-away test PKI: portal CA + portal server certificate, router chain (root, intermediate, two leaves: RSA PKCS#1, EC PKCS#8) |
 | `stub_portal.py` | HTTPS stand-in for `/router-cert/<id>/...` and `/router-login/<id>/login.html` with the `X-Portal-Token` check |
-| `guard.sh`, `paste.py` | Placeholder guard test of the Wi-Fi block and the API access block (`{ }` + `:error` while the password placeholder is left): terminal paste (`paste.py`, interactive ssh session, line by line) and `/import`; placeholder left = error and nothing changed, filled = objects created, run twice = idempotent. Needs a router without configuration (`loadvm clean`) |
+| `guard.sh`, `paste.py` | Placeholder guard test of the Wi-Fi block and the API access block (`{ }` + `:error` while the password placeholder is left): terminal paste (`paste.py`, interactive ssh session, line by line) and `/import`; placeholder left = error and nothing changed, filled = objects created, run twice = idempotent; capsman1: whole block filled appends `cfg-guest` to the selected rules (existing slave kept), twice = identical. Needs a router without configuration (`loadvm clean`) |
 | `run.sh` | The test: seed, snapshot, run blocks, assertions, uninstall, compare with the snapshot |
 | `chr.sh` | Download/prepare (wireless + container packages), boot (KVM or TCG), VM snapshots, stop |
 
@@ -36,8 +36,11 @@ dependencies. The run needs a router without configuration (fresh image or `load
 ## What is checked
 
 - Every block runs via `/import` without a RouterOS error (placeholders replaced with test values:
-  `<COUNTRY>`, `<MASTER_CFG>`, `<EXISTING_SLAVES>`, `<TRUNK_PORT_TO_CAP>`; the line with `<WIFI_INTERFACE>`
-  is skipped: the CHR has no radio).
+  `<COUNTRY>`, `<TRUNK_PORT_TO_CAP>`, `<API_PASSWORD>`).
+- Wi-Fi masters (fixture: two per mode): CAPsMAN v1/v2 append `cfg-guest` once to the provisioning rules of
+  `cfg-main` (existing slave `cfg-iot` kept) and `cfg-office` (no slave), the unselected rule `cfg-other` is unchanged,
+  the re-run changes nothing (full configuration compared); mode local reports both masters as missing and skips
+  them (the CHR has no radio).
 - Firewall: the `guest-portal:fw:` rules are the first static rules of input and forward, in generated order,
   also when re-run with dynamic hotspot rules present; foreign rules unchanged and in their order.
 - Legacy objects of scripts before the comment keys (`legacy.rsc`: comment `guest-portal` / `guest-portal: ...`,
@@ -68,7 +71,7 @@ dependencies. The run needs a router without configuration (fresh image or `load
 
 ## Not covered (CHR limits)
 
-Real CAPs/radios (provisioning, virtual AP `master-interface`), guests on the hotspot (login, RADIUS
+Real CAPs/radios (provisioning, virtual APs `wifi-guest-<master>` and the rename of an earlier `wifi-guest`), guests on the hotspot (login, RADIUS
 replies, Disconnect), `/container add` (needs device-mode, confirmed physically), a device with a flash
 folder (`flash/hotspot` is a plain directory on the CHR), and the source-IP check of the downloads
 (qemu user networking NATs the router's `src-address`).

@@ -116,7 +116,8 @@ class WifiPasswordTest extends TestCase
             $this->assertStringNotContainsString($password, $wifi);
 
             // Without a password: open, a password set earlier is removed from the own profile only
-            $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['wifi_mode' => $mode] + self::NETWORK])]);
+            $this->site->forceFill(['settings' => array_merge($this->site->settings, ['setup' => ['wifi_mode' => $mode] + self::NETWORK]),
+                'wifi_masters_local' => [$mode => $mode === 'local' ? ['wifi1', 'wifi2'] : ['cfg-main', 'cfg-office']]])->save();
             $site = $this->site->fresh();
             $open = $site->driver()->setupCommands($site, [])['network']['wifi'];
             $this->assertStringContainsString("{$path} security unset [find where name=sec-guest && comment=\"guest-portal:wifi:sec-guest\"] passphrase", $open);
@@ -129,7 +130,8 @@ class WifiPasswordTest extends TestCase
     {
         $nas = NasClient::find($this->site->nasClients()->create(['name' => 'Router A', 'nas_ip' => '10.0.1.1', 'coa_port' => 3799])->id);
         foreach (['capsman1', 'capsman2', 'local'] as $mode) {
-            $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['wifi_mode' => $mode] + self::NETWORK])]);
+            $this->site->forceFill(['settings' => array_merge($this->site->settings, ['setup' => ['wifi_mode' => $mode] + self::NETWORK]),
+                'wifi_masters_local' => [$mode => $mode === 'local' ? ['wifi1', 'wifi2'] : ['cfg-main', 'cfg-office']]])->save();
             $site = $this->site->fresh();
             $driver = $site->driver();
             $objects = $driver->managedObjects($site);
@@ -146,7 +148,9 @@ class WifiPasswordTest extends TestCase
             }
             $this->assertSame(MikrotikRos7Driver::key('wifi', 'sec-guest'), 'guest-portal:wifi:sec-guest');
             $this->assertSame($mode === 'capsman1' ? '/caps-man security' : '/interface wifi security', $objects['wifi']['guest-portal:wifi:sec-guest']['path']);
-            $this->assertSame($mode === 'local', isset($objects['wifi']['guest-portal:wifi:wifi-guest']));
+            // One virtual AP per selected master (mode local); the single "wifi-guest" before 0.16 is legacy
+            $this->assertSame($mode === 'local', isset($objects['wifi']['guest-portal:wifi:wifi-guest-wifi1'], $objects['wifi']['guest-portal:wifi:wifi-guest-wifi2']));
+            $this->assertArrayNotHasKey('guest-portal:wifi:wifi-guest', $objects['wifi']);
             $this->assertSame(['path' => '/ip pool', 'name' => 'guest-pool'], $objects['net']['guest-portal:net:pool']);
 
             $all = $driver->configScript($site, $nas).implode("\n", array_merge(...array_map('array_values',
@@ -154,7 +158,8 @@ class WifiPasswordTest extends TestCase
             preg_match_all('/comment="(guest-portal[^"]*)"/', $all, $m);
             $used = array_unique($m[1]);
             // Exact legacy comment "guest-portal" appears only inside the removal/re-run guards
-            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal'])), $mode);
+            // (and the key of the single virtual AP before 0.16, only in the find conditions of mode local)
+            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest'])), $mode);
             // Outside the find conditions no add/set writes a legacy comment
             $outside = $all;
             do {
@@ -215,7 +220,7 @@ class WifiPasswordTest extends TestCase
         $this->assertNotNull($this->rawLocal());
         $this->assertSame('local-secret-1', Crypt::decryptString($this->rawLocal()));
         $this->assertSame('local-secret-1', $this->site->fresh()->wifiPassword());
-        $this->assertSame(['wifi_password_local'], Federation::localColumns('sites'));
+        $this->assertSame(['wifi_password_local', 'wifi_masters_local'], Federation::localColumns('sites'));
 
         // Replication payload carries neither the secret nor the local column
         app(Outbox::class)->record('sites', $this->site->id);

@@ -129,6 +129,9 @@ trait MikrotikRos7RouterState
             $k('api', 'group') => ['policy' => self::API_POLICY],
             $k('api', 'user') => ['group' => self::API_GROUP],
         ];
+        foreach ($g['wifi_mode'] === 'local' ? $g['wifi_masters'] : [] as $master) {
+            $expect[$k('wifi', self::guestInterface($master))] = ['master-interface' => $master, 'configuration' => 'cfg-guest'];
+        }
         foreach (self::FW_RULES as $rule => $chain) {
             $expect[$k('fw', $rule)] = ['chain' => $chain, 'action' => in_array($rule, self::FW_DROP, true) ? 'drop' : 'accept'];
         }
@@ -168,8 +171,78 @@ trait MikrotikRos7RouterState
             $out['hotspot'][$path === '/ip hotspot' ? 'hotspot:server' : 'hotspot:profile'] = ['path' => $path, 'name' => self::NAME]
                 + $this->compareObject($menus[$path] ?? null, null, ['name' => self::NAME] + $props, 'name');
         }
+        // CAPsMAN: cfg-guest in the slave configurations of the selected masters' provisioning rules
+        if ($g['wifi_mode'] !== 'local') {
+            $path = ($g['wifi_mode'] === 'capsman1' ? '/caps-man' : '/interface wifi').' provisioning';
+            foreach ($g['wifi_masters'] as $master) {
+                $out['wifi'][self::slaveKey($master)] = ['path' => $path, 'name' => $master]
+                    + $this->compareSlaves($menus[$path] ?? null, $master);
+            }
+        }
 
         return $out;
+    }
+
+    /** Status key (not a comment) of "cfg-guest appended to the provisioning rules of master configuration $master". */
+    public static function slaveKey(string $master): string
+    {
+        return self::key('wifi', 'slave-'.$master);
+    }
+
+    /**
+     * Provisioning rules of one master configuration: present when every rule lists cfg-guest as a slave,
+     * missing when there is no rule or a rule without it (the Wi-Fi block appends it).
+     *
+     * @return array{status: string, diff: array<string, array{0: string, 1: string}>}
+     */
+    private function compareSlaves(?array $menu, string $master): array
+    {
+        if ($menu === null || isset($menu['error'])) {
+            return ['status' => 'unknown', 'diff' => []];
+        }
+        $rules = array_values(array_filter((array) ($menu['rows'] ?? []), fn ($r) => ($r['master-configuration'] ?? null) === $master));
+        foreach ($rules as $rule) {
+            $slaves = array_map('trim', explode(',', str_replace(';', ',', (string) ($rule['slave-configurations'] ?? ''))));
+            if (! in_array('cfg-guest', $slaves, true)) {
+                return ['status' => 'missing', 'diff' => ['slave-configurations' => ['+cfg-guest', (string) ($rule['slave-configurations'] ?? '')]]];
+            }
+        }
+
+        return ['status' => $rules === [] ? 'missing' : 'present', 'diff' => []];
+    }
+
+    /**
+     * Masters selectable for the guest Wi-Fi per mode from the stored router states (decision
+     * 2026-11-01): local = wifi interfaces without a master interface (radios), capsman1/capsman2 = the
+     * master configurations of the provisioning rules. Own guest objects are left out.
+     *
+     * @param  iterable<NasClient>  $routers
+     * @return array<string, list<string>>
+     */
+    public function wifiMasterOptions(iterable $routers): array
+    {
+        $out = ['local' => [], 'capsman1' => [], 'capsman2' => []];
+        foreach ($routers as $nas) {
+            $menus = is_array($nas->router_state) ? (array) ($nas->router_state['menus'] ?? []) : [];
+            $rows = fn (string $menu) => (array) ($menus[$menu]['rows'] ?? []);
+            foreach ($rows('/interface wifi') as $r) {
+                if (($r['master-interface'] ?? '') === '') {
+                    $out['local'][] = (string) ($r['name'] ?? '');
+                }
+            }
+            foreach (['capsman1' => '/caps-man provisioning', 'capsman2' => '/interface wifi provisioning'] as $mode => $menu) {
+                foreach ($rows($menu) as $r) {
+                    $out[$mode][] = (string) ($r['master-configuration'] ?? '');
+                }
+            }
+        }
+
+        return array_map(function (array $list) {
+            $list = array_values(array_unique(array_filter($list, fn ($m) => Site::validWifiMaster($m))));
+            sort($list, SORT_NATURAL);
+
+            return $list;
+        }, $out);
     }
 
     /**
@@ -285,7 +358,7 @@ trait MikrotikRos7RouterState
         $enabled = fn (string $menu) => in_array(($rows($menu)[0]['enabled'] ?? ''), ['true', 'yes'], true);
         if ($capsCfg !== null) {
             $set('wifi_mode', 'capsman1', 'own');
-        } elseif ($own('/interface wifi', self::key('wifi', 'wifi-guest')) !== null) {
+        } elseif (collect($rows('/interface wifi'))->contains(fn ($r) => str_starts_with((string) ($r['comment'] ?? ''), self::key('wifi', 'wifi-guest')))) {
             $set('wifi_mode', 'local', 'own');
         } elseif ($wifiCfg !== null && $enabled('/interface wifi capsman')) {
             $set('wifi_mode', 'capsman2', 'own');
@@ -346,8 +419,12 @@ trait MikrotikRos7RouterState
             $t = trim($line);
             $status = null;
             if ($t !== '' && $t[0] !== '#') {
-                preg_match_all('/"('.$n.':[a-z0-9-]+:[a-z0-9-]+)"/', $line, $m);
-                $status = $worst(array_map(fn ($key) => $class($statusByKey[$key] ?? null), array_unique($m[1])));
+                // Object part: also master names (virtual APs "wifi-guest-<master>")
+                preg_match_all('/"('.$n.':[a-z0-9-]+:[A-Za-z0-9._-]+)"/', $line, $m);
+                // Slave append of a provisioning rule (CAPsMAN): status key of its master configuration
+                preg_match_all('/provisioning find where master-configuration="([A-Za-z0-9._-]+)"/', $line, $p);
+                $keys = [...$m[1], ...array_map(fn ($master) => self::slaveKey($master), $p[1])];
+                $status = $worst(array_map(fn ($key) => $class($statusByKey[$key] ?? null), array_unique($keys)));
                 // Menu context ("/ip hotspot profile") or command with its menu ("/ip hotspot add ...")
                 $rest = $t;
                 if ($t[0] === '/') {
@@ -406,7 +483,7 @@ trait MikrotikRos7RouterState
             $add = function (string $placeholder, array $values) use (&$names) {
                 foreach ($values as $v) {
                     $v = self::token($v);
-                    if ($v !== '' && $v !== 'cfg-guest' && $v !== 'wifi-guest') {
+                    if ($v !== '' && $v !== 'cfg-guest' && ! str_starts_with($v, 'wifi-guest')) {
                         $names[$placeholder][$v] = true;
                     }
                 }
@@ -417,13 +494,13 @@ trait MikrotikRos7RouterState
             $add('GUEST_INTERFACE', $interfaces);
             $add('TRUNK_PORT_TO_CAP', array_diff($interfaces, $bridges));
             $add('IF', array_diff($interfaces, $bridges));
-            $add('WIFI_INTERFACE', $col('/interface wifi', 'name'));
+            $masters = $this->wifiMasterOptions([$nas]);
+            $add('WIFI_INTERFACE', $masters['local']);
             $add('BRIDGE', $bridges);
             $add('CONTAINER_BRIDGE', $bridges);
             $add('GUEST_POOL', $col('/ip pool', 'name'));
-            $add('MASTER_CFG', [...$col('/interface wifi configuration', 'name'), ...$col('/caps-man configuration', 'name')]);
-            $add('EXISTING_SLAVES', array_map(fn ($v) => implode(',', array_diff(explode(',', $v), ['cfg-guest'])),
-                [...$col('/interface wifi provisioning', 'slave-configurations'), ...$col('/caps-man provisioning', 'slave-configurations')]));
+            // Master configurations of the provisioning rules (the slave list is computed by the script)
+            $add('MASTER_CFG', [...$masters['capsman1'], ...$masters['capsman2']]);
             $add('MANAGER_IP', array_map(fn ($a) => strstr($a, '/', true), $addresses));
             $add('LAN', array_map(function ($a) {
                 [$ip, $bits] = explode('/', $a, 2);

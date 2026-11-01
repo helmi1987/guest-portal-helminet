@@ -30,6 +30,9 @@ class Site extends Model
 
     public const WIFI_SHARED = 'setup.wifi_password_shared';
 
+    /** Wi-Fi modes with selectable masters (setup assistant, column wifi_masters_local). */
+    public const WIFI_MODES = ['capsman1', 'capsman2', 'local'];
+
     /** Never serialized: instance-local Wi-Fi password (APP_KEY encrypted). */
     protected $hidden = ['wifi_password_local'];
 
@@ -38,7 +41,7 @@ class Site extends Model
 
     protected function casts(): array
     {
-        return ['settings' => 'array', 'wifi_password_local' => 'encrypted'];
+        return ['settings' => 'array', 'wifi_password_local' => 'encrypted', 'wifi_masters_local' => 'array'];
     }
 
     protected static function booted(): void
@@ -161,6 +164,27 @@ class Site extends Model
         }
 
         return is_string($local) && $local !== '' ? $local : null;
+    }
+
+    /**
+     * Guest Wi-Fi masters selected on this instance for a Wi-Fi mode (CONCEPT.md §9, decision
+     * 2026-11-01): local interfaces (mode local) or master configurations of provisioning rules
+     * (capsman1/capsman2). Instance-local, not replicated. Only valid names are returned.
+     *
+     * @return list<string>
+     */
+    public function wifiMasters(string $mode): array
+    {
+        $all = is_array($this->wifi_masters_local) ? $this->wifi_masters_local : [];
+        $list = is_array($all[$mode] ?? null) ? $all[$mode] : [];
+
+        return array_values(array_unique(array_filter(array_map('strval', $list), fn ($m) => self::validWifiMaster($m))));
+    }
+
+    /** Name of a Wi-Fi master: RouterOS name characters only, not one of the guest objects. */
+    public static function validWifiMaster(string $name): bool
+    {
+        return preg_match('/^[A-Za-z0-9._-]{1,48}\z/', $name) === 1 && $name !== 'cfg-guest' && ! str_starts_with($name, 'wifi-guest');
     }
 
     /** "wpa" (a password is set, on some instance) or "open"; replicated, carries no secret. */

@@ -136,6 +136,8 @@ hint in the assistant and leave `sec-guest` untouched in the generated script (n
     security=sec-guest datapath=dp-guest
 
 # Provisioning: create the guest SSID as a slave of your existing master configuration
+# "set" replaces the list: include existing slaves (see print). The setup assistant's Wi-Fi block
+# instead appends cfg-guest to the rules of the selected master configurations, keeping existing slaves.
 /caps-man provisioning set [find where master-configuration=<MASTER_CFG>] \
     slave-configurations=cfg-guest
 # Or create a new rule if none exists:
@@ -177,6 +179,8 @@ On a phone: SSID visible; after connecting, `/caps-man registration-table print`
     security=sec-guest datapath=dp-guest
 
 # Provisioning: add the guest SSID as slave of your existing master configuration
+# "set" replaces the list: include existing slaves (see print). The setup assistant's Wi-Fi block
+# instead appends cfg-guest to the rules of the selected master configurations, keeping existing slaves.
 /interface wifi provisioning set [find where master-configuration=<MASTER_CFG>] \
     slave-configurations=cfg-guest
 # Or new rule:

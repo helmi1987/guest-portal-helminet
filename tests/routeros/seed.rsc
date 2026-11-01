@@ -71,13 +71,22 @@ sign guest-portal-backup
 /ip hotspot walled-garden ip add dst-address=10.0.2.0/24 action=drop comment="foreign: LAN block covering the portal IP"
 /file add name=hotspot-other/login.html contents="foreign login page"
 
-# Wi-Fi (wifi package) and legacy CAPsMAN: master configuration with an existing slave
+# Wi-Fi (wifi package) and legacy CAPsMAN: two master configurations (the selected masters of the fixture),
+# cfg-main with an existing slave, cfg-office without; a third rule (cfg-other) is not selected
 /interface wifi configuration add name=cfg-main ssid=Main-WiFi country=Germany
 /interface wifi configuration add name=cfg-iot ssid=IoT-WiFi country=Germany
+/interface wifi configuration add name=cfg-office ssid=Office-WiFi country=Germany
+/interface wifi configuration add name=cfg-other ssid=Other-WiFi country=Germany
 /interface wifi provisioning add action=create-dynamic-enabled master-configuration=cfg-main slave-configurations=cfg-iot comment="foreign"
+/interface wifi provisioning add action=create-dynamic-enabled master-configuration=cfg-office comment="foreign office"
+/interface wifi provisioning add action=create-dynamic-enabled master-configuration=cfg-other slave-configurations=cfg-iot comment="foreign other"
 /caps-man configuration add name=cfg-main ssid=Main-WiFi country=germany
 /caps-man configuration add name=cfg-iot ssid=IoT-WiFi country=germany
+/caps-man configuration add name=cfg-office ssid=Office-WiFi country=germany
+/caps-man configuration add name=cfg-other ssid=Other-WiFi country=germany
 /caps-man provisioning add action=create-dynamic-enabled master-configuration=cfg-main slave-configurations=cfg-iot comment="foreign"
+/caps-man provisioning add action=create-dynamic-enabled master-configuration=cfg-office comment="foreign office"
+/caps-man provisioning add action=create-dynamic-enabled master-configuration=cfg-other slave-configurations=cfg-iot comment="foreign other"
 
 # Scheduler/scripts, one with a confusable name
 /system script add name=backup-foreign source=":log info backup"

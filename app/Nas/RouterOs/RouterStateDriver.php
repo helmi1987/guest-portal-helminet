@@ -49,6 +49,14 @@ interface RouterStateDriver
     public function placeholderHints(Site $site, iterable $routers): array;
 
     /**
+     * Guest Wi-Fi masters selectable per Wi-Fi mode from the stored router states (setup assistant).
+     *
+     * @param  iterable<NasClient>  $routers
+     * @return array<string, list<string>> mode => names
+     */
+    public function wifiMasterOptions(iterable $routers): array;
+
+    /**
      * Stored passwords for the script placeholders (escaped for quoted strings), only for the admin's
      * explicit "Insert passwords": WIFI_PASSWORD and API_PASSWORD per router id.
      *

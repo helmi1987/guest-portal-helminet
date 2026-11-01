@@ -63,7 +63,9 @@ class SetupAssistantTest extends TestCase
             ->assertSee('X-Portal-Token: '.$this->nas->cert_token, false)
             ->assertSee('/radius monitor [find where comment="guest-portal:radius:server"] once')
             ->assertSee('key=APP_URL value="https://portal.example.com"')
-            ->assertSee('slave-configurations=<EXISTING_SLAVES>,cfg-guest');
+            ->assertSee('/caps-man provisioning find where master-configuration="<MASTER_CFG>"')
+            ->assertSee('slave-configurations=($gpList . "cfg-guest")')
+            ->assertDontSee('<EXISTING_SLAVES>');
 
         $script = $this->site->fresh()->driver()->configScript($this->site->fresh(), $this->nas);
         $this->assertStringContainsString('hotspot-address=10.30.0.1', $script);

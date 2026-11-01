@@ -6,6 +6,8 @@
 #   import = file upload + /import
 # Also: the whole Wi-Fi block incl. the lines after the objects (provisioning, manager, virtual AP) is inside
 # the group, so with the placeholder left none of them runs (capsman2 has no password guard: not tested).
+# capsman1: with the password filled the whole block appends cfg-guest to the selected provisioning rules
+# (existing slave kept) and is idempotent.
 # Cases per block and way: placeholder left -> error, nothing created/changed; filled -> objects created;
 # run twice -> idempotent; placeholder left on existing objects -> unchanged.
 #
@@ -70,9 +72,17 @@ clean_wifi() { local m; for m in configuration security datapath; do ros "$1 $m 
 clean_api() { ros '/user remove [find where comment~"^guest-portal:api:"]; /user group remove [find where comment~"^guest-portal:api:"]' >/dev/null; }
 api_count() { echo $(( $(ros ':put [:len [/user find where comment~"^guest-portal:api:"]]') + $(ros ':put [:len [/user group find where comment~"^guest-portal:api:"]]') )); }
 
+caps_slaves() { ros ":put [:tostr [/caps-man provisioning get [find where master-configuration=\"$1\"] slave-configurations]]" | tr ';' ','; }
+caps_reset() {
+    ros '/caps-man provisioning set [find where comment="guard test"] slave-configurations=cfg-iot; /caps-man provisioning set [find where comment="guard test office"] slave-configurations=""' >/dev/null
+}
+
 ros_wait
-# Prerequisite of the fixture (as in seed.rsc): the bridge the datapath refers to
+# Prerequisite of the fixture (as in seed.rsc): the bridge the datapath refers to, the provisioning rules of the
+# selected CAPsMAN v1 masters (cfg-main with a slave, cfg-office without)
 ros '/interface bridge add name=bridge comment="guard test"' >/dev/null
+ros '/caps-man configuration add name=cfg-main ssid=Main-WiFi country=germany comment="guard test"; /caps-man configuration add name=cfg-iot ssid=IoT-WiFi country=germany comment="guard test"; /caps-man configuration add name=cfg-office ssid=Office-WiFi country=germany comment="guard test"' >/dev/null
+ros '/caps-man provisioning add master-configuration=cfg-main slave-configurations=cfg-iot comment="guard test"; /caps-man provisioning add master-configuration=cfg-office comment="guard test office"' >/dev/null
 log "Rendering (work dir $WORK)"
 (cd "$REPO" && php tests/routeros/render.php "$WORK/rsc" 10.0.2.15 10.0.2.2 8443) >/dev/null || { echo "render failed"; exit 1; }
 
@@ -110,7 +120,7 @@ for way in paste import; do
             config > "$WORK/cfg0t.txt"
             out=$(run_way $way "$WORK/$MODE-full-masked.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-tail.txt"
             check "$T tail, placeholder left: error message" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
-            check "$T tail, placeholder left: no wifi-guest interface added" test "$(ros ':put [:len [/interface wifi find where name=wifi-guest]]')" = 0
+            check "$T tail, placeholder left: no wifi-guest interface added" test "$(ros ':put [:len [/interface wifi find where name~"^wifi-guest"]]')" = 0
         fi
         check "$T tail, placeholder left: configuration unchanged" diff -q "$WORK/cfg0t.txt" <(config)
 
@@ -123,6 +133,21 @@ for way in paste import; do
         out=$(run_way $way "$WORK/$MODE-filled.rsc")
         check "$T run twice: still 3 objects (add-or-set)" test "$(count_wifi "$P")" = 3
         check "$T run twice: configuration identical" diff -q "$WORK/cfg1.txt" <(config)
+
+        if [ "$MODE" = capsman1 ]; then
+            # Whole block with the password filled: cfg-guest appended to both selected rules, existing slave kept;
+            # run twice = identical
+            fill "$WORK/$MODE-full-masked.rsc" "$WORK/$MODE-full-filled.rsc"
+            out=$(run_way $way "$WORK/$MODE-full-filled.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-full1.txt"
+            check "$T whole block filled: no error" bash -c "! grep -qiE 'replace <|script error|syntax error|failure:|bad command|expected end|no such item|does not match' '$WORK/out-$way-$MODE-full1.txt'"
+            check "$T whole block filled: cfg-main slaves cfg-iot,cfg-guest" test "$(caps_slaves cfg-main)" = "cfg-iot,cfg-guest"
+            check "$T whole block filled: cfg-office slaves cfg-guest" test "$(caps_slaves cfg-office)" = "cfg-guest"
+            config > "$WORK/cfg1f.txt"
+            out=$(run_way $way "$WORK/$MODE-full-filled.rsc")
+            check "$T whole block filled, run twice: configuration identical" diff -q "$WORK/cfg1f.txt" <(config)
+            caps_reset
+            config > "$WORK/cfg1.txt"
+        fi
 
         out=$(run_way $way "$WORK/$MODE-masked.rsc")
         check "$T placeholder left on existing objects: error" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
@@ -153,6 +178,7 @@ for way in paste import; do
     clean_api
 done
 
+ros '/caps-man provisioning remove [find where comment~"^guard test"]; /caps-man configuration remove [find where comment="guard test"]' >/dev/null
 ros '/interface bridge remove [find where comment="guard test"]' >/dev/null
 log "Result: $FAILS failure(s); details in $WORK"
 [ $FAILS = 0 ]

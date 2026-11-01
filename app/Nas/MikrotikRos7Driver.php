@@ -83,9 +83,11 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
                 'gateway' => $o('/ip address', $g['interface']), 'pool' => $o('/ip pool', $g['pool_name']),
                 'dhcp-server' => $o('/ip dhcp-server', 'guest-dhcp'), 'dhcp-network' => $o('/ip dhcp-server network', $g['subnet']),
                 'option-114' => $o('/ip dhcp-server option', 'captive-portal')],
+            // Mode local: one virtual AP per selected master interface (decision 2026-11-01)
             'wifi' => ['dp-guest' => $o($wifi.' datapath', 'dp-guest'), 'sec-guest' => $o($wifi.' security', 'sec-guest'),
                 'cfg-guest' => $o($wifi.' configuration', 'cfg-guest')]
-                + ($g['wifi_mode'] === 'local' ? ['wifi-guest' => $o('/interface wifi', 'wifi-guest')] : []),
+                + ($g['wifi_mode'] === 'local' ? array_combine($virtual = array_map(self::guestInterface(...), $g['wifi_masters']),
+                    array_map(fn ($name) => $o('/interface wifi', $name), $virtual)) : []),
             'fw' => ['list-guest' => $o('/interface list', 'GUEST'), 'list-member' => $o('/interface list member', 'GUEST')]
                 + array_map(fn ($list) => $o('/ip firewall address-list', $list), self::FW_ADDRESSES)
                 + array_map(fn () => $o('/ip firewall filter'), self::FW_RULES),
@@ -429,15 +431,18 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
         $wifiHeader = "# Re-runnable: adds dp-guest, sec-guest and cfg-guest or updates the own ones (comment key\n"
             ."# \"{$k('wifi', 'cfg-guest')}\" etc.); objects of others with these names are never changed (the add fails).";
 
+        // Masters (decision 2026-11-01): selected on this instance, else one placeholder master (a master
+        // that does not exist on the router is skipped with a message, also a placeholder left unfilled).
+        $masters = $g['wifi_masters'] !== [] ? $g['wifi_masters'] : [$g['wifi_mode'] === 'local' ? '<WIFI_INTERFACE>' : '<MASTER_CFG>'];
+        $slaves = $g['wifi_mode'] === 'local' ? '' : $this->wifiSlaveAppend($wifiPath, $masters);
+        $virtual = $g['wifi_mode'] === 'local' ? $this->wifiVirtualAps($masters) : '';
+
         $wifi = match ($g['wifi_mode']) {
             'capsman1' => <<<RSC
             # Legacy CAPsMAN (/caps-man, wireless package): manager forwarding, VLAN tagged by the manager
             {$wifiHeader}
             {$wifiObjects}
-            # Guest SSID as slave of your existing master configuration. "set" replaces the list: keep
-            # existing slaves (see print) in <EXISTING_SLAVES>, or remove "<EXISTING_SLAVES>," if there are none.
-            /caps-man provisioning print
-            /caps-man provisioning set [find where master-configuration=<MASTER_CFG>] slave-configurations=<EXISTING_SLAVES>,cfg-guest
+            {$slaves}
             /caps-man manager set enabled=yes
             RSC,
             'capsman2' => <<<RSC
@@ -445,10 +450,7 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             # (no VLAN offload); set PVID {$g['vlan_id']} on the CAP's bridge port instead.
             {$wifiHeader}
             {$wifiObjects}
-            # Guest SSID as slave of your existing master configuration. "set" replaces the list: keep
-            # existing slaves (see print) in <EXISTING_SLAVES>, or remove "<EXISTING_SLAVES>," if there are none.
-            /interface wifi provisioning print
-            /interface wifi provisioning set [find where master-configuration=<MASTER_CFG>] slave-configurations=<EXISTING_SLAVES>,cfg-guest
+            {$slaves}
             /interface wifi capsman set enabled=yes
             # On each CAP: /interface wifi cap set enabled=yes discovery-interfaces=<IF> caps-man-addresses=<MANAGER_IP>
             RSC,
@@ -457,7 +459,7 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             {$wifiHeader}
             {$wifiObjects}
             # configuration=<name> on a virtual AP (to verify); alternative: inline configuration.ssid="{$g['ssid']}"
-            :if ([:len [/interface wifi find where name=wifi-guest && {$o('wifi', 'wifi-guest')}]] = 0) do={ /interface wifi add name=wifi-guest master-interface=<WIFI_INTERFACE> configuration=cfg-guest disabled=no comment="{$k('wifi', 'wifi-guest')}" } else={ /interface wifi set [find where name=wifi-guest && {$o('wifi', 'wifi-guest')}] configuration=cfg-guest comment="{$k('wifi', 'wifi-guest')}" }
+            {$virtual}
             RSC,
         };
         if ($guard !== '') {
@@ -470,7 +472,10 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
         $wifiRemove = match ($g['wifi_mode']) {
             'capsman1', 'capsman2' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
                 ."{$wifiPath} provisioning print\n".$wifiRemoveObjects,
-            default => "# only if created for the guest network: virtual AP and its configuration\n"
+            // Virtual APs per master (and the single one of scripts before 0.16), then the configuration
+            default => "# only if created for the guest network: virtual APs and their configuration\n"
+                .implode('', array_map(fn ($m) => '/interface wifi remove [find where name="'.self::guestInterface($m).'" && '
+                    .self::owned(self::key('wifi', self::guestInterface($m)))."]\n", $g['wifi_masters']))
                 ."/interface wifi remove [find where name=wifi-guest && {$o('wifi', 'wifi-guest')}]\n".$wifiRemoveObjects,
         };
 
@@ -817,7 +822,9 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             'pool' => $pool ?: '<POOL_START>-<POOL_END>',
             'pool_name' => $pool ? 'guest-pool' : '<GUEST_POOL>',
             'ssid' => trim(self::safe($s['ssid'] ?? null)) ?: 'Guest-WiFi',
-            'wifi_mode' => in_array($s['wifi_mode'] ?? null, ['capsman1', 'capsman2', 'local'], true) ? $s['wifi_mode'] : 'capsman2',
+            'wifi_mode' => $mode = in_array($s['wifi_mode'] ?? null, Site::WIFI_MODES, true) ? $s['wifi_mode'] : 'capsman2',
+            // Selected masters of this mode (instance-local, decision 2026-11-01)
+            'wifi_masters' => $site->wifiMasters($mode),
             'html_directory' => in_array($s['html_directory'] ?? null, self::HTML_DIRECTORIES, true) ? $s['html_directory'] : 'hotspot',
             // Decrypted guest Wi-Fi password, '' for an open SSID; only printable ASCII is kept
             'wifi_unavailable' => $site->wifiPasswordUnavailable(),
@@ -1017,6 +1024,69 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
     private function portalUrl(Site $site): string
     {
         return (string) ($site->setting('portal_url') ?: config('app.url'));
+    }
+
+    /** Name of the guest virtual AP on a master interface (mode local), e.g. "wifi-guest-wifi1". */
+    public static function guestInterface(string $master): string
+    {
+        return 'wifi-guest-'.$master;
+    }
+
+    /**
+     * CAPsMAN v1/v2: append cfg-guest to the slave configurations of every provisioning rule whose
+     * master-configuration is one of the selected masters, only when missing; the existing slaves are kept
+     * (computed on the router). This append is the only change the scripts make to objects of others
+     * (decision 2026-11-01); other rules are not touched. Script locals use the prefix "gp" (never named
+     * like a property). A master without a rule is reported and skipped.
+     *
+     * @param  list<string>  $masters
+     */
+    private function wifiSlaveAppend(string $path, array $masters): string
+    {
+        $p = "{$path} provisioning";
+        $out = "# Guest SSID as additional slave of the provisioning rules of the selected master configurations:\n"
+            ."# cfg-guest is appended only when missing, existing slave configurations are kept, other rules are not changed.\n"
+            ."{$p} print";
+        foreach ($masters as $m) {
+            $find = "{$p} find where master-configuration=\"{$m}\"";
+            $out .= "\n:if ([:len [{$find}]] = 0) do={ :put \"guest-portal: no provisioning rule with master-configuration={$m}, skipped\" }\n"
+                .":foreach gpRule in=[{$find}] do={\n"
+                ."    :local gpList \"\"\n"
+                ."    :local gpHas false\n"
+                ."    :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={\n"
+                ."        :if (\$gpSlave = \"cfg-guest\") do={ :set gpHas true }\n"
+                ."        :if ([:len \$gpSlave] > 0) do={ :set gpList (\$gpList . \$gpSlave . \",\") }\n"
+                ."    }\n"
+                ."    :if (!\$gpHas) do={ {$p} set \$gpRule slave-configurations=(\$gpList . \"cfg-guest\") }\n"
+                .'}';
+        }
+
+        return $out;
+    }
+
+    /**
+     * Mode local: one virtual AP "wifi-guest-<master>" per selected master interface, add-or-update by
+     * name + own key "guest-portal:wifi:wifi-guest-<master>". The single "wifi-guest" of scripts before
+     * 0.16 on that master (own key or legacy comment) is renamed to it. A master that does not exist is
+     * reported and skipped.
+     *
+     * @param  list<string>  $masters
+     */
+    private function wifiVirtualAps(array $masters): string
+    {
+        $old = self::owned(self::key('wifi', 'wifi-guest'));
+        $lines = [];
+        foreach ($masters as $m) {
+            $name = self::guestInterface($m);
+            $key = self::key('wifi', $name);
+            $find = "find where name=\"{$name}\" && ".self::owned($key);
+            $lines[] = ":if ([:len [/interface wifi find where name=\"{$m}\"]] = 0) do={ :put \"guest-portal: master interface {$m} not found, {$name} skipped\" } else={\n"
+                ."    :if ([:len [/interface wifi {$find}]] = 0) do={ :foreach gpIf in=[/interface wifi find where name=wifi-guest && master-interface=\"{$m}\" && {$old}] do={ /interface wifi set \$gpIf name=\"{$name}\" comment=\"{$key}\" } }\n"
+                ."    :if ([:len [/interface wifi {$find}]] = 0) do={ /interface wifi add name=\"{$name}\" master-interface=\"{$m}\" configuration=cfg-guest disabled=no comment=\"{$key}\" } else={ /interface wifi set [{$find}] configuration=cfg-guest comment=\"{$key}\" }\n"
+                .'}';
+        }
+
+        return implode("\n", $lines);
     }
 
     /**

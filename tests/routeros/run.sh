@@ -36,8 +36,8 @@ check() { # <description> <command...>
 # Upload and /import one generated block (placeholders replaced with test values); fails on any error.
 run_block() { # <file> [label]
     local f=$1 label=${2:-$(basename "$1")} prep=$WORK/run-$(basename "$1")
-    sed -e "s/<COUNTRY>/${COUNTRY:-Germany}/g" -e 's/<MASTER_CFG>/cfg-main/g' -e 's/<EXISTING_SLAVES>/cfg-iot/g' \
-        -e 's/<TRUNK_PORT_TO_CAP>/veth-trunk/g' -e "s/<API_PASSWORD>/$API_PASS/g" -e '/<WIFI_INTERFACE>/d' "$f" > "$prep"
+    sed -e "s/<COUNTRY>/${COUNTRY:-Germany}/g" \
+        -e 's/<TRUNK_PORT_TO_CAP>/veth-trunk/g' -e "s/<API_PASSWORD>/$API_PASS/g" "$f" > "$prep"
     if grep -v '^[[:space:]]*#' "$prep" | grep -q '<[A-Z_/-]*>'; then
         fail "$label: unreplaced placeholder: $(grep -v '^[[:space:]]*#' "$prep" | grep -o '<[A-Z_/-]*>' | sort -u | tr '\n' ' ')"
         return 1
@@ -81,6 +81,28 @@ profile_ok() { # <label>
     if [ "$p" = "$N|mac,https" ] || [ "$p" = "$N|https,mac" ]; then pass "$1 ($p)"; else fail "$1 (got: $p)"; fi
 }
 norm_fp() { tr -d ':\n ' | tr 'A-F' 'a-f'; }
+
+# Slave configurations of the seed's provisioning rules (master configuration -> list), CAPsMAN modes.
+slaves() { # <master-configuration>
+    local p="/interface wifi provisioning"
+    [ "$MODE" = capsman1 ] && p="/caps-man provisioning"
+    ros ":put [:tostr [$p get [find where master-configuration=\"$1\"] slave-configurations]]" | tr ';' ','
+}
+
+# Selected masters: cfg-guest appended once to cfg-main (cfg-iot kept) and cfg-office, cfg-other unchanged;
+# mode local: both masters reported as missing (no radio on the CHR), no virtual AP created.
+check_wifi_masters() { # <label> <import output file>
+    if [ "$MODE" = local ]; then
+        check "$1: master wifi1 missing -> skipped with a message" grep -q 'master interface wifi1 not found, wifi-guest-wifi1 skipped' "$2"
+        check "$1: master wifi2 missing -> skipped with a message" grep -q 'master interface wifi2 not found, wifi-guest-wifi2 skipped' "$2"
+        check "$1: no virtual AP created" test "$(ros ':put [:len [/interface wifi find where name~"^wifi-guest"]]')" = 0
+        return
+    fi
+    local got
+    got=$(slaves cfg-main); check "$1: cfg-main slaves = cfg-iot,cfg-guest (existing slave kept, got: $got)" test "$got" = "cfg-iot,cfg-guest"
+    got=$(slaves cfg-office); check "$1: cfg-office slaves = cfg-guest (got: $got)" test "$got" = "cfg-guest"
+    got=$(slaves cfg-other); check "$1: cfg-other (not selected) unchanged (got: $got)" test "$got" = "cfg-iot"
+}
 
 # Wi-Fi security sec-guest: passphrase and authentication types as rendered for the site.
 check_wifi_security() { # <rsc dir> <label>
@@ -216,8 +238,13 @@ for MODE in "${MODES[@]}"; do
     run_block "$R/network.vlan_filtering.rsc" "[$MODE] network.vlan_filtering"
     run_block "$R/network.wifi.rsc" "[$MODE] network.wifi"
     check_wifi_security "$R" "[$MODE] wifi"
+    check_wifi_masters "[$MODE] wifi masters" "$WORK/out-network.wifi.rsc.txt"
+    snapshot "$WORK/wifi1-$MODE.txt"
     run_block "$R/network.wifi.rsc" "[$MODE] network.wifi (re-run)"
     check_wifi_security "$R" "[$MODE] wifi (re-run)"
+    check_wifi_masters "[$MODE] wifi masters (re-run)" "$WORK/out-network.wifi.rsc.txt"
+    snapshot "$WORK/wifi2-$MODE.txt"
+    check "[$MODE] wifi re-run idempotent (configuration identical)" diff -q "$WORK/wifi1-$MODE.txt" "$WORK/wifi2-$MODE.txt"
     if [ "$MODE" = local ] && [ -f "$WORK/rsc/capsman2/network.wifi.rsc" ]; then
         # Password change on re-run: the block of the open site (capsman2 fixture) removes the password of
         # the own sec-guest, the site's block sets it again
@@ -323,7 +350,7 @@ for MODE in "${MODES[@]}"; do
         pass "[$MODE] $t: state query ($(grep '^version' "$f"))"
         # Every generated object present with the expected values (container: removed again above; the
         # virtual AP of mode local needs a radio)
-        bad=$(grep -vE '^(version |guest-portal:container:)' "$f" | grep -vE ' (present|foreign)$' | grep -vx 'guest-portal:wifi:wifi-guest missing')
+        bad=$(grep -vE '^(version |guest-portal:container:)' "$f" | grep -vE ' (present|foreign)$' | grep -vxE 'guest-portal:wifi:wifi-guest-wifi[12] missing')
         if [ -z "$bad" ]; then pass "[$MODE] $t: all objects present, values as expected"
         else fail "[$MODE] $t: objects not present or different"; printf '%s\n' "$bad" | sed 's/^/    | /'; fi
         check "[$MODE] $t: foreign RFC1918 10.0.0.0/8 entry (seed) reported as foreign, not added" \
@@ -352,6 +379,7 @@ for MODE in "${MODES[@]}"; do
     log "[$MODE] uninstall"
     # Manual step described in the block: take cfg-guest out of the slave list first
     ros '/interface wifi provisioning set [find where comment="foreign"] slave-configurations=cfg-iot; /caps-man provisioning set [find where comment="foreign"] slave-configurations=cfg-iot' >/dev/null
+    ros '/interface wifi provisioning unset [find where comment="foreign office"] slave-configurations; /caps-man provisioning set [find where comment="foreign office"] slave-configurations=""' >/dev/null
     run_block "$R/uninstall.uninstall.rsc" "[$MODE] uninstall.uninstall"
     run_block "$R/uninstall.uninstall_network.rsc" "[$MODE] uninstall.uninstall_network"
     ros '/file remove [find where name="harness.rsc"]' >/dev/null
