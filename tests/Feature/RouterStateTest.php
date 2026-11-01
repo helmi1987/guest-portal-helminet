@@ -562,6 +562,45 @@ class RouterStateTest extends TestCase
         $this->assertStringNotContainsString('data-line-status', preg_replace('/<div[^>]*data-router-state.*?<\/section>/s', '', $page));
     }
 
+    public function test_remove_lines_are_coloured_only_when_the_following_commands_need_action(): void
+    {
+        $driver = $this->site->driver();
+        $script = implode("\n", [
+            '/ip hotspot',
+            'remove [find name="guest-portal"]',
+            '/ip hotspot profile',
+            'remove [find name="guest-portal"]',
+            'add name=guest-portal dns-name=x',
+            '/ip hotspot walled-garden',
+            'remove [find where (comment="guest-portal:walled:portal-host" || comment="guest-portal")]',
+            'add dst-host=p action=allow comment="guest-portal:walled:portal-host"',
+            '/ip hotspot add name=guest-portal interface=vlan30',
+            '/ip dns static',
+            'remove [find where (comment="guest-portal:dns:a" || comment="guest-portal:dns:b")]',
+            'add name=a comment="guest-portal:dns:a"',
+            'add name=b comment="guest-portal:dns:b"',
+        ]);
+        $status = fn (array $byKey) => $driver->lineStatuses($script, $byKey);
+        // Everything ok: no remove line is coloured
+        $ok = $status(['hotspot:server' => 'present', 'hotspot:profile' => 'present', 'guest-portal:walled:portal-host' => 'present',
+            'guest-portal:dns:a' => 'present', 'guest-portal:dns:b' => 'present']);
+        $this->assertSame([null, null, null, null, 'ok', null, null, 'ok', 'ok', null, null, 'ok', 'ok'], $ok);
+        // A remove line takes the worst state of the later commands of its menu (not of its own keys)
+        $todo = $status(['hotspot:server' => 'missing', 'hotspot:profile' => 'differs', 'guest-portal:walled:portal-host' => 'present',
+            'guest-portal:dns:a' => 'present', 'guest-portal:dns:b' => 'missing']);
+        $this->assertSame([null, 'missing', null, 'update', 'update', null, null, 'ok', 'missing', null, 'missing', 'ok', 'missing'], $todo);
+    }
+
+    public function test_the_legend_lists_only_the_states_of_its_block(): void
+    {
+        $html = \Illuminate\Support\Facades\Blade::render('<x-admin.code :code="$code" :lines="$lines" />', ['code' => "a\nb", 'lines' => ['ok', null]]);
+        $this->assertStringContainsString('data-line-legend', $html);
+        $this->assertStringContainsString('gp-badge-ok', $html);
+        $this->assertStringNotContainsString('gp-badge-error', $html);
+        $this->assertStringNotContainsString('gp-badge-warn', $html);
+        $this->assertStringNotContainsString('gp-badge-unmanaged', $html);
+    }
+
     public function test_objects_without_comment_are_unmanaged_with_a_one_time_adopt_command(): void
     {
         $this->saveNetwork();

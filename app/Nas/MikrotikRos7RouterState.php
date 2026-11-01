@@ -510,9 +510,12 @@ trait MikrotikRos7RouterState
         $depth = 0;
         $group = null;
         $continued = null;
+        $removes = [];
+        $menus = [];
         foreach (explode("\n", $script) as $line) {
             $t = trim($line);
             $status = null;
+            $cmdMenu = null;
             if ($t !== '' && $t[0] !== '#') {
                 // Object part: also master names (virtual APs "wifi-guest-<master>")
                 preg_match_all('/"('.$n.':[a-z0-9-]+:[A-Za-z0-9._-]+)"/', $line, $m);
@@ -551,10 +554,28 @@ trait MikrotikRos7RouterState
                     $group = null;
                 }
                 $continued = str_ends_with($t, '\\') ? $status : null;
+                if ($t[0] !== '/' || $rest !== '') {
+                    $menus[count($out)] = $cmdMenu;
+                }
+                if (str_starts_with($rest.' ', 'remove ')) {
+                    $removes[count($out)] = $cmdMenu;
+                }
             } else {
                 $continued = null;
             }
             $out[] = $status;
+        }
+        // A remove line shows the worst state of the later commands of its menu (the add/set it prepares),
+        // and only if something has to be done there: no colour when they are all "ok".
+        foreach ($removes as $i => $removeMenu) {
+            $later = [];
+            foreach ($menus as $j => $m) {
+                if ($j > $i && $m === $removeMenu && ! isset($removes[$j])) {
+                    $later[] = $out[$j];
+                }
+            }
+            $state = $worst($later);
+            $out[$i] = in_array($state, ['missing', 'update', 'unmanaged'], true) ? $state : null;
         }
 
         return $out;

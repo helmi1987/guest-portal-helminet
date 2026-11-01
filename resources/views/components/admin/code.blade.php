@@ -136,12 +136,12 @@
     @if ($legend)
         <p class="mb-1 flex flex-wrap items-center gap-2 text-xs" data-line-legend>
             <span>{{ __('portal.setup.script.legend') }}</span>
-            <span class="gp-badge gp-badge-error">{{ $statusLabel('missing') }}</span>
-            <span class="gp-badge gp-badge-warn">{{ $statusLabel('update') }}</span>
-            <span class="gp-badge gp-badge-ok">{{ $statusLabel('ok') }}</span>
-            @if (in_array('unmanaged', $lines, true))
-                <span class="gp-badge gp-badge-unmanaged">{{ $statusLabel('unmanaged') }}</span>
-            @endif
+            {{-- only the states that occur in this block --}}
+            @foreach (['unmanaged' => 'gp-badge-unmanaged', 'missing' => 'gp-badge-error', 'update' => 'gp-badge-warn', 'ok' => 'gp-badge-ok'] as $state => $badge)
+                @if (in_array($state, $lines, true))
+                    <span class="gp-badge {{ $badge }}">{{ $statusLabel($state) }}</span>
+                @endif
+            @endforeach
         </p>
     @endif
     <pre x-ref="code" @class(['overflow-x-auto rounded p-3 text-xs', 'bg-slate-900 text-slate-100' => ! $disabled, 'bg-slate-500 text-slate-200' => $disabled])>{!! $html !!}</pre>
