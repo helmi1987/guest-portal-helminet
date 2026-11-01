@@ -497,8 +497,12 @@ trait MikrotikRos7RouterState
     public function lineStatuses(string $script, array $statusByKey, bool $uninstall = false): array
     {
         $class = fn (?string $status) => $uninstall
-            ? match ($status) { 'unmanaged' => 'kept', 'present', 'differs', 'legacy' => 'remove', default => null }
-            : match ($status) { 'unmanaged' => 'unmanaged', 'missing' => 'missing', 'differs', 'legacy' => 'update', 'present', 'foreign' => 'ok', default => null };
+            ? match ($status) {
+                'unmanaged' => 'kept', 'present', 'differs', 'legacy' => 'remove', default => null
+            }
+        : match ($status) {
+            'unmanaged' => 'unmanaged', 'missing' => 'missing', 'differs', 'legacy' => 'update', 'present', 'foreign' => 'ok', default => null
+        };
         $rank = ['ok' => 1, 'kept' => 1, 'update' => 2, 'missing' => 3, 'remove' => 3, 'unmanaged' => 4];
         $worst = function (array $states) use ($rank): ?string {
             $states = array_values(array_filter($states));

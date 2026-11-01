@@ -13,6 +13,7 @@ use App\Nas\RouterOs\Menus;
 use App\Nas\RouterOs\RouterOsException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
+use Illuminate\Support\Facades\Blade;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -618,7 +619,7 @@ class RouterStateTest extends TestCase
 
     public function test_the_legend_lists_only_the_states_of_its_block(): void
     {
-        $html = \Illuminate\Support\Facades\Blade::render('<x-admin.code :code="$code" :lines="$lines" />', ['code' => "a\nb", 'lines' => ['ok', null]]);
+        $html = Blade::render('<x-admin.code :code="$code" :lines="$lines" />', ['code' => "a\nb", 'lines' => ['ok', null]]);
         $this->assertStringContainsString('data-line-legend', $html);
         $this->assertStringContainsString('gp-badge-ok', $html);
         $this->assertStringNotContainsString('gp-badge-error', $html);
