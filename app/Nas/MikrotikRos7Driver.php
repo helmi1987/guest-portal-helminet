@@ -422,9 +422,9 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             .$up("{$wifiPath} configuration", 'name=cfg-guest', $k('wifi', 'cfg-guest'), 'name=cfg-guest',
                 "ssid=\"{$g['ssid']}\" country=<COUNTRY> security=sec-guest datapath=dp-guest");
         if ($guard !== '') {
-            // One "{ ... }" unit: a terminal paste runs line by line, so without the group the lines after
-            // the guard would still run after its :error; inside the group the :error ends the whole block.
-            $wifiObjects = "{\n".$wifiObjects."\n}";
+            // One "{ ... }" unit around the whole Wi-Fi block (closed after the match below): a terminal paste
+            // runs line by line, so lines outside the group would still run after the guard's :error.
+            $wifiObjects = "{\n".$wifiObjects;
         }
         $wifiHeader = "# Re-runnable: adds dp-guest, sec-guest and cfg-guest or updates the own ones (comment key\n"
             ."# \"{$k('wifi', 'cfg-guest')}\" etc.); objects of others with these names are never changed (the add fails).";
@@ -460,6 +460,9 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             :if ([:len [/interface wifi find where name=wifi-guest && {$o('wifi', 'wifi-guest')}]] = 0) do={ /interface wifi add name=wifi-guest master-interface=<WIFI_INTERFACE> configuration=cfg-guest disabled=no comment="{$k('wifi', 'wifi-guest')}" } else={ /interface wifi set [find where name=wifi-guest && {$o('wifi', 'wifi-guest')}] configuration=cfg-guest comment="{$k('wifi', 'wifi-guest')}" }
             RSC,
         };
+        if ($guard !== '') {
+            $wifi .= "\n}";
+        }
 
         $wifiRemoveObjects = "{$wifiPath} configuration remove [find where name=cfg-guest && {$o('wifi', 'cfg-guest')}]\n"
             ."{$wifiPath} security remove [find where name=sec-guest && {$o('wifi', 'sec-guest')}]\n"

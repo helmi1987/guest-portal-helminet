@@ -4,6 +4,8 @@
 # placeholder is not replaced. Checked for both ways a user runs a script:
 #   paste  = lines typed into an interactive terminal session (ssh -tt, one line at a time)
 #   import = file upload + /import
+# Also: the whole Wi-Fi block incl. the lines after the objects (provisioning, manager, virtual AP) is inside
+# the group, so with the placeholder left none of them runs (capsman2 has no password guard: not tested).
 # Cases per block and way: placeholder left -> error, nothing created/changed; filled -> objects created;
 # run twice -> idempotent; placeholder left on existing objects -> unchanged.
 #
@@ -40,10 +42,18 @@ import() { # <file>
 # Whole configuration (with secrets, without header lines), for "nothing changed" comparisons.
 config() { ros '/export terse verbose show-sensitive' | grep -v '^# [0-9]\{4\}-' | grep -v '^# system id' | grep -v '^# software id' | grep -v '^/system keymat-provider'; }
 
-# Block for the test: the generated text up to the closing "}" of the guarded group (the lines after it
-# need other placeholders/hardware: <WIFI_INTERFACE>, <MASTER_CFG>), placeholders other than the password replaced.
+# Whole guarded group as generated (comment lines dropped): from the opening "{" to its matching "}".
+# Other placeholders replaced with harmless values (nothing of the tail may run while the password is left).
+group_all() { # <in> <out>
+    awk '/^\{$/{f=1} f&&!/^#/{print; o=gsub(/\{/,"{"); c=gsub(/\}/,"}"); d+=o-c; if(d==0) exit}' "$1" \
+        | sed -e "s/<COUNTRY>/$COUNTRY/g" -e 's/<MASTER_CFG>/guard-master/g' -e 's/<EXISTING_SLAVES>/guard-slave/g' -e 's/<WIFI_INTERFACE>/ether1/g' > "$2"
+}
+
+# Group up to the three own objects: the tail (provisioning/manager/virtual AP) needs hardware on a real router,
+# so the "password filled" checks run only this part, closed again with "}".
 group_only() { # <in> <out>
-    awk '/^\{$/{f=1} f&&!/^#/{print; o=gsub(/\{/,"{"); c=gsub(/\}/,"}"); d+=o-c; if(d==0) exit}' "$1" | sed -e "s/<COUNTRY>/$COUNTRY/g" > "$2"
+    group_all "$1" "$2.all"
+    awk '/^\/caps-man provisioning print/ || /^:if \(\[:len \[\/interface wifi find/ {print "}"; exit} {print}' "$2.all" > "$2"
 }
 
 fill() { sed -e "s/<WIFI_PASSWORD>/$PASS_WIFI/g" -e "s/<API_PASSWORD>/$PASS_API/g" "$1" > "$2"; }
@@ -86,6 +96,23 @@ for way in paste import; do
         check "$T placeholder left: error message" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
         check "$T placeholder left: no object created" test "$(count_wifi "$P")" = 0
         check "$T placeholder left: configuration unchanged" diff -q "$WORK/cfg0.txt" <(config)
+
+        # Tail inside the group: nothing after the guard may run (paste runs line by line, import as a whole)
+        group_all "$WORK/rsc/$MODE/network.wifi.masked.rsc" "$WORK/$MODE-full-masked.rsc"
+        check "$T whole block (incl. tail) is one group" test "$(tail -n1 "$WORK/$MODE-full-masked.rsc")" = "}"
+        if [ "$MODE" = capsman1 ]; then
+            ros '/caps-man manager set enabled=no' >/dev/null
+            config > "$WORK/cfg0t.txt"
+            out=$(run_way $way "$WORK/$MODE-full-masked.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-tail.txt"
+            check "$T tail, placeholder left: error message" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
+            check "$T tail, placeholder left: caps-man manager still disabled" test "$(ros ':put [/caps-man manager get enabled]')" = false
+        else
+            config > "$WORK/cfg0t.txt"
+            out=$(run_way $way "$WORK/$MODE-full-masked.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-tail.txt"
+            check "$T tail, placeholder left: error message" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
+            check "$T tail, placeholder left: no wifi-guest interface added" test "$(ros ':put [:len [/interface wifi find where name=wifi-guest]]')" = 0
+        fi
+        check "$T tail, placeholder left: configuration unchanged" diff -q "$WORK/cfg0t.txt" <(config)
 
         out=$(run_way $way "$WORK/$MODE-filled.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-fill1.txt"
         check "$T password filled: no error" bash -c "! grep -qiE 'replace <|script error|syntax error|failure:|bad command|expected end|no such item|does not match' '$WORK/out-$way-$MODE-fill1.txt'"
