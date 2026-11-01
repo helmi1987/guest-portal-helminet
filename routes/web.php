@@ -17,6 +17,7 @@ use App\Http\Controllers\Admin\SetupController;
 use App\Http\Controllers\Admin\SiteCodeController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\TermsController;
+use App\Http\Controllers\Admin\ToolboxController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\ApprovalLinkController;
 use App\Http\Controllers\Guest\LocaleController;
@@ -118,7 +119,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 });
             });
 
-            // Admin only: code CSV export, settings, channels, terms, sites/routers/setup, users, audit log, backups, certificates, federation.
+            // Admin only: code CSV export, settings, channels, toolbox, terms, sites/routers/setup, users, audit log, backups, certificates, federation.
             Route::middleware('role:admin')->name('admin.')->group(function () {
                 Route::get('/grants/export', [GrantController::class, 'export'])->name('grants.export');
                 Route::get('/settings', [SettingsController::class, 'show'])->name('settings');
@@ -134,6 +135,13 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/channels/{channel}', [SettingsController::class, 'editChannel'])->name('channels.edit');
                 Route::put('/channels/{channel}', [SettingsController::class, 'updateChannel'])->name('channels.update');
                 Route::delete('/channels/{channel}', [SettingsController::class, 'destroyChannel'])->name('channels.destroy');
+                // Toolbox: standalone helpers, nothing stored (Wi-Fi QR print view is no-store).
+                Route::prefix('/toolbox')->name('toolbox.')->group(function () {
+                    Route::get('/', [ToolboxController::class, 'index'])->name('index');
+                    Route::get('/wifi-qr', [ToolboxController::class, 'wifiQrForm'])->name('wifi-qr');
+                    Route::post('/wifi-qr', [ToolboxController::class, 'wifiQrPrint'])->name('wifi-qr.print')
+                        ->middleware('throttle:30,1,toolbox-wifi-qr');
+                });
                 Route::get('/terms', [TermsController::class, 'index'])->name('terms');
                 Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('terms.update');
 

@@ -17,4 +17,17 @@ class VoucherQrWifiPayloadTest extends TestCase
     {
         $this->assertSame('WIFI:T:WPA;S:a\;b;P:p\\:w\\,d\\"\\\;;', VoucherQr::wifiPayload('a;b', 'p:w,d"\\'));
     }
+
+    public function test_open_network_has_no_password(): void
+    {
+        $this->assertSame('WIFI:S:Guest;T:nopass;;', VoucherQr::wifiPayload('Guest'));
+        $this->assertSame('WIFI:S:Guest;T:nopass;;', VoucherQr::wifiPayload('Guest', ''));
+    }
+
+    public function test_hidden_network_appends_h_true(): void
+    {
+        $this->assertSame('WIFI:T:WPA;S:Guest;P:12345678;H:true;;', VoucherQr::wifiPayload('Guest', '12345678', true));
+        $this->assertSame('WIFI:S:Guest;T:nopass;H:true;;', VoucherQr::wifiPayload('Guest', null, true));
+        $this->assertSame('WIFI:T:WPA;S:Guest;P:12345678;;', VoucherQr::wifiPayload('Guest', '12345678', false));
+    }
 }

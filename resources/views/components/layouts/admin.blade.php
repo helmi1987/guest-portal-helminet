@@ -42,6 +42,7 @@
                                 <a href="{{ route('admin.federation') }}" class="block px-3 py-1 hover:underline">{{ __('portal.federation.title') }}</a>
                             </div>
                         </details>
+                        <a href="{{ route('admin.toolbox.index') }}">{{ __('portal.nav.toolbox') }}</a>
                     @endif
                 </nav>
                 <div class="gp-user-menu flex items-center gap-4 text-sm">

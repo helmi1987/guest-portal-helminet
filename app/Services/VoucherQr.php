@@ -57,17 +57,19 @@ class VoucherQr
 
     /**
      * WIFI: payload (ZXing format; \ ; , : " escaped): open network, or WPA with a password. Values are never
-     * quoted: phones would take the quotes as part of the SSID or password.
+     * quoted: phones would take the quotes as part of the SSID or password. $hidden appends `H:true`
+     * (hidden network).
      */
-    public static function wifiPayload(string $ssid, ?string $password = null): string
+    public static function wifiPayload(string $ssid, ?string $password = null, bool $hidden = false): string
     {
         $value = function (string $v): string {
             return preg_replace('/([\\\\;,:"])/', '\\\\$1', $v);
         };
+        $h = $hidden ? 'H:true;' : '';
 
         return $password === null || $password === ''
-            ? 'WIFI:S:'.$value($ssid).';T:nopass;;'
-            : 'WIFI:T:WPA;S:'.$value($ssid).';P:'.$value($password).';;';
+            ? 'WIFI:S:'.$value($ssid).';T:nopass;'.$h.';'
+            : 'WIFI:T:WPA;S:'.$value($ssid).';P:'.$value($password).';'.$h.';';
     }
 
     /**
