@@ -19,7 +19,8 @@ interface RouterStateDriver
 
     /**
      * Expected objects of the site compared with a stored state, by block: [block => [key => [path,
-     * name, status (present|foreign|missing|differs|legacy|unknown), diff => [property => [expected, actual]]]]].
+     * name, status (present|foreign|missing|differs|legacy|unmanaged|unknown), diff => [property => [expected, actual]],
+     * adopt (only with unmanaged: one-time command that sets the comment key, null when ambiguous)]]].
      */
     public function compareState(Site $site, array $state): array;
 
@@ -32,7 +33,7 @@ interface RouterStateDriver
     public function deriveSetup(Site $site, array $state): array;
 
     /**
-     * Display state per line of a generated script (missing|update|ok|null), from a map comment key
+     * Display state per line of a generated script (unmanaged|missing|update|ok|null), from a map comment key
      * (or hotspot:server|profile) => compare status. Display only.
      *
      * @param  array<string, string>  $statusByKey

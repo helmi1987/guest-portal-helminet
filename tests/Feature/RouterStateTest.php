@@ -562,6 +562,64 @@ class RouterStateTest extends TestCase
         $this->assertStringNotContainsString('data-line-status', preg_replace('/<div[^>]*data-router-state.*?<\/section>/s', '', $page));
     }
 
+    public function test_objects_without_comment_are_unmanaged_with_a_one_time_adopt_command(): void
+    {
+        $this->saveNetwork();
+        $this->configureApi();
+        // Wi-Fi objects as created by 0.6.0 to 0.12.6 (no comment), the VLAN interface by hand; the pool has
+        // a foreign comment (never adopted), the cert script without comment is replaced by the router script
+        $menus = ['/interface wifi datapath' => [['name' => 'dp-guest', 'bridge' => 'bridge1', 'vlan-id' => '30']],
+            '/interface wifi security' => [['name' => 'sec-guest', 'comment' => '']],
+            '/interface wifi configuration' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi']],
+            '/interface vlan' => [['name' => 'vlan30-guest', 'interface' => 'bridge1', 'vlan-id' => '30']],
+            '/ip pool' => [['name' => 'guest-pool', 'ranges' => '10.30.0.10-10.30.0.250', 'comment' => 'my pool']],
+            '/system script' => [['name' => 'guest-portal-cert']],
+            // Two GUEST-like rows without comment: guarded list = foreign; two veth rows = ambiguous
+            '/interface list' => [['name' => 'GUEST']],
+            '/interface veth' => [['name' => 'veth-portal'], ['name' => 'veth-portal']],
+        ] + $this->routerMenus();
+        $this->fakeRest($menus);
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+
+        $site = Site::with('nasClients')->find($this->site->id);
+        $compare = $site->driver()->compareState($site, $this->nas->fresh()->router_state);
+        $wifi = $compare['wifi'];
+        foreach (['dp-guest' => 'datapath', 'sec-guest' => 'security', 'cfg-guest' => 'configuration'] as $name => $menu) {
+            $this->assertSame('unmanaged', $wifi["guest-portal:wifi:{$name}"]['status']);
+            $this->assertSame("/interface wifi {$menu} set [find where name=\"{$name}\" && !comment] comment=\"guest-portal:wifi:{$name}\"",
+                $wifi["guest-portal:wifi:{$name}"]['adopt']);
+        }
+        $this->assertSame('unmanaged', $compare['net']['guest-portal:net:vlan']['status']);
+        $this->assertSame('missing', $compare['net']['guest-portal:net:pool']['status']);
+        $this->assertArrayNotHasKey('adopt', $compare['net']['guest-portal:net:pool']);
+        $this->assertSame('legacy', $compare['cert']['guest-portal:cert:script']['status']);
+        $this->assertSame('foreign', $compare['fw']['guest-portal:fw:list-guest']['status']);
+        $this->assertSame('unmanaged', $compare['container']['guest-portal:container:veth']['status']);
+        $this->assertNull($compare['container']['guest-portal:container:veth']['adopt']);
+
+        $page = $this->page();
+        $this->assertStringContainsString('data-state-item="guest-portal:wifi:dp-guest" data-status="unmanaged"', $page);
+        $this->assertStringContainsString('gp-badge gp-badge-unmanaged', $page);
+        $this->assertStringContainsString('data-adopt-commands="'.$this->nas->id.'"', $page);
+        $this->assertStringContainsString(e('/interface wifi datapath set [find where name="dp-guest" && !comment] comment="guest-portal:wifi:dp-guest"'), $page);
+        $this->assertStringContainsString(e('/interface vlan set [find where name="vlan30-guest" && !comment] comment="guest-portal:net:vlan"'), $page);
+        $this->assertStringContainsString(e(__('portal.router_api.adopt_ambiguous')), $page);
+        // The add lines of the blocks are marked (the add fails until adopted), with the legend entry
+        $lines = $this->lineStates($page);
+        $hit = fn (string $needle) => array_values(array_unique(array_merge(...array_values(array_filter($lines, fn ($t) => str_contains($t, $needle), ARRAY_FILTER_USE_KEY)) ?: [[]])));
+        $this->assertSame(['unmanaged'], $hit('/interface wifi datapath add name=dp-guest'));
+        $this->assertSame(['unmanaged'], $hit('/interface vlan add name=vlan30-guest'));
+        $this->assertStringContainsString('<span class="gp-badge gp-badge-unmanaged">'.e(__('portal.setup.script.line_status.unmanaged')).'</span>', $page);
+        // The scripts themselves never adopt: no set on a row with an empty comment
+        $commands = $site->driver()->setupCommands($site, []);
+        $all = '';
+        array_walk_recursive($commands, function ($rsc) use (&$all) {
+            $all .= $rsc."\n";
+        });
+        $this->assertStringContainsString('/interface wifi datapath add name=dp-guest', $all);
+        $this->assertStringNotContainsString('&& !comment]', $all);
+    }
+
     public function test_placeholders_get_inputs_with_suggestions_from_the_router_state(): void
     {
         $this->saveNetwork();

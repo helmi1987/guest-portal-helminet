@@ -107,14 +107,14 @@ class SetupController extends Controller
 
     /**
      * Comment key (or hotspot:server|profile) => worst compare status over several router comparisons
-     * (missing > differs > legacy > foreign > present > unknown).
+     * (unmanaged > missing > differs > legacy > foreign > present > unknown).
      *
      * @param  list<array<string, array<string, array{status: string}>>>  $compares
      * @return array<string, string>
      */
     public static function statusByKey(array $compares): array
     {
-        $rank = ['unknown' => 0, 'present' => 1, 'foreign' => 2, 'legacy' => 3, 'differs' => 4, 'missing' => 5];
+        $rank = ['unknown' => 0, 'present' => 1, 'foreign' => 2, 'legacy' => 3, 'differs' => 4, 'missing' => 5, 'unmanaged' => 6];
         $out = [];
         foreach ($compares as $compare) {
             foreach ($compare as $items) {

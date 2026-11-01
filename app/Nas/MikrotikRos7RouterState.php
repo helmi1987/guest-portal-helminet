@@ -33,7 +33,7 @@ trait MikrotikRos7RouterState
         '/interface wifi' => ['name', 'configuration', 'master-interface', 'comment'],
         '/interface wifi datapath' => ['name', 'bridge', 'vlan-id', 'comment'],
         '/interface wifi security' => ['name', 'authentication-types', 'comment'],
-        '/interface wifi configuration' => ['name', 'ssid', 'comment'],
+        '/interface wifi configuration' => ['name', 'ssid', 'datapath', 'security', 'comment'],
         '/interface wifi provisioning' => ['action', 'master-configuration', 'slave-configurations', 'comment'],
         '/interface wifi capsman' => ['enabled'],
         '/caps-man manager' => ['enabled'],
@@ -76,6 +76,12 @@ trait MikrotikRos7RouterState
     /** Objects the firewall block adds only when no equal entry exists (an entry of others is used). */
     private const GUARDED = ['guest-portal:fw:list-guest', 'guest-portal:fw:list-member', 'guest-portal:fw:addr-portal',
         'guest-portal:fw:addr-radius', 'guest-portal:fw:addr-rfc1918-10', 'guest-portal:fw:addr-rfc1918-172', 'guest-portal:fw:addr-rfc1918-192'];
+
+    /** Extra identifying properties of an object without comment (adopt command): the env list holds more entries. */
+    private const ADOPT_MATCH = ['guest-portal:container:env-app-url' => ['key' => 'APP_URL']];
+
+    /** Objects the scripts replace also without a comment (certificate script and scheduler by name): legacy, not unmanaged. */
+    private const LEGACY_NO_COMMENT = ['guest-portal:cert:script', 'guest-portal:cert:scheduler'];
 
     /** Filter rules with action drop (all others accept). */
     private const FW_DROP = ['in-drop-mgmt', 'fwd-drop-lan', 'fwd-drop-new'];
@@ -148,18 +154,31 @@ trait MikrotikRos7RouterState
 
     public function compareState(Site $site, array $state): array
     {
-        $menus = (array) ($state['menus'] ?? []);
+        $menus = self::ownWifiComments((array) ($state['menus'] ?? []));
         $expected = $this->expectedValues($site);
         $out = [];
         foreach ($this->managedObjects($site) as $block => $objects) {
             foreach ($objects as $key => $object) {
                 $ident = $object['name'] !== null ? (self::IDENT[$object['path']] ?? 'name') : null;
                 $out[$block][$key] = ['path' => $object['path'], 'name' => $object['name']]
-                    + $this->compareObject($menus[$object['path']] ?? null, $key, $expected[$key] ?? [], $ident);
+                    + $this->compareObject($menus[$object['path']] ?? null, $key, $expected[$key] ?? [], $ident, $object['path']);
+            }
+        }
+        $g = $this->guestValues($site);
+        // Mode local: the single virtual AP "wifi-guest" of 0.6.0 to 0.12.6 (no comment) on a selected master
+        // blocks nothing, but the Wi-Fi block would add a second one: adopt it with the key of the old name,
+        // the block then renames it to wifi-guest-<master>.
+        $wifiRows = (array) ($menus['/interface wifi']['rows'] ?? []);
+        foreach ($g['wifi_mode'] === 'local' ? $g['wifi_masters'] : [] as $master) {
+            $vk = self::key('wifi', self::guestInterface($master));
+            if (($out['wifi'][$vk]['status'] ?? null) === 'missing') {
+                $old = $this->unmanaged($wifiRows, '/interface wifi', self::key('wifi', 'wifi-guest'), ['name' => 'wifi-guest', 'master-interface' => $master]);
+                if ($old['status'] === 'unmanaged') {
+                    $out['wifi'][$vk] = $old + $out['wifi'][$vk];
+                }
             }
         }
         // Hotspot server and profile have no comment: identified by name
-        $g = $this->guestValues($site);
         $dnsName = self::token(((array) $site->setting('hotspot_hosts', []))[0] ?? null);
         $byName = [
             '/ip hotspot' => ['interface' => $g['interface'], 'address-pool' => $g['pool_name'], 'profile' => self::NAME],
@@ -181,6 +200,33 @@ trait MikrotikRos7RouterState
         }
 
         return $out;
+    }
+
+    /**
+     * A wifi package configuration without an own comment reports the comment of its datapath (or, without
+     * one, of its security) as its own (RouterOS 7.24.5, verified on the CHR; the export shows none). Such
+     * an inherited comment is cleared here and the row marked "inherited", so it is never taken for an own
+     * key or legacy comment: the Wi-Fi block's find would stop matching it as soon as it sets the
+     * datapath's key. Assumption: an own comment equal to the datapath's/security's one counts as inherited.
+     */
+    private static function ownWifiComments(array $menus): array
+    {
+        $path = '/interface wifi configuration';
+        if (! isset($menus[$path]['rows'])) {
+            return $menus;
+        }
+        $comments = fn (string $menu) => array_column(array_filter((array) ($menus[$menu]['rows'] ?? []), fn ($r) => isset($r['name'])), 'comment', 'name');
+        $dp = $comments('/interface wifi datapath');
+        $sec = $comments('/interface wifi security');
+        foreach ($menus[$path]['rows'] as $i => $row) {
+            $comment = (string) ($row['comment'] ?? '');
+            $refs = [$dp[(string) ($row['datapath'] ?? '')] ?? null, $sec[(string) ($row['security'] ?? '')] ?? null];
+            if ($comment !== '' && in_array($comment, $refs, true)) {
+                $menus[$path]['rows'][$i] = ['comment' => '', 'inherited' => true] + $row;
+            }
+        }
+
+        return $menus;
     }
 
     /** Status key (not a comment) of "cfg-guest appended to the provisioning rules of master configuration $master". */
@@ -252,7 +298,7 @@ trait MikrotikRos7RouterState
      *
      * @return array{status: string, diff: array<string, array{0: string, 1: string}>}
      */
-    private function compareObject(?array $menu, ?string $key, array $expect, ?string $ident): array
+    private function compareObject(?array $menu, ?string $key, array $expect, ?string $ident, ?string $path = null): array
     {
         if ($menu === null || isset($menu['error'])) {
             return ['status' => 'unknown', 'diff' => []];
@@ -283,7 +329,8 @@ trait MikrotikRos7RouterState
         $n = self::NAME;
         foreach ($rows as $row) {
             $comment = (string) ($row['comment'] ?? '');
-            if ($comment !== $n && ! str_starts_with($comment, $n.': ')) {
+            $noComment = $comment === '' && in_array($key, self::LEGACY_NO_COMMENT, true);
+            if ($comment !== $n && ! str_starts_with($comment, $n.': ') && ! $noComment) {
                 continue;
             }
             $fits = $ident !== null ? ($row[$ident] ?? null) === ($expect[$ident] ?? null) : $diff($row) === [];
@@ -298,9 +345,57 @@ trait MikrotikRos7RouterState
                     return ['status' => 'foreign', 'diff' => []];
                 }
             }
+
+            return ['status' => 'missing', 'diff' => []];
         }
 
-        return ['status' => 'missing', 'diff' => []];
+        return $ident !== null && $path !== null && isset($expect[$ident])
+            ? $this->unmanaged($rows, $path, $key, [$ident => $expect[$ident]] + (self::ADOPT_MATCH[$key] ?? []))
+            : ['status' => 'missing', 'diff' => []];
+    }
+
+    /**
+     * Object of an earlier version created without a comment (0.6.0 to 0.12.6, or by hand following
+     * docs/guest-network-setup.md): a row matching the identifying properties with an empty comment
+     * makes the script's add fail ("already exists") while find matches nothing. Status "unmanaged"
+     * with a one-time adopt command for the admin (decision 2026-11-01): it sets the comment key only on
+     * that row and only while its comment is empty; the scripts never adopt objects themselves. Several
+     * matching rows: no command (ambiguous, to be resolved by hand). Rows with any other comment are not
+     * ours and keep the status "missing".
+     *
+     * @param  array<string, string>  $match  property => value identifying the object
+     * @return array{status: string, diff: array<string, array{0: string, 1: string}>, adopt?: ?string}
+     */
+    private function unmanaged(array $rows, string $path, string $key, array $match): array
+    {
+        $found = array_values(array_filter($rows, function ($r) use ($match) {
+            foreach ($match as $prop => $value) {
+                if ((string) ($r[$prop] ?? '') !== $value) {
+                    return false;
+                }
+            }
+
+            return trim((string) ($r['comment'] ?? '')) === '';
+        }));
+        if ($found === []) {
+            return ['status' => 'missing', 'diff' => []];
+        }
+        $cond = implode(' && ', array_map(fn ($p, $v) => $p.'="'.$v.'"', array_keys($match), $match));
+        // wifi package configuration: also while it only shows the comment of its datapath or security
+        // (ownWifiComments()), evaluated on the router when the command runs (order of the commands free)
+        $empty = '!comment';
+        if ($path === '/interface wifi configuration' && count($found) === 1) {
+            foreach (['datapath', 'security'] as $ref) {
+                $name = (string) ($found[0][$ref] ?? '');
+                if ($name !== '' && preg_match('/^[A-Za-z0-9._-]+$/D', $name)) {
+                    $empty .= " || comment=[/interface wifi {$ref} get [find where name=\"{$name}\"] comment]";
+                }
+            }
+            $empty = $empty === '!comment' ? $empty : "({$empty})";
+        }
+
+        return ['status' => 'unmanaged', 'diff' => [],
+            'adopt' => count($found) === 1 ? "{$path} set [find where {$cond} && {$empty}] comment=\"{$key}\"" : null];
     }
 
     private static function same(string $prop, string $want, string $actual): bool
@@ -387,20 +482,20 @@ trait MikrotikRos7RouterState
 
     /**
      * Display state of each line of a generated script (setup assistant, router script page): the
-     * worst status of the comment keys on the line ("missing" > "update" > "ok"), the hotspot server
+     * worst status of the comment keys on the line ("unmanaged" > "missing" > "update" > "ok"), the hotspot server
      * and profile by "add name=guest-portal" in their menu, continuation lines (trailing "\") and the
      * lines inside a "{ ... }" group opened by a line with a state inherit it. Comment lines and lines
      * without a known key stay null. Display only: the script itself is not changed.
      *
      * @param  array<string, string>  $statusByKey  comment key (or hotspot:server|profile) => compare status
-     * @return list<?string> one entry per line of $script: missing|update|ok|null
+     * @return list<?string> one entry per line of $script: unmanaged|missing|update|ok|null
      */
     public function lineStatuses(string $script, array $statusByKey): array
     {
         $class = fn (?string $status) => match ($status) {
-            'missing' => 'missing', 'differs', 'legacy' => 'update', 'present', 'foreign' => 'ok', default => null,
+            'unmanaged' => 'unmanaged', 'missing' => 'missing', 'differs', 'legacy' => 'update', 'present', 'foreign' => 'ok', default => null,
         };
-        $rank = ['ok' => 1, 'update' => 2, 'missing' => 3];
+        $rank = ['ok' => 1, 'update' => 2, 'missing' => 3, 'unmanaged' => 4];
         $worst = function (array $states) use ($rank): ?string {
             $states = array_values(array_filter($states));
             usort($states, fn ($a, $b) => $rank[$b] <=> $rank[$a]);

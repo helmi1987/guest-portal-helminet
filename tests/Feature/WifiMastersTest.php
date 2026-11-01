@@ -184,6 +184,65 @@ class WifiMastersTest extends TestCase
         $this->assertArrayNotHasKey('EXISTING_SLAVES', $hints);
     }
 
+    public function test_uninstall_takes_cfg_guest_out_of_every_rule_before_removing_the_objects(): void
+    {
+        foreach (['capsman1' => '/caps-man', 'capsman2' => '/interface wifi'] as $mode => $path) {
+            $site = $this->withMode($mode, ['cfg-main']);
+            $u = $site->driver()->setupCommands($site, [], false)['uninstall']['uninstall_network'];
+            $p = "{$path} provisioning";
+            // All rules (not only the selected masters), only while the own cfg-guest exists
+            $this->assertStringContainsString(":if ([:len [{$path} configuration find where name=cfg-guest && (comment=\"guest-portal:wifi:cfg-guest\"", $u);
+            $this->assertStringContainsString(":foreach gpRule in=[{$p} find] do={", $u);
+            $this->assertStringContainsString(':if ($gpSlave = "cfg-guest") do={ :set gpHas true } else={', $u);
+            $this->assertStringContainsString("} else={ {$p} set \$gpRule slave-configurations=[:pick \$gpList 1 [:len \$gpList]] }", $u);
+            $this->assertStringContainsString($mode === 'capsman1' ? "{$p} set \$gpRule slave-configurations=\"\"" : "{$p} unset \$gpRule slave-configurations", $u);
+            $this->assertLessThan(strpos($u, "{$path} configuration remove"), strpos($u, ':foreach gpRule'));
+            // Locals never named like a property
+            preg_match_all('/:local (\w+)/', $u, $m);
+            $this->assertSame([], array_filter($m[1], fn ($l) => ! str_starts_with($l, 'gp')));
+        }
+        $site = $this->withMode('local', ['wifi1']);
+        $this->assertStringNotContainsString('provisioning', $site->driver()->setupCommands($site, [], false)['uninstall']['uninstall_network']);
+    }
+
+    public function test_local_virtual_ap_of_old_versions_without_comment_gets_an_adopt_command(): void
+    {
+        $site = $this->withMode('local', ['wifi1', 'wifi2']);
+        $state = ['host' => '10.0.1.1', 'menus' => ['/interface wifi' => ['rows' => [['name' => 'wifi1'], ['name' => 'wifi2'],
+            ['name' => 'wifi-guest', 'master-interface' => 'wifi1', 'configuration' => 'cfg-guest']]]]];
+        $wifi = $site->driver()->compareState($site, $state)['wifi'];
+        $this->assertSame('unmanaged', $wifi['guest-portal:wifi:wifi-guest-wifi1']['status']);
+        // The key of the old name: the Wi-Fi block then renames it to wifi-guest-wifi1
+        $this->assertSame('/interface wifi set [find where name="wifi-guest" && master-interface="wifi1" && !comment] comment="guest-portal:wifi:wifi-guest"',
+            $wifi['guest-portal:wifi:wifi-guest-wifi1']['adopt']);
+        $this->assertStringContainsString('find where name=wifi-guest && master-interface="wifi1" && (comment="guest-portal:wifi:wifi-guest"', $this->wifi($site));
+        $this->assertSame('missing', $wifi['guest-portal:wifi:wifi-guest-wifi2']['status']);
+    }
+
+    public function test_wifi_configuration_with_an_inherited_comment_counts_as_without_comment(): void
+    {
+        // RouterOS reports the datapath's (or security's) comment for a wifi configuration without its own
+        $site = $this->withMode('capsman2', ['cfg-main']);
+        $menus = fn (string $cfgComment, string $own = '') => ['host' => '10.0.1.1', 'menus' => [
+            '/interface wifi datapath' => ['rows' => [['name' => 'dp-guest', 'comment' => 'guest-portal:wifi:dp-guest']]],
+            '/interface wifi security' => ['rows' => [['name' => 'sec-guest', 'comment' => 'guest-portal']]],
+            '/interface wifi configuration' => ['rows' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi', 'datapath' => 'dp-guest',
+                'security' => 'sec-guest'] + ($cfgComment !== '' ? ['comment' => $cfgComment] : [])]],
+        ]];
+        foreach (['guest-portal:wifi:dp-guest', 'guest-portal', ''] as $inherited) {
+            $cfg = $site->driver()->compareState($site, $menus($inherited))['wifi']['guest-portal:wifi:cfg-guest'];
+            $this->assertSame('unmanaged', $cfg['status'], $inherited);
+            $this->assertSame('/interface wifi configuration set [find where name="cfg-guest" && (!comment'
+                .' || comment=[/interface wifi datapath get [find where name="dp-guest"] comment]'
+                .' || comment=[/interface wifi security get [find where name="sec-guest"] comment])] comment="guest-portal:wifi:cfg-guest"', $cfg['adopt']);
+        }
+        // Own key or a foreign own comment: not inherited
+        $this->assertSame('present', $site->driver()->compareState($site, $menus('guest-portal:wifi:cfg-guest'))['wifi']['guest-portal:wifi:cfg-guest']['status']);
+        $this->assertSame('missing', $site->driver()->compareState($site, $menus('my guest cfg'))['wifi']['guest-portal:wifi:cfg-guest']['status']);
+        // The legacy sec-guest itself stays legacy
+        $this->assertSame('legacy', $site->driver()->compareState($site, $menus(''))['wifi']['guest-portal:wifi:sec-guest']['status']);
+    }
+
     public function test_form_offers_queried_masters_as_checkboxes_else_free_text(): void
     {
         $admin = User::factory()->admin()->create();

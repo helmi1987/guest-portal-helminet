@@ -11,10 +11,11 @@ Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, 
 |---|---|
 | `render.php` | Renders all blocks for a fixture site/router (in-memory SQLite, fake values) into `.rsc` files, one directory per Wi-Fi mode; with `RQ_*` variables runs the router state query against the CHR instead |
 | `legacy.rsc` | Objects as created by scripts before the comment keys (migration check) |
+| `unmanaged.rsc` | Objects as created by versions 0.6.0 to 0.12.6 without comment (VLAN interface, DHCP server, `dp-guest`, `cfg-guest`): router state "unmanaged", adopt commands |
 | `seed.rsc` | "Foreign" defconf-like configuration: firewall, interface lists, bridge, certificates, hotspot profiles, DNS, DHCP, address lists, RADIUS, Wi-Fi/CAPsMAN, scripts; some names start with `guest-portal` on purpose |
 | `pki.sh` | Throw-away test PKI: portal CA + portal server certificate, router chain (root, intermediate, two leaves: RSA PKCS#1, EC PKCS#8) |
 | `stub_portal.py` | HTTPS stand-in for `/router-cert/<id>/...` and `/router-login/<id>/login.html` with the `X-Portal-Token` check |
-| `guard.sh`, `paste.py` | Placeholder guard test of the Wi-Fi block and the API access block (`{ }` + `:error` while the password placeholder is left): terminal paste (`paste.py`, interactive ssh session, line by line) and `/import`; placeholder left = error and nothing changed, filled = objects created, run twice = idempotent; capsman1: whole block filled appends `cfg-guest` to the selected rules (existing slave kept), twice = identical. Needs a router without configuration (`loadvm clean`) |
+| `guard.sh`, `paste.py` | Placeholder guard test of the Wi-Fi block and the API access block (`{ }` + `:error` while the password placeholder is left): terminal paste (`paste.py`, interactive ssh session, line by line) and `/import`; placeholder left = error and nothing changed, filled = objects created, run twice = idempotent; capsman1: whole block filled appends `cfg-guest` to the selected rules (existing slave kept), twice = identical; the network uninstall takes it out again (slave kept, only-`cfg-guest` rule empty), twice = identical. Needs a router without configuration (`loadvm clean`) |
 | `run.sh` | The test: seed, snapshot, run blocks, assertions, uninstall, compare with the snapshot |
 | `chr.sh` | Download/prepare (wireless + container packages), boot (KVM or TCG), VM snapshots, stop |
 
@@ -41,6 +42,11 @@ dependencies. The run needs a router without configuration (fresh image or `load
   `cfg-main` (existing slave `cfg-iot` kept) and `cfg-office` (no slave), the unselected rule `cfg-other` is unchanged,
   the re-run changes nothing (full configuration compared); mode local reports both masters as missing and skips
   them (the CHR has no radio).
+- Objects without comment (`unmanaged.rsc`, per mode, read through REST with the test leaf imported as
+  `harness-api` for www-ssl): VLAN interface, DHCP server, `dp-guest`, `cfg-guest` reported as `unmanaged`
+  (`sec-guest` with the legacy comment stays `legacy`), the Wi-Fi block fails on them ("must use unique name"),
+  the adopt commands of the state (also re-run) set the keys and leave an object with a foreign comment
+  alone, afterwards nothing is unmanaged and the blocks run on the adopted objects.
 - Firewall: the `guest-portal:fw:` rules are the first static rules of input and forward, in generated order,
   also when re-run with dynamic hotspot rules present; foreign rules unchanged and in their order.
 - Legacy objects of scripts before the comment keys (`legacy.rsc`: comment `guest-portal` / `guest-portal: ...`,
@@ -63,6 +69,9 @@ dependencies. The run needs a router without configuration (fresh image or `load
   2729): every generated object present with the expected values (except the container objects, removed
   again before, and the virtual AP of mode local); wrong password = auth error, another pinned key =
   TLS error; a REST write with the read-only user is refused.
+- Uninstall (CAPsMAN v1/v2): `cfg-guest` is taken out of every provisioning rule (`cfg-main`: `cfg-iot`
+  kept, `cfg-office`: empty, `cfg-other`, not selected but given `cfg-guest` by hand: `cfg-iot`); both
+  uninstall blocks re-run = configuration identical.
 - Uninstall: afterwards the full `/export verbose show-sensitive`, the certificate store and the file
   list equal the snapshot taken after seeding, except for documented leftovers: `/radius incoming`,
   `capsman enabled`, the CAPsMAN certificates RouterOS generates when wifi CAPsMAN is enabled, the

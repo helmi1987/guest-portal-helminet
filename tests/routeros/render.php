@@ -8,7 +8,8 @@
  *
  * Router state query instead of rendering (same fixture, one Wi-Fi mode): environment RQ_TYPE (rest or
  * api-ssl), RQ_HOST, RQ_PORT, RQ_CERT (PEM whose key is pinned), RQ_PASS; writes one line per object to
- * <out-dir>/state-<type>.txt ("<key> <status> <diff>") or "error <kind> <detail>".
+ * <out-dir>/state-<type>.txt ("<key> <status> <diff>") or "error <kind> <detail>", and the adopt commands of
+ * objects without comment ("unmanaged") to <out-dir>/adopt-<type>.rsc.
  */
 
 use App\Models\NasClient;
@@ -92,11 +93,17 @@ foreach ($wifiModes as $i => $mode) {
             $lines[] = "error {$error['kind']} {$error['detail']}";
         } else {
             $nas->refresh();
+            $adopt = [];
             foreach ($driver->compareState($site, $nas->router_state) as $objects) {
                 foreach ($objects as $key => $item) {
                     $lines[] = "{$key} {$item['status']}".($item['diff'] !== [] ? ' '.json_encode($item['diff']) : '');
+                    if (($item['adopt'] ?? null) !== null) {
+                        $adopt[] = $item['adopt'];
+                    }
                 }
             }
+            // One-time adopt commands of objects without comment (as shown on the setup page)
+            file_put_contents($out.'/adopt-'.getenv('RQ_TYPE').'.rsc', implode("\n", array_unique($adopt))."\n");
             $lines[] = 'version '.($nas->router_state['menus']['/system resource']['rows'][0]['version'] ?? '?');
         }
         file_put_contents($out.'/state-'.getenv('RQ_TYPE').'.txt', implode("\n", $lines)."\n");

@@ -10,6 +10,14 @@ Conventions: `<ANGLE_BRACKETS>` are placeholders. Example addresses are RFC 1918
 Commands are given in RouterOS 7 slash syntax. Anything not checked against the vendor
 documentation (manual.mikrotik.com, RouterOS 7.26) is marked **(to verify)**. Always test on one site before rolling out to all.
 
+Comment keys: every object below that the setup assistant also creates carries its comment key
+`guest-portal:<block>:<object>` (e.g. `comment="guest-portal:wifi:dp-guest"`), exactly as the generated
+scripts set it. The scripts find, update and remove only objects with their key; an object with the same
+name but without the key (manual setup without it, or assistant versions 0.6.0 to 0.12.6) makes their
+`add` fail ("already exists" or "must use unique name"). The router state of the assistant shows such objects as "name taken (no
+comment)" with a one-time command that sets the key, e.g.
+`/caps-man datapath set [find where name="dp-guest" && !comment] comment="guest-portal:wifi:dp-guest"`.
+
 > Back up first on every router: `/system backup save name=pre-guest` and `/export file=pre-guest`.
 > Use Safe Mode (Winbox/terminal `Ctrl+X`) while changing bridge VLAN filtering or firewall rules.
 
@@ -82,10 +90,10 @@ The commands below show a full setup from scratch (new bridge with filtering).
 /interface bridge port add bridge=bridge1 interface=<TRUNK_PORT_TO_CAP> frame-types=admit-all ingress-filtering=yes
 
 # 2.3 VLAN table: router (bridge1 itself) and trunk are tagged members of VLAN 30
-/interface bridge vlan add bridge=bridge1 tagged=bridge1,<TRUNK_PORT_TO_CAP> vlan-ids=30
+/interface bridge vlan add bridge=bridge1 tagged=bridge1,<TRUNK_PORT_TO_CAP> vlan-ids=30 comment="guest-portal:net:bridge-vlan"
 
 # 2.4 L3 interface for the guest VLAN on the bridge
-/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30
+/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"
 
 # 2.5 Enable filtering (use Safe Mode)
 /interface bridge set bridge1 vlan-filtering=yes
@@ -126,18 +134,19 @@ hint in the assistant and leave `sec-guest` untouched in the generated script (n
 # Datapath: manager forwarding, guest traffic tagged with VLAN 30 by the manager,
 # no client-to-client forwarding
 /caps-man datapath add name=dp-guest bridge=bridge1 vlan-id=30 vlan-mode=use-tag \
-    local-forwarding=no client-to-client-forwarding=no
+    local-forwarding=no client-to-client-forwarding=no comment="guest-portal:wifi:dp-guest"
 
 # Open security profile (no authentication-types = open network)
-/caps-man security add name=sec-guest
+/caps-man security add name=sec-guest comment="guest-portal:wifi:sec-guest"
 
 # Configuration: SSID, security, datapath; set country and channel settings as in your staff config
 /caps-man configuration add name=cfg-guest ssid="Guest-WiFi" country=<COUNTRY> \
-    security=sec-guest datapath=dp-guest
+    security=sec-guest datapath=dp-guest comment="guest-portal:wifi:cfg-guest"
 
 # Provisioning: create the guest SSID as a slave of your existing master configuration
 # "set" replaces the list: include existing slaves (see print). The setup assistant's Wi-Fi block
-# instead appends cfg-guest to the rules of the selected master configurations, keeping existing slaves.
+# instead appends cfg-guest to the rules of the selected master configurations, keeping existing slaves;
+# its uninstall (network) takes cfg-guest out of every rule again, the other slaves are kept.
 /caps-man provisioning set [find where master-configuration=<MASTER_CFG>] \
     slave-configurations=cfg-guest
 # Or create a new rule if none exists:
@@ -168,19 +177,20 @@ On a phone: SSID visible; after connecting, `/caps-man registration-table print`
 
 ```
 # Datapath: bridge + VLAN id, client isolation
-/interface wifi datapath add name=dp-guest bridge=bridge1 vlan-id=30 client-isolation=yes
+/interface wifi datapath add name=dp-guest bridge=bridge1 vlan-id=30 client-isolation=yes comment="guest-portal:wifi:dp-guest"
 # wifi-qcom-ac CAPs: do NOT set vlan-id (no VLAN offload); set PVID 30 on the CAP's bridge port
 
 # Open security (no authentication-types)
-/interface wifi security add name=sec-guest
+/interface wifi security add name=sec-guest comment="guest-portal:wifi:sec-guest"
 
 # Configuration: SSID, country, datapath, security
 /interface wifi configuration add name=cfg-guest ssid="Guest-WiFi" country=<COUNTRY> \
-    security=sec-guest datapath=dp-guest
+    security=sec-guest datapath=dp-guest comment="guest-portal:wifi:cfg-guest"
 
 # Provisioning: add the guest SSID as slave of your existing master configuration
 # "set" replaces the list: include existing slaves (see print). The setup assistant's Wi-Fi block
-# instead appends cfg-guest to the rules of the selected master configurations, keeping existing slaves.
+# instead appends cfg-guest to the rules of the selected master configurations, keeping existing slaves;
+# its uninstall (network) takes cfg-guest out of every rule again, the other slaves are kept.
 /interface wifi provisioning set [find where master-configuration=<MASTER_CFG>] \
     slave-configurations=cfg-guest
 # Or new rule:
@@ -226,11 +236,11 @@ hotspot session if the client IP changes, but the VLAN/subnet is the same so it 
 ## 4. Per site: addressing, DHCP and DNS
 
 ```
-/ip address add address=10.30.0.1/24 interface=vlan30-guest comment="guest gateway"
-/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250
+/ip address add address=10.30.0.1/24 interface=vlan30-guest comment="guest-portal:net:gateway"
+/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250 comment="guest-portal:net:pool"
 /ip dhcp-server add name=guest-dhcp interface=vlan30-guest address-pool=guest-pool \
-    lease-time=30m disabled=no
-/ip dhcp-server network add address=10.30.0.0/24 gateway=10.30.0.1 dns-server=10.30.0.1
+    lease-time=30m disabled=no comment="guest-portal:net:dhcp-server"
+/ip dhcp-server network add address=10.30.0.0/24 gateway=10.30.0.1 dns-server=10.30.0.1 comment="guest-portal:net:dhcp-network"
 ```
 
 - Lease time: short, e.g. 30m-1h, so the pool recovers from many one-time visitors. Do not go below ~10 min (renewal chatter and captive-portal re-detection).
@@ -257,8 +267,8 @@ Phone: connects, gets 10.30.0.x, gateway and DNS 10.30.0.1.
 
 ### 5.1 Interface lists
 ```
-/interface list add name=GUEST
-/interface list member add list=GUEST interface=vlan30-guest
+/interface list add name=GUEST comment="guest-portal:fw:list-guest"
+/interface list member add list=GUEST interface=vlan30-guest comment="guest-portal:fw:list-member"
 # Assuming you already have WAN/LAN lists; otherwise create them and add members
 /interface list print
 ```
@@ -266,10 +276,11 @@ Phone: connects, gets 10.30.0.x, gateway and DNS 10.30.0.1.
 ### 5.2 Address lists
 ```
 /ip firewall address-list
-add list=PORTAL address=<PORTAL_IP> comment="portal instance"
-add list=RFC1918 address=10.0.0.0/8
-add list=RFC1918 address=172.16.0.0/12
-add list=RFC1918 address=192.168.0.0/16
+add list=PORTAL address=<PORTAL_IP> comment="guest-portal:fw:addr-portal"
+add list=PORTAL_RADIUS address=<PORTAL_IP> comment="guest-portal:fw:addr-radius"
+add list=RFC1918 address=10.0.0.0/8 comment="guest-portal:fw:addr-rfc1918-10"
+add list=RFC1918 address=172.16.0.0/12 comment="guest-portal:fw:addr-rfc1918-172"
+add list=RFC1918 address=192.168.0.0/16 comment="guest-portal:fw:addr-rfc1918-192"
 ```
 
 ### 5.3 Input chain (guest -> router)
@@ -279,12 +290,12 @@ existing "drop all not from LAN" rule, and after the established/related accept.
 
 ```
 /ip firewall filter
-add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=67 comment="guest: DHCP"
-add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=53 comment="guest: DNS"
-add chain=input action=accept in-interface-list=GUEST protocol=tcp dst-port=53 comment="guest: DNS tcp"
-add chain=input action=accept in-interface-list=GUEST protocol=icmp limit=10,20:packet comment="guest: ping gateway"
-add chain=input action=accept protocol=udp src-address-list=PORTAL dst-port=3799 comment="portal: Disconnect/CoA"
-add chain=input action=drop in-interface-list=GUEST comment="guest: no router management"
+add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=67 comment="guest-portal:fw:in-dhcp"
+add chain=input action=accept in-interface-list=GUEST protocol=udp dst-port=53 comment="guest-portal:fw:in-dns"
+add chain=input action=accept in-interface-list=GUEST protocol=tcp dst-port=53 comment="guest-portal:fw:in-dns-tcp"
+add chain=input action=accept in-interface-list=GUEST protocol=icmp limit=10,20:packet comment="guest-portal:fw:in-ping"
+add chain=input action=accept protocol=udp src-address-list=PORTAL_RADIUS dst-port=3799 comment="guest-portal:fw:in-coa"
+add chain=input action=drop in-interface-list=GUEST comment="guest-portal:fw:in-drop-mgmt"
 ```
 - Hotspot inserts dynamic rules (hotspot chain) for its own login/redirect ports (commonly TCP 80, 443, 64872-64875 **(to verify)**) at the top of
   input/forward/NAT; they are evaluated before your static rules. If the login page is unreachable only after adding the drop rule, look at `/ip firewall filter
@@ -303,12 +314,12 @@ rule that is not its own, keeping their order. Check with `/ip firewall filter p
 
 ```
 /ip firewall filter
-add chain=forward action=accept connection-state=established,related in-interface-list=GUEST comment="guest: stateful from guests"
-add chain=forward action=accept connection-state=established,related out-interface-list=GUEST comment="guest: stateful to guests"
-add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="guest: portal"
-add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="guest: no LAN / other VLANs / VPN"
-add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="nothing initiates towards guests"
-add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="guest: internet"
+add chain=forward action=accept connection-state=established,related in-interface-list=GUEST comment="guest-portal:fw:fwd-from-guests"
+add chain=forward action=accept connection-state=established,related out-interface-list=GUEST comment="guest-portal:fw:fwd-to-guests"
+add chain=forward action=accept in-interface-list=GUEST dst-address-list=PORTAL protocol=tcp dst-port=443 comment="guest-portal:fw:fwd-portal"
+add chain=forward action=drop in-interface-list=GUEST dst-address-list=RFC1918 comment="guest-portal:fw:fwd-drop-lan"
+add chain=forward action=drop out-interface-list=GUEST in-interface-list=!GUEST connection-state=new comment="guest-portal:fw:fwd-drop-new"
+add chain=forward action=accept in-interface-list=GUEST out-interface-list=WAN comment="guest-portal:fw:fwd-internet"
 ```
 - The stateful accepts cover guest traffic only: a generic established/related accept above the defconf
   FastTrack rule would turn off FastTrack for all traffic.
@@ -395,7 +406,7 @@ The hotspot name is the router's own HTTPS login name and resolves to the guest 
 name is the portal instance. They must differ (the admin UI rejects a hotspot host equal to the portal
 host). Guests must resolve the hotspot name to the router's guest address:
 ```
-/ip dns static add name=hotspot-a.guest.example.com address=10.30.0.1 comment="hotspot host"
+/ip dns static add name=hotspot-a.guest.example.com address=10.30.0.1 comment="guest-portal:dns:hotspot-name"
 ```
 The hotspot name keeps a plain A entry: it is the router itself and the router never fetches it. If the
 guest network gets IPv6 and the hotspot name has a public AAAA record, use the CNAME pattern of 8.1 for it too.
@@ -480,10 +491,10 @@ in the admin UI.
 ### 7.2 Option 1: RouterOS container on a central router (x86/arm64)
 Details: `docs/routeros-container.md`. Summary of the network part:
 ```
-/interface veth add name=veth-portal address=172.17.0.2/24 gateway=172.17.0.1
-/interface bridge add name=containers
-/interface bridge port add bridge=containers interface=veth-portal
-/ip address add address=172.17.0.1/24 interface=containers
+/interface veth add name=veth-portal address=172.17.0.2/24 gateway=172.17.0.1 comment="guest-portal:container:veth"
+/interface bridge add name=containers comment="guest-portal:container:bridge"
+/interface bridge port add bridge=containers interface=veth-portal comment="guest-portal:container:bridge-port"
+/ip address add address=172.17.0.1/24 interface=containers comment="guest-portal:container:gateway"
 ```
 - Container setup on the router (names as in the RouterOS 7 docs):
   - Device mode: `/system/device-mode/update container=yes` needs physical confirmation (reset button or cold boot within 5 minutes; a normal reboot aborts it).
@@ -563,8 +574,8 @@ Many upstream/ISP resolvers drop answers with private addresses ("DNS rebinding 
 pin both names on each router. Pin the portal name as CNAME to an internal name with a static A record
 (the setup assistant generates this):
 ```
-/ip dns static add name=guest-portal-v4.internal address=<PORTAL_IP> comment=guest-portal
-/ip dns static add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment=guest-portal
+/ip dns static add name=guest-portal-v4.internal address=<PORTAL_IP> comment="guest-portal:dns:portal-a"
+/ip dns static add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment="guest-portal:dns:portal-cname"
 :put [:resolve portal.example.com]                          # IPv4 address
 :put [:resolve domain-name=portal.example.com type=ipv6]    # "no appropriate record"
 ```
@@ -725,7 +736,9 @@ configuration (print only) to check its blocks and to prefill empty inputs.
    After a rotation of the router certificate with a new key the query fails with a TLS error until the
    router imported the new certificate (certificate script, daily).
 4. "Query state" (per router) or "Refresh" (all routers): per block present / missing / differs (value
-   expected by the assistant vs. router) / legacy (created by an older version, updated on the next run).
+   expected by the assistant vs. router) / legacy (created by an older version, updated on the next run) /
+   name taken (no comment: created by versions 0.6.0 to 0.12.6 or by hand without the comment key; run the
+   shown one-time adopt commands, then query again).
    The commands are greyed out while a router with API access has no query newer than 15 minutes
    (`PORTAL_ROUTER_STATE_MAX_AGE`) or than the last change of the inputs.
 5. Uninstall: the block removes the user and the group; set the service certificate back first.

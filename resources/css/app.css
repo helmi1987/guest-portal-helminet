@@ -107,10 +107,13 @@
     .gp-badge-error { background-color: #b91c1c; }
     .gp-badge-info { background-color: #0369a1; }
     .gp-badge-neutral { background-color: #475569; }
+    /* Name taken by an object without comment (adopt once): violet, white text about 7.7:1 */
+    .gp-badge-unmanaged { background-color: #6d28d9; }
 
     /* Script lines by router state (code blocks are always dark, slate-900): text colour + left bar */
     .gp-line { border-left: 3px solid transparent; padding-left: 0.375rem; }
     .gp-line-missing { color: #fca5a5; border-left-color: #ef4444; }
     .gp-line-update { color: #fcd34d; border-left-color: #f59e0b; }
     .gp-line-ok { color: #86efac; border-left-color: #22c55e; }
+    .gp-line-unmanaged { color: #c4b5fd; border-left-color: #8b5cf6; }
 }

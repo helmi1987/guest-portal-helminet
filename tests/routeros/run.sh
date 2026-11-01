@@ -63,8 +63,12 @@ run_block() { # <file> [label]
 snapshot() { # <file>
     {
         # keymat-provider: its hkdf-secret="" appears/disappears by itself (RouterOS internal)
-        ros '/export terse verbose show-sensitive' | grep -v '^# [0-9]\{4\}-' | grep -v '^# system id' | grep -v '^# software id' \
-            | grep -v '^/system keymat-provider'
+        # /ip service lines sorted at the end: RouterOS reorders www-ssl in the export after it was enabled once
+        local exp
+        exp=$(ros '/export terse verbose show-sensitive' | grep -v '^# [0-9]\{4\}-' | grep -v '^# system id' | grep -v '^# software id' \
+            | grep -v '^/system keymat-provider')
+        printf '%s\n' "$exp" | grep -v '^/ip service set '
+        printf '%s\n' "$exp" | grep '^/ip service set ' | sort
         echo '#--- certificates'
         ros ':foreach c in=[/certificate find] do={ :put ([/certificate get $c name] . "|" . [/certificate get $c common-name] . "|" . [/certificate get $c fingerprint] . "|key=" . [/certificate get $c private-key] . "|trusted=" . [/certificate get $c trusted]) }' | sort
         echo '#--- files'
@@ -192,6 +196,80 @@ check_cert_state() { # <label> <leaf dir> -> asserts leaf/CAs/profile, prints ce
         && pass "$label: hotspot profile default unchanged" || fail "$label: hotspot profile default changed"
 }
 
+# get returns true/false, set accepts only yes/no ("disabled=true" is a syntax error)
+yesno() { if [ "$1" = true ]; then echo yes; else echo no; fi; }
+
+query() { # <type> <port> <cert> <password> -> state file (router state query of the fixture, mode $MODE)
+    mkdir -p "$WORK/state/$MODE"
+    (cd "$REPO" && RQ_TYPE=$1 RQ_HOST=127.0.0.1 RQ_PORT=$2 RQ_CERT=$3 RQ_PASS=$4 \
+        php tests/routeros/render.php "$WORK/state/$MODE" "$ROUTER_IP" "$PORTAL_IP" "$PORTAL_PORT" "$MODE") >/dev/null
+    echo "$WORK/state/$MODE/state-$1.txt"
+}
+
+# Objects of versions 0.6.0 to 0.12.6 without comment (unmanaged.rsc): reported as "unmanaged" by the state
+# query, the Wi-Fi block fails on them ("already exists"), the adopt commands of the state set the key, then
+# nothing is unmanaged any more (the blocks of the mode then run on the adopted objects). The REST query
+# needs www-ssl with a certificate whose key is pinned: the test leaf is imported as "harness-api" for this
+# phase only (removed again, www-ssl restored).
+check_unmanaged() { # <rsc dir>
+    local R=$1 wifi="/interface wifi" dp="client-isolation=yes" f out
+    [ "$MODE" = capsman1 ] && wifi="/caps-man" && dp="vlan-mode=use-tag local-forwarding=no client-to-client-forwarding=no"
+    sed -e "s|__WIFI__|$wifi|g" -e "s|__DATAPATH__|$dp|g" -e "s|__COUNTRY__|$COUNTRY|g" "$HERE/unmanaged.rsc" > "$WORK/unmanaged-$MODE.rsc"
+    run_block "$WORK/unmanaged-$MODE.rsc" "[$MODE] objects without comment (0.6.0 to 0.12.6)"
+    # Leaf only (router.crt holds the chain: three certificates of the same name, www-ssl might pick a CA)
+    awk '/BEGIN CERTIFICATE/{n++} n==1' "$WORK/pki/leaf2/router.crt" > "$WORK/harness-api.crt"
+    ros_upload "$WORK/harness-api.crt" harness-api.crt && ros_upload "$WORK/pki/leaf2/router.key" harness-api.key
+    ros '/certificate import file-name=harness-api.crt passphrase="" name=harness-api; /certificate import file-name=harness-api.key passphrase="" name=harness-api; /file remove [find where name="harness-api.crt" || name="harness-api.key"]' >/dev/null
+    run_block "$R/api_access.rsc" "[$MODE] api_access (for the unmanaged check)"
+    local svc
+    svc=$(ros ':put ([/ip service get www-ssl certificate] . "|" . [/ip service get www-ssl disabled])')
+    ros '/ip service set www-ssl certificate=harness-api disabled=no' >/dev/null
+    local i
+    for i in 1 2 3 4 5; do
+        sleep 3
+        f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+        grep -qE '^error (tls|connect)' "$f" || break
+    done
+    if grep -q '^error' "$f"; then
+        fail "[$MODE] unmanaged: state query: $(grep '^error' "$f")"
+    else
+        local k
+        for k in wifi:dp-guest wifi:cfg-guest net:vlan net:dhcp-server; do
+            check "[$MODE] unmanaged: guest-portal:$k without comment reported as unmanaged" grep -qx "guest-portal:$k unmanaged" "$f"
+        done
+        check "[$MODE] unmanaged: sec-guest with the legacy comment stays legacy" grep -qx 'guest-portal:wifi:sec-guest legacy.*' "$f"
+        cp "$f" "$WORK/state/$MODE/state-rest-unmanaged.txt"; cp "$WORK/state/$MODE/adopt-rest.rsc" "$WORK/state/$MODE/adopt-unmanaged.rsc"
+        check "[$MODE] unmanaged: exactly these 4 objects are unmanaged" \
+            test "$(grep -c ' unmanaged$' "$f")" = 4
+        local adopt=$WORK/state/$MODE/adopt-unmanaged.rsc
+        sed 's/^/    adopt| /' "$adopt"
+        check "[$MODE] unmanaged: one adopt command per object, only for an empty comment" \
+            test "$(grep -c '&& (\?!comment.*\] comment="guest-portal:' "$adopt")" = 4
+        # Before adopting: the Wi-Fi block fails on the name (nothing of it changed), as reported
+        cp "$R/network.wifi.rsc" "$WORK/wifi-before-adopt.rsc"
+        local prep=$WORK/run-wifi-before-adopt.rsc
+        sed -e "s/<COUNTRY>/$COUNTRY/g" "$WORK/wifi-before-adopt.rsc" > "$prep"
+        ros_upload "$prep" harness.rsc
+        out=$(ros '/import file-name=harness.rsc')
+        check "[$MODE] unmanaged: Wi-Fi block fails before adopting (already exists)" grep -qiE 'already (have|exists)|must use unique name' <<<"$out"
+        printf '%s\n' "$out" | grep -iE 'already|failure' | head -3 | sed 's/^/    | /'
+        # The adopt condition never matches an object with a comment (names are unique, so checked on a test pool)
+        ros '/ip pool add name=gp-adopt-test ranges=10.99.0.1-10.99.0.2 comment="foreign"; /ip pool set [find where name="gp-adopt-test" && !comment] comment="guest-portal:net:pool"' >/dev/null
+        check "[$MODE] unmanaged: adopt condition leaves a foreign comment alone" \
+            test "$(ros ':put [/ip pool get [find where name="gp-adopt-test"] comment]')" = foreign
+        ros '/ip pool remove [find where name="gp-adopt-test"]' >/dev/null
+        run_block "$adopt" "[$MODE] adopt commands"
+        run_block "$adopt" "[$MODE] adopt commands (re-run: no-op)"
+        f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+        check "[$MODE] unmanaged: after adopting nothing is unmanaged" test "$(grep -c ' unmanaged$' "$f")" = 0
+        check "[$MODE] unmanaged: dp-guest now has its key" \
+            test "$(ros ":put [:len [$wifi datapath find where name=dp-guest && comment=\"$N:wifi:dp-guest\"]]")" = 1
+    fi
+    ros "/ip service set www-ssl certificate=$(cut -d'|' -f1 <<<"$svc") disabled=$(yesno "$(cut -d'|' -f2 <<<"$svc")")" >/dev/null
+    ros '/certificate remove [find where name~"^harness-api"]' >/dev/null
+    ros '/file remove [find where name="harness.rsc"]' >/dev/null
+}
+
 # ---------------------------------------------------------------------------------------------
 log "Preparing (work dir $WORK)"
 ROUTER_IP=$(ros ':put [/ip address get [:pick [/ip address find where interface=ether1] 0] address]' | cut -d/ -f1)
@@ -231,9 +309,11 @@ for MODE in "${MODES[@]}"; do
     run_block "$HERE/legacy.rsc" "[$MODE] legacy objects"
     if [ "$MODE" = capsman1 ]; then ros '/caps-man security add name=sec-guest comment="guest-portal"' >/dev/null
     else ros '/interface wifi security add name=sec-guest comment="guest-portal"' >/dev/null; fi
-    log "[$MODE] network step"
     COUNTRY=Germany
     [ "$MODE" = capsman1 ] && COUNTRY=germany
+    log "[$MODE] objects without comment of versions 0.6.0 to 0.12.6 (unmanaged, adopt command)"
+    check_unmanaged "$R"
+    log "[$MODE] network step"
     run_block "$R/network.vlan.rsc" "[$MODE] network.vlan"
     run_block "$R/network.vlan_filtering.rsc" "[$MODE] network.vlan_filtering"
     run_block "$R/network.wifi.rsc" "[$MODE] network.wifi"
@@ -337,12 +417,6 @@ for MODE in "${MODES[@]}"; do
     svc_before=$(ros ':foreach s in=[/ip service find where name="www-ssl" || name="api-ssl"] do={ :put ([/ip service get $s name] . "|" . [/ip service get $s certificate] . "|" . [/ip service get $s disabled]) }')
     ros "/ip service set www-ssl certificate=$N disabled=no; /ip service set api-ssl certificate=$N disabled=no" >/dev/null
     sleep 2
-    query() { # <type> <port> <cert> <password> -> state file
-        mkdir -p "$WORK/state/$MODE"
-        (cd "$REPO" && RQ_TYPE=$1 RQ_HOST=127.0.0.1 RQ_PORT=$2 RQ_CERT=$3 RQ_PASS=$4 \
-            php tests/routeros/render.php "$WORK/state/$MODE" "$ROUTER_IP" "$PORTAL_IP" "$PORTAL_PORT" "$MODE") >/dev/null
-        echo "$WORK/state/$MODE/state-$1.txt"
-    }
     for t in rest api-ssl; do
         port=$ROS_REST_PORT; [ "$t" = api-ssl ] && port=$ROS_APISSL_PORT
         f=$(query "$t" "$port" "$WORK/pki/leaf2/router.crt" "$API_PASS")
@@ -372,24 +446,44 @@ for MODE in "${MODES[@]}"; do
     check "[$MODE] rest: write with the read-only user refused (HTTP $code)" test "$code" != 200 -a "$code" != 201
     check "[$MODE] rest: nothing written" test -z "$(ros ':put [/ip pool find where name=gp-write-test]')"
     while IFS='|' read -r sname scert sdis; do
-        [ -n "$sname" ] && ros "/ip service set $sname certificate=$scert disabled=$sdis" >/dev/null
+        [ -n "$sname" ] && ros "/ip service set $sname certificate=$scert disabled=$(yesno "$sdis")" >/dev/null
     done <<<"$svc_before"
 
     check_keys_known "$R" "[$MODE] before uninstall"
     log "[$MODE] uninstall"
-    # Manual step described in the block: take cfg-guest out of the slave list first
-    ros '/interface wifi provisioning set [find where comment="foreign"] slave-configurations=cfg-iot; /caps-man provisioning set [find where comment="foreign"] slave-configurations=cfg-iot' >/dev/null
-    ros '/interface wifi provisioning unset [find where comment="foreign office"] slave-configurations; /caps-man provisioning set [find where comment="foreign office"] slave-configurations=""' >/dev/null
+    if [ "$MODE" != local ]; then
+        # cfg-guest also in a rule that is not selected (added by hand): the uninstall takes it out of every rule
+        pv="/interface wifi provisioning"; [ "$MODE" = capsman1 ] && pv="/caps-man provisioning"
+        ros "$pv set [find where comment=\"foreign other\"] slave-configurations=cfg-iot,cfg-guest" >/dev/null
+        got=$(slaves cfg-other); check "[$MODE] before uninstall: cfg-other slaves cfg-iot,cfg-guest (got: $got)" test "$got" = "cfg-iot,cfg-guest"
+    fi
+    if [ "$MODE" = local ] && [ -f "$WORK/rsc/capsman2/network.wifi.rsc" ]; then
+        # The Wi-Fi block of the open site (capsman2 fixture, run above for the password change) appended cfg-guest
+        # to the wifi provisioning rules; the uninstall of mode local does not touch provisioning: reset by hand
+        ros '/interface wifi provisioning set [find where comment="foreign"] slave-configurations=cfg-iot; /interface wifi provisioning unset [find where comment="foreign office"] slave-configurations' >/dev/null
+    fi
     run_block "$R/uninstall.uninstall.rsc" "[$MODE] uninstall.uninstall"
     run_block "$R/uninstall.uninstall_network.rsc" "[$MODE] uninstall.uninstall_network"
+    if [ "$MODE" != local ]; then
+        got=$(slaves cfg-main); check "[$MODE] uninstall: cfg-main slaves cfg-iot (cfg-guest removed, other slave kept, got: $got)" test "$got" = "cfg-iot"
+        got=$(slaves cfg-office); check "[$MODE] uninstall: cfg-office slaves empty (only cfg-guest before, got: '$got')" test -z "$got"
+        got=$(slaves cfg-other); check "[$MODE] uninstall: cfg-other (not selected) slaves cfg-iot (got: $got)" test "$got" = "cfg-iot"
+        check "[$MODE] uninstall: cfg-guest removed" test "$(ros ":put [:len [${pv% provisioning} configuration find where name=cfg-guest]]")" = 0
+    fi
     ros '/file remove [find where name="harness.rsc"]' >/dev/null
     snapshot "$WORK/after-$MODE.txt"
+    # Re-run of both uninstall blocks: no error, nothing changed
+    run_block "$R/uninstall.uninstall.rsc" "[$MODE] uninstall.uninstall (re-run)"
+    run_block "$R/uninstall.uninstall_network.rsc" "[$MODE] uninstall.uninstall_network (re-run)"
+    ros '/file remove [find where name="harness.rsc"]' >/dev/null
+    snapshot "$WORK/after2-$MODE.txt"
+    check "[$MODE] uninstall re-run idempotent (configuration identical)" diff -q "$WORK/after-$MODE.txt" "$WORK/after2-$MODE.txt"
     # Left on purpose (documented in the uninstall block as manual / not ours to remove):
     #   global settings /radius incoming, /interface wifi capsman enabled, /caps-man manager enabled;
     #   created by RouterOS itself: the CAPsMAN certificates of "/interface wifi capsman set enabled=yes",
     #   the disabled "place hotspot rules here" placeholders and the default files of the hotspot
     #   html-directory (shared with other hotspots, login.html is not removed)
-    allowed='/radius incoming set|/interface wifi capsman set|/caps-man manager set|WiFi-CAPsMAN-|.*comment="place hotspot rules here"|(flash/)?hotspot(/|\\|)|flash\\|'
+    allowed='/radius incoming set|/interface wifi capsman set|/caps-man manager set|WiFi-CAPsMAN-|.*comment="place hotspot rules here"|(flash/)?hotspot(/|\|)|flash\|'
     d=$(diff "$WORK/before.txt" "$WORK/after-$MODE.txt" | grep '^[<>]' | grep -vE "^[<>] ($allowed)")
     if [ -z "$d" ]; then
         pass "[$MODE] after uninstall the configuration equals the snapshot before (except: radius incoming, capsman enabled)"

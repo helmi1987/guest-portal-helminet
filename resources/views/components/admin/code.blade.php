@@ -1,7 +1,7 @@
 @props(['code', 'title' => null, 'disabled' => false, 'lines' => null, 'placeholders' => null, 'secretsUrl' => null, 'scope' => null])
 {{-- Command block with copy button (Alpine is loaded with Livewire on admin pages). Disabled: greyed out
      (router state missing or stale, CONCEPT.md §9), not copyable, marked for assistive technology.
-     lines: per-line router state (missing|update|ok|null), coloured with a legend. placeholders (opt-in,
+     lines: per-line router state (unmanaged|missing|update|ok|null), coloured with a legend. placeholders (opt-in,
      ['options' => [NAME => suggestions], 'values' => [NAME => prefill]]): one input per <PLACEHOLDER> of
      the code, replaced live in the shown and copied text (browser only, nothing saved). Password
      placeholders are never rendered: "Insert passwords" (off by default) fetches them from secretsUrl
@@ -139,6 +139,9 @@
             <span class="gp-badge gp-badge-error">{{ $statusLabel('missing') }}</span>
             <span class="gp-badge gp-badge-warn">{{ $statusLabel('update') }}</span>
             <span class="gp-badge gp-badge-ok">{{ $statusLabel('ok') }}</span>
+            @if (in_array('unmanaged', $lines, true))
+                <span class="gp-badge gp-badge-unmanaged">{{ $statusLabel('unmanaged') }}</span>
+            @endif
         </p>
     @endif
     <pre x-ref="code" @class(['overflow-x-auto rounded p-3 text-xs', 'bg-slate-900 text-slate-100' => ! $disabled, 'bg-slate-500 text-slate-200' => $disabled])>{!! $html !!}</pre>

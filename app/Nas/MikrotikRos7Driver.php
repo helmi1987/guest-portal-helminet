@@ -470,8 +470,8 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             ."{$wifiPath} security remove [find where name=sec-guest && {$o('wifi', 'sec-guest')}]\n"
             ."{$wifiPath} datapath remove [find where name=dp-guest && {$o('wifi', 'dp-guest')}]";
         $wifiRemove = match ($g['wifi_mode']) {
-            'capsman1', 'capsman2' => "# only if created for the guest network: first remove cfg-guest from slave-configurations (print)\n"
-                ."{$wifiPath} provisioning print\n".$wifiRemoveObjects,
+            'capsman1', 'capsman2' => $this->wifiSlaveRemove($wifiPath, $o('wifi', 'cfg-guest'))."\n"
+                ."# only if created for the guest network: configuration, security, datapath\n".$wifiRemoveObjects,
             // Virtual APs per master (and the single one of scripts before 0.16), then the configuration
             default => "# only if created for the guest network: virtual APs and their configuration\n"
                 .implode('', array_map(fn ($m) => '/interface wifi remove [find where name="'.self::guestInterface($m).'" && '
@@ -1062,6 +1062,37 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
         }
 
         return $out;
+    }
+
+    /**
+     * CAPsMAN v1/v2 uninstall: take cfg-guest out of the slave configurations of every provisioning rule
+     * that lists it (all rules, not only the selected masters: the selection may have changed), only while
+     * an own cfg-guest exists; the other slaves are kept in their order, an empty list is set as "" on
+     * /caps-man ("unset" does not work there) and unset on /interface wifi (set "" would leave an explicit
+     * empty value, unset restores the state of a rule without slaves). Like the append, this is an approved change to objects of
+     * others (decision 2026-11-01). Runs before the configuration is removed; re-running changes nothing.
+     */
+    private function wifiSlaveRemove(string $path, string $ownedCfg): string
+    {
+        $p = "{$path} provisioning";
+        // Empty list: /caps-man has no "unset" for it (set ""); the wifi package's unset restores the default
+        $empty = $path === '/caps-man' ? "{$p} set \$gpRule slave-configurations=\"\"" : "{$p} unset \$gpRule slave-configurations";
+
+        return "# Approved exception to \"never change objects of others\" (like the append of the Wi-Fi block): cfg-guest\n"
+            ."# out of the slave configurations of every provisioning rule that lists it (only while the own cfg-guest\n"
+            ."# exists); the other slave configurations are kept, nothing else of the rules is changed.\n"
+            .":if ([:len [{$path} configuration find where name=cfg-guest && {$ownedCfg}]] > 0) do={\n"
+            ."    :foreach gpRule in=[{$p} find] do={\n"
+            ."        :local gpList \"\"\n"
+            ."        :local gpHas false\n"
+            ."        :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={\n"
+            ."            :if (\$gpSlave = \"cfg-guest\") do={ :set gpHas true } else={ :if ([:len \$gpSlave] > 0) do={ :set gpList (\$gpList . \",\" . \$gpSlave) } }\n"
+            ."        }\n"
+            ."        :if (\$gpHas) do={\n"
+            ."            :if ([:len \$gpList] = 0) do={ {$empty} } else={ {$p} set \$gpRule slave-configurations=[:pick \$gpList 1 [:len \$gpList]] }\n"
+            ."        }\n"
+            ."    }\n"
+            .'}';
     }
 
     /**

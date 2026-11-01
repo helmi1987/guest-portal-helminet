@@ -11,9 +11,10 @@
     $net = fn ($key, $default = '') => old($key, $setup[$key] ?? ($derived[$key][0] ?? $default));
     $mark = fn ($key) => isset($derived[$key]) ? new \Illuminate\Support\HtmlString('<span class="gp-badge gp-badge-info ml-1 font-normal" data-derived="'.e($key).'" title="'
         .e(__('portal.router_api.derived_from.'.$derived[$key][1], ['router' => $derived[$key][2]])).'">'.e(__('portal.router_api.derived')).'</span>') : '';
-    // Solid badges (WCAG AA in both schemes); legacy/differs = will be updated by the next run
+    // Solid badges (WCAG AA in both schemes); legacy/differs = will be updated by the next run,
+    // unmanaged = name taken by an object without comment (adopt command once, decision 2026-11-01)
     $statusClass = ['present' => 'gp-badge gp-badge-ok', 'foreign' => 'gp-badge gp-badge-ok', 'legacy' => 'gp-badge gp-badge-warn', 'differs' => 'gp-badge gp-badge-warn',
-        'missing' => 'gp-badge gp-badge-error', 'unknown' => 'gp-badge gp-badge-neutral'];
+        'missing' => 'gp-badge gp-badge-error', 'unmanaged' => 'gp-badge gp-badge-unmanaged', 'unknown' => 'gp-badge gp-badge-neutral'];
 @endphp
 <x-layouts.admin :title="__('portal.setup.title')">
     <h1 class="mb-2 text-2xl font-semibold">{{ __('portal.setup.title') }}: {{ $site->name }}</h1>
@@ -70,7 +71,7 @@
                             <details class="rounded border border-slate-300 p-2 text-sm" data-state-block="{{ $block }}">
                                 <summary class="cursor-pointer">
                                     <span class="font-medium">{{ __('portal.router_api.blocks.'.$block) }}</span>
-                                    @foreach (['present', 'foreign', 'legacy', 'differs', 'missing', 'unknown'] as $status)
+                                    @foreach (['present', 'foreign', 'legacy', 'differs', 'missing', 'unmanaged', 'unknown'] as $status)
                                         @if ($counts->get($status))
                                             <span class="{{ $statusClass[$status] }}">{{ $counts->get($status) }} {{ __('portal.router_api.status.'.$status) }}</span>
                                         @endif
@@ -81,6 +82,9 @@
                                         <li data-state-item="{{ $key }}" data-status="{{ $item['status'] }}">
                                             <span class="{{ $statusClass[$item['status']] }}">{{ __('portal.router_api.status.'.$item['status']) }}</span>
                                             <code class="text-xs">{{ $item['path'] }}{{ $item['name'] ? ' '.$item['name'] : '' }}</code> <span class="text-xs text-slate-500">{{ $key }}</span>
+                                            @if ($item['status'] === 'unmanaged')
+                                                <div class="pl-4 text-xs" data-adopt="{{ $key }}">@if ($item['adopt'] ?? null)<code>{{ $item['adopt'] }}</code>@else{{ __('portal.router_api.adopt_ambiguous') }}@endif</div>
+                                            @endif
                                             @foreach ($item['diff'] as $prop => [$want, $actual])
                                                 <div class="pl-4 text-xs text-amber-800">{{ $prop }}: {{ __('portal.router_api.expected') }} <code>{{ $want }}</code>, {{ __('portal.router_api.actual') }} <code>{{ $actual === '' ? '–' : $actual }}</code></div>
                                             @endforeach
@@ -89,6 +93,14 @@
                                 </ul>
                             </details>
                         @endforeach
+                    </div>
+                @endif
+                @php($adopt = collect($st['compare'] ?? [])->flatMap(fn ($items) => collect($items)->pluck('adopt'))->filter()->unique()->implode("\n"))
+                @if ($adopt !== '')
+                    {{-- One-time adopt commands for objects without comment (never greyed out, never run by the scripts) --}}
+                    <div class="mt-2" data-adopt-commands="{{ $router->id }}">
+                        <p class="my-2 text-xs text-slate-600">{{ __('portal.router_api.adopt_help') }}</p>
+                        <x-admin.code :title="__('portal.router_api.adopt_title')" :code="$adopt" />
                     </div>
                 @endif
                 @if ($apiAccess->has($router->id))

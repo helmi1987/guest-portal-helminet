@@ -7,7 +7,8 @@
 # Also: the whole Wi-Fi block incl. the lines after the objects (provisioning, manager, virtual AP) is inside
 # the group, so with the placeholder left none of them runs (capsman2 has no password guard: not tested).
 # capsman1: with the password filled the whole block appends cfg-guest to the selected provisioning rules
-# (existing slave kept) and is idempotent.
+# (existing slave kept) and is idempotent; the network uninstall block takes it out again (other slaves kept,
+# a rule with only cfg-guest gets an empty list) and is idempotent.
 # Cases per block and way: placeholder left -> error, nothing created/changed; filled -> objects created;
 # run twice -> idempotent; placeholder left on existing objects -> unchanged.
 #
@@ -145,6 +146,19 @@ for way in paste import; do
             config > "$WORK/cfg1f.txt"
             out=$(run_way $way "$WORK/$MODE-full-filled.rsc")
             check "$T whole block filled, run twice: configuration identical" diff -q "$WORK/cfg1f.txt" <(config)
+            # Network uninstall: cfg-guest out of every rule (other slaves kept, only-cfg-guest -> empty), then the
+            # objects removed; run twice = identical
+            U="[$way/$MODE uninstall_network]"
+            grep -v '^[[:space:]]*#' "$WORK/rsc/$MODE/uninstall.uninstall_network.rsc" > "$WORK/$MODE-uninstall.rsc"
+            out=$(run_way $way "$WORK/$MODE-uninstall.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-uninstall1.txt"
+            check "$U no error" bash -c "! grep -qiE 'script error|syntax error|failure:|bad command|expected end|no such item|does not match' '$WORK/out-$way-$MODE-uninstall1.txt'"
+            check "$U cfg-main slaves cfg-iot (got: $(caps_slaves cfg-main))" test "$(caps_slaves cfg-main)" = "cfg-iot"
+            check "$U cfg-office slaves empty (got: '$(caps_slaves cfg-office)')" test -z "$(caps_slaves cfg-office)"
+            check "$U own Wi-Fi objects removed" test "$(count_wifi "$P")" = 0
+            config > "$WORK/cfg1u.txt"
+            out=$(run_way $way "$WORK/$MODE-uninstall.rsc")
+            check "$U run twice: configuration identical" diff -q "$WORK/cfg1u.txt" <(config)
+            out=$(run_way $way "$WORK/$MODE-filled.rsc")
             caps_reset
             config > "$WORK/cfg1.txt"
         fi
