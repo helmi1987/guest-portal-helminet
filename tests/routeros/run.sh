@@ -63,10 +63,13 @@ run_block() { # <file> [label]
 snapshot() { # <file>
     {
         # keymat-provider: its hkdf-secret="" appears/disappears by itself (RouterOS internal)
+        # /app (built-in app catalog, incl. continuation lines) and the default ipsec profile: their export
+        # varies between runs on RouterOS 7.25; never touched by the portal scripts
         # /ip service lines sorted at the end: RouterOS reorders www-ssl in the export after it was enabled once
         local exp
         exp=$(ros '/export terse verbose show-sensitive' | grep -v '^# [0-9]\{4\}-' | grep -v '^# system id' | grep -v '^# software id' \
-            | grep -v '^/system keymat-provider')
+            | grep -v '^/system keymat-provider' \
+            | awk '/^\/(app |ip ipsec profile set \[ find default=yes \])/ { skip = 1 } skip { if ($0 !~ /\\$/) skip = 0; next } { print }')
         printf '%s\n' "$exp" | grep -v '^/ip service set '
         printf '%s\n' "$exp" | grep '^/ip service set ' | sort
         echo '#--- certificates'
