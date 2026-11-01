@@ -26,7 +26,7 @@
 <body class="p-6 text-slate-900">
     <div class="no-print mx-auto mb-4 flex max-w-3xl flex-wrap items-center gap-2">
         <button onclick="window.print()" class="btn">{{ __('portal.grants.print') }}</button>
-        <a href="{{ route('admin.toolbox.wifi-qr') }}" class="btn-light">{{ __('portal.back') }}</a>
+        <button type="button" onclick="window.close()" class="btn-light">{{ __('portal.toolbox.close_tab') }}</button>
     </div>
 
     <article class="notice notice-{{ $format }}">

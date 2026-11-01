@@ -955,6 +955,7 @@ return [
         'checklist_certificates' => 'Chiavi API delle fonti dei certificati (CertWarden / token URL)',
     ],
     'toolbox' => [
+        'close_tab' => 'Chiudi scheda',
         'title' => 'Strumenti',
         'help' => 'Strumenti autonomi, indipendenti da sedi e impostazioni. Non viene salvato nulla.',
         'wifi_qr' => [

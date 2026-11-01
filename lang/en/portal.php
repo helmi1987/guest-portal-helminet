@@ -955,6 +955,7 @@ return [
         'checklist_certificates' => 'API keys of the certificate sources (CertWarden / URL token)',
     ],
     'toolbox' => [
+        'close_tab' => 'Close tab',
         'title' => 'Toolbox',
         'help' => 'Standalone helpers, independent of sites and settings. Nothing is stored.',
         'wifi_qr' => [

@@ -9,7 +9,8 @@
         </ul>
     @endif
 
-    <form method="POST" action="{{ route('admin.toolbox.wifi-qr.print') }}" class="card grid gap-4 md:grid-cols-2">
+    {{-- Print sheet in a new tab: this form keeps its values (nothing is stored) --}}
+    <form method="POST" action="{{ route('admin.toolbox.wifi-qr.print') }}" target="_blank" class="card grid gap-4 md:grid-cols-2">
         @csrf
         <label class="label">{{ __('portal.toolbox.wifi_qr.ssid') }}
             <input name="ssid" value="{{ old('ssid') }}" required maxlength="32" autocomplete="off" class="field"></label>

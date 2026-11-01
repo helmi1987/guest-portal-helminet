@@ -955,6 +955,7 @@ return [
         'checklist_certificates' => 'Clés API des sources de certificats (CertWarden / jeton URL)',
     ],
     'toolbox' => [
+        'close_tab' => 'Fermer l\'onglet',
         'title' => 'Outils',
         'help' => 'Outils autonomes, indépendants des sites et des paramètres. Rien n\'est enregistré.',
         'wifi_qr' => [

@@ -38,7 +38,9 @@ class ToolboxWifiQrTest extends TestCase
         $this->admin()->get('/admin/toolbox')->assertOk()
             ->assertSee(route('admin.toolbox.wifi-qr'), false)
             ->assertSee(__('portal.nav.toolbox'));
-        $this->get('/admin/toolbox/wifi-qr')->assertOk()->assertSee('name="wifi_password"', false);
+        $this->get('/admin/toolbox/wifi-qr')->assertOk()->assertSee('name="wifi_password"', false)
+            // Print sheet opens in a new tab, the form keeps its values
+            ->assertSee('target="_blank"', false);
     }
 
     public function test_admin_prints_wpa_qr_no_store_and_nothing_audited(): void

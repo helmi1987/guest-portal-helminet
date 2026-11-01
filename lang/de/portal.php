@@ -955,6 +955,7 @@ return [
         'checklist_certificates' => 'API-Schlüssel der Zertifikatsquellen (CertWarden / URL-Token)',
     ],
     'toolbox' => [
+        'close_tab' => 'Tab schliessen',
         'title' => 'Werkzeuge',
         'help' => 'Eigenständige Hilfsmittel, unabhängig von Standorten und Einstellungen. Es wird nichts gespeichert.',
         'wifi_qr' => [
