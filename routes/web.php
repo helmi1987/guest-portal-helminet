@@ -141,6 +141,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     Route::get('/wifi-qr', [ToolboxController::class, 'wifiQrForm'])->name('wifi-qr');
                     Route::post('/wifi-qr', [ToolboxController::class, 'wifiQrPrint'])->name('wifi-qr.print')
                         ->middleware('throttle:30,1,toolbox-wifi-qr');
+                    Route::post('/wifi-qr/preview', [ToolboxController::class, 'wifiQrPreview'])->name('wifi-qr.preview')
+                        ->middleware('throttle:120,1,toolbox-wifi-qr-preview');
                 });
                 Route::get('/terms', [TermsController::class, 'index'])->name('terms');
                 Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('terms.update');

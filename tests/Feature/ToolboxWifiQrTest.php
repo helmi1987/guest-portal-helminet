@@ -109,4 +109,36 @@ class ToolboxWifiQrTest extends TestCase
         $this->onZone('admin')->get('/admin/toolbox')->assertRedirect(route('login'));
         $this->post('/admin/toolbox/wifi-qr', $this->form())->assertRedirect(route('login'));
     }
+
+    public function test_preview_returns_svg_ssid_and_password_no_store_and_nothing_audited(): void
+    {
+        $response = $this->admin()->postJson('/admin/toolbox/wifi-qr/preview', $this->form())->assertOk()
+            ->assertJsonPath('ssid', 'Office WiFi')->assertJsonPath('password', self::PASSWORD);
+
+        $this->assertStringContainsString('<svg', (string) $response->json('svg'));
+        $this->assertSame($this->qrFor(VoucherQr::wifiPayload('Office WiFi', self::PASSWORD)), $response->json('svg'));
+        $cache = (string) $response->headers->get('Cache-Control');
+        $this->assertStringContainsString('no-store', $cache);
+        $this->assertStringContainsString('private', $cache);
+        $this->assertSame(0, AuditLog::count());
+    }
+
+    public function test_preview_omits_password_when_print_as_text_is_off(): void
+    {
+        $response = $this->admin()->postJson('/admin/toolbox/wifi-qr/preview', $this->form(['show_password' => '0']))->assertOk()
+            ->assertJsonPath('password', null);
+        $this->assertStringNotContainsString(self::PASSWORD, (string) $response->getContent());
+    }
+
+    public function test_preview_invalid_input_returns_422(): void
+    {
+        $this->admin()->postJson('/admin/toolbox/wifi-qr/preview', $this->form(['wifi_password' => 'short']))
+            ->assertStatus(422)->assertJsonValidationErrors('wifi_password');
+    }
+
+    public function test_preview_denied_for_manager_and_guest(): void
+    {
+        $this->onZone('admin')->postJson('/admin/toolbox/wifi-qr/preview', $this->form())->assertUnauthorized();
+        $this->actingAs(User::factory()->create())->postJson('/admin/toolbox/wifi-qr/preview', $this->form())->assertForbidden();
+    }
 }
