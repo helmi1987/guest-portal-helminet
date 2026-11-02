@@ -730,6 +730,9 @@ return [
         'sms_countries_help' => 'Comma-separated ISO country codes, e.g. CH, DE, AT, IT, FR.',
         'sms_countries_invalid' => 'Please enter two-letter ISO country codes.',
         'sms_help' => 'Limits cap the SMS costs; 0 blocks sending. Each first SMS and each resend counts.',
+        'sms_text' => 'SMS text',
+        'sms_text_help' => 'Per language. Placeholders: :code (required, in a line without :host), :minutes, :host (portal host of the request). Lines with :host are dropped without a valid host. The last line “@:host #:code” lets iOS/Android offer the code. Empty = default text. Max. 300 characters.',
+        'sms_text_missing_code' => 'The text must contain :code in a line without :host.',
         'sms_caps' => [
             'phone_hour' => 'Max. SMS per number per hour',
             'phone_day' => 'Max. SMS per number per day',
@@ -868,7 +871,7 @@ return [
         'copy_missing' => 'That instance has no source for this certificate.',
     ],
     'sms' => [
-        'text' => ':code is your guest Wi-Fi code (valid for :minutes min).',
+        'text' => ":code is your guest Wi-Fi code (valid for :minutes min).\n\n@:host #:code",
         'test' => 'Test SMS from the guest portal.',
     ],
     'oidc' => [

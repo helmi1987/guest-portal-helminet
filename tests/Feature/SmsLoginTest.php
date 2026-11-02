@@ -14,6 +14,7 @@ use App\Models\Site;
 use App\Models\SmsMessage;
 use App\Models\User;
 use App\Sms\OtpService;
+use App\Sms\SmsSettings;
 use App\Support\Redact;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -203,6 +204,40 @@ class SmsLoginTest extends TestCase
             $this->assertStringNotContainsString('@', $text);
             $this->assertSame(1, substr_count($text, '123456'));
         }
+    }
+
+    public function test_admin_sets_own_sms_text_per_locale(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $base = ['sms_duration_hours' => 24, 'sms_countries' => 'CH', 'sms_caps' => config('portal.sms.caps')];
+        $this->onZone('admin')->actingAs($admin)->get('/admin/settings')->assertOk()
+            ->assertSee('name="sms_text[de]"', false)->assertSee('@:host #:code');
+
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => [
+            'en' => "Code :code\r\nfor :minutes min\r\n\r\n@:host #:code",
+            'de' => SmsSettings::defaultText('de'),
+            'fr' => '',
+        ]])->assertSessionHasNoErrors();
+        $this->assertSame(['en' => "Code :code\nfor :minutes min\n\n@:host #:code"], Setting::get('sms_text'));
+        $this->assertSame("Code 123456\nfor 10 min\n\n@portal.example.com #123456",
+            OtpService::text('123456', 10, 'en', 'portal.example.com'));
+        $this->assertSame("Code 123456\nfor 10 min", OtpService::text('123456', 10, 'en', 'bad host'));
+        $this->assertStringStartsWith('123456 ist dein Code', OtpService::text('123456', 10, 'de', 'portal.example.com'));
+
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => 'No placeholder']])
+            ->assertSessionHasErrors('sms_text.en');
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => "Hi\n@:host #:code"]])
+            ->assertSessionHasErrors('sms_text.en');
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => ':code'.str_repeat('x', 300)]])
+            ->assertSessionHasErrors('sms_text.en');
+        $this->assertSame(['en' => "Code :code\nfor :minutes min\n\n@:host #:code"], Setting::get('sms_text'));
+
+        // Form without the text fields keeps the stored texts; empty fields reset to the default.
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base)->assertSessionHasNoErrors();
+        $this->assertSame(['en' => "Code :code\nfor :minutes min\n\n@:host #:code"], Setting::get('sms_text'));
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => '']])->assertSessionHasNoErrors();
+        $this->assertSame([], Setting::get('sms_text'));
+        $this->assertStringStartsWith('123456 is your guest Wi-Fi code', OtpService::text('123456', 10, 'en', null));
     }
 
     public function test_sent_sms_carries_request_host_line(): void

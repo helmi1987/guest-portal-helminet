@@ -117,6 +117,13 @@
                 <input name="sms_caps[{{ $key }}]" type="number" min="0" value="{{ old('sms_caps.'.$key, $value) }}" required class="field"></label>
         @endforeach
         <p class="text-xs text-slate-500 md:col-span-2">{{ __('portal.settings.sms_help') }}</p>
+        <h3 class="font-semibold md:col-span-2">{{ __('portal.settings.sms_text') }}</h3>
+        @foreach ($smsTexts as $locale => $text)
+            <label class="label">{{ strtoupper($locale) }}
+                <textarea name="sms_text[{{ $locale }}]" rows="4" maxlength="{{ \App\Sms\SmsSettings::TEXT_MAX }}" class="field font-mono text-sm">{{ old('sms_text.'.$locale, $text) }}</textarea>
+                @error('sms_text.'.$locale)<span class="text-xs text-red-600">{{ $message }}</span>@enderror</label>
+        @endforeach
+        <p class="text-xs text-slate-500 md:col-span-2">{{ __('portal.settings.sms_text_help') }}</p>
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 

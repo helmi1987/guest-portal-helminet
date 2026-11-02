@@ -41,6 +41,7 @@ class SettingsController extends Controller
             'smsDurationHours' => round(SmsSettings::durationS() / 3600, 2),
             'smsCountries' => implode(', ', SmsSettings::countries()),
             'smsCaps' => SmsSettings::caps(),
+            'smsTexts' => collect(config('portal.locales'))->mapWithKeys(fn ($l) => [$l => SmsSettings::text($l)])->all(),
             'adminUrl' => Setting::get('admin_url'),
             'adminUrlMissing' => ApprovalSettings::adminUrlMissing(),
             'adminUrlFallback' => ApprovalSettings::fallbackAdminUrl(),
@@ -142,7 +143,25 @@ class SettingsController extends Controller
             'sms_duration_hours' => ['required', 'numeric', 'between:0.25,8760'],
             'sms_countries' => ['required', 'string', 'max:500'],
             ...collect($caps)->mapWithKeys(fn ($k) => ["sms_caps.$k" => ['required', 'integer', 'between:0,100000']])->all(),
+            'sms_text' => ['sometimes', 'array'],
+            ...collect(config('portal.locales'))->mapWithKeys(fn ($l) => ["sms_text.$l" => ['nullable', 'string', 'max:2000']])->all(),
         ]);
+        $texts = [];
+        foreach (config('portal.locales') as $locale) {
+            $text = trim(str_replace(["\r\n", "\r"], "\n", (string) ($data['sms_text'][$locale] ?? '')));
+            // The code must also survive without a valid host (OtpService drops every line with :host then).
+            $withoutHost = array_filter(explode("\n", $text), fn ($l) => ! str_contains($l, ':host'));
+            if ($text !== '' && ! str_contains(implode("\n", $withoutHost), ':code')) {
+                throw ValidationException::withMessages(["sms_text.$locale" => __('portal.settings.sms_text_missing_code')]);
+            }
+            if (mb_strlen($text) > SmsSettings::TEXT_MAX) {
+                throw ValidationException::withMessages(["sms_text.$locale" => __('validation.max.string', ['attribute' => strtoupper($locale), 'max' => SmsSettings::TEXT_MAX])]);
+            }
+            // Only texts that differ from the language default are stored, so default updates still apply.
+            if ($text !== '' && $text !== SmsSettings::defaultText($locale)) {
+                $texts[$locale] = $text;
+            }
+        }
         $countries = array_values(array_unique(array_filter(array_map(fn ($c) => strtoupper(trim($c)),
             preg_split('/[\s,;]+/', $data['sms_countries'])))));
         if ($countries === [] || collect($countries)->contains(fn ($c) => ! preg_match('/^[A-Z]{2}$/', $c))) {
@@ -151,8 +170,12 @@ class SettingsController extends Controller
         Setting::put('sms_duration_s', (int) round($data['sms_duration_hours'] * 3600));
         Setting::put('sms_countries', $countries);
         Setting::put('sms_caps', array_map('intval', $data['sms_caps']));
+        if ($request->has('sms_text')) {
+            Setting::put('sms_text', $texts);
+        }
         Audit::log('settings.sms', null, ['duration_s' => (int) round($data['sms_duration_hours'] * 3600),
-            'countries' => $countries, 'caps' => array_map('intval', $data['sms_caps'])]);
+            'countries' => $countries, 'caps' => array_map('intval', $data['sms_caps']),
+            'own_text' => array_keys($texts)]);
 
         return back()->with('status', __('portal.saved'));
     }

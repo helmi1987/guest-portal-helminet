@@ -188,20 +188,23 @@ class OtpService
     }
 
     /**
-     * SMS body in the domain-bound one-time code format (WebKit origin-bound codes, WHATWG
+     * SMS body from the per-locale template (SmsSettings::text(), admin editable, CONCEPT.md §7.2 B).
+     * The default uses the domain-bound one-time code format (WebKit origin-bound codes, WHATWG
      * sms-one-time-codes, Chrome WebOTP): code first, a blank line, then `@host #code` as last line so
-     * iOS/Android offer the code for the page on that host. Without a valid host the last line is omitted.
+     * iOS/Android offer the code for the page on that host. Without a valid host every template line
+     * containing `:host` is omitted.
      */
     public static function text(string $code, int|string $minutes, string $locale, ?string $host): string
     {
-        $text = __('portal.sms.text', ['code' => $code, 'minutes' => $minutes], $locale);
+        $template = str_replace(["\r\n", "\r"], "\n", SmsSettings::text($locale));
         $host = strtolower(rtrim(trim((string) $host), '.'));
         $label = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
         if (strlen($host) > 253 || ! preg_match('/^'.$label.'(?:\.'.$label.')*$/', $host)) {
-            return $text;
+            $host = '';
+            $template = implode("\n", array_filter(explode("\n", $template), fn ($l) => ! str_contains($l, ':host')));
         }
 
-        return $text."\n\n@{$host} #{$code}";
+        return trim(strtr($template, [':code' => $code, ':minutes' => (string) $minutes, ':host' => $host]));
     }
 
     /**

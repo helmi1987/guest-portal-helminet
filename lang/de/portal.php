@@ -730,6 +730,9 @@ return [
         'sms_countries_help' => 'Kommagetrennte ISO-Ländercodes, z. B. CH, DE, AT, IT, FR.',
         'sms_countries_invalid' => 'Bitte zweistellige ISO-Ländercodes eingeben.',
         'sms_help' => 'Limits begrenzen die SMS-Kosten; 0 sperrt den Versand. Jede erste SMS und jedes erneute Senden zählt.',
+        'sms_text' => 'SMS-Text',
+        'sms_text_help' => 'Pro Sprache. Platzhalter: :code (Pflicht, in einer Zeile ohne :host), :minutes, :host (Portal-Host der Anfrage). Zeilen mit :host entfallen ohne gültigen Host. Die letzte Zeile «@:host #:code» lässt iOS/Android den Code anbieten. Leer = Standardtext. Max. 300 Zeichen.',
+        'sms_text_missing_code' => 'Der Text muss :code in einer Zeile ohne :host enthalten.',
         'sms_caps' => [
             'phone_hour' => 'Max. SMS pro Nummer und Stunde',
             'phone_day' => 'Max. SMS pro Nummer und Tag',
@@ -868,7 +871,7 @@ return [
         'copy_missing' => 'Diese Instanz hat keine Quelle für dieses Zertifikat.',
     ],
     'sms' => [
-        'text' => ':code ist dein Code für das Gäste-WLAN (gültig :minutes Min.).',
+        'text' => ":code ist dein Code für das Gäste-WLAN (gültig :minutes Min.).\n\n@:host #:code",
         'test' => 'Test-SMS vom Gästeportal.',
     ],
     'oidc' => [

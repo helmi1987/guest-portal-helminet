@@ -36,4 +36,25 @@ class SmsSettings
 
         return $caps;
     }
+
+    public const TEXT_MAX = 300;
+
+    /**
+     * SMS text template per locale: the admin's own text, else the language default. Placeholders
+     * `:code`, `:minutes`, `:host`.
+     */
+    public static function text(string $locale): string
+    {
+        $own = Setting::get('sms_text');
+        if (is_array($own) && is_string($own[$locale] ?? null) && trim($own[$locale]) !== '') {
+            return $own[$locale];
+        }
+
+        return self::defaultText($locale);
+    }
+
+    public static function defaultText(string $locale): string
+    {
+        return (string) trans('portal.sms.text', [], $locale);
+    }
 }

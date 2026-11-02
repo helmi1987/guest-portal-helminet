@@ -309,6 +309,12 @@ CoovaChilli) are future/community work.
    (`navigator.credentials.get({otp: {transport: ['sms']}})`, feature-detected, aborted on leaving, errors
    ignored) and fills the input; the page has no CSP, the script is inline. No length limit exists in the SMS
    code; the text stays short (about 100 characters, one GSM-7 segment for typical hosts).
+   Decision 2026-11-02 (v0.20.0, own SMS text): the whole text is editable per locale in the admin settings
+   (replicated setting `sms_text`, locale => template, max. 300 characters, `:code` required in a line without `:host`); placeholders
+   `:code`, `:minutes`, `:host`. The language default (lang `portal.sms.text`) is the format above including the
+   line `@:host #:code`; only texts differing from the default are stored, an empty field resets to it. Without
+   a valid host every template line containing `:host` is omitted. The admin is responsible for keeping the
+   autofill line in an own text.
 3. Guest enters OTP; a grant is created with the configured SMS duration (setting, default 1 d),
    time running from login.
 4. Step 5 of A.

@@ -730,6 +730,9 @@ return [
         'sms_countries_help' => 'Codici paese ISO separati da virgola, ad es. CH, DE, AT, IT, FR.',
         'sms_countries_invalid' => 'Inserisci codici paese ISO di due lettere.',
         'sms_help' => 'I limiti contengono i costi SMS; 0 blocca l\'invio. Conta ogni primo SMS e ogni reinvio.',
+        'sms_text' => 'Testo SMS',
+        'sms_text_help' => 'Per lingua. Segnaposto: :code (obbligatorio, in una riga senza :host), :minutes, :host (host del portale della richiesta). Le righe con :host vengono omesse senza host valido. L\'ultima riga «@:host #:code» permette a iOS/Android di proporre il codice. Vuoto = testo predefinito. Max. 300 caratteri.',
+        'sms_text_missing_code' => 'Il testo deve contenere :code in una riga senza :host.',
         'sms_caps' => [
             'phone_hour' => 'SMS max. per numero all\'ora',
             'phone_day' => 'SMS max. per numero al giorno',
@@ -868,7 +871,7 @@ return [
         'copy_missing' => 'Quell\'istanza non ha una fonte per questo certificato.',
     ],
     'sms' => [
-        'text' => ':code è il tuo codice Wi-Fi ospiti (valido :minutes min).',
+        'text' => ":code è il tuo codice Wi-Fi ospiti (valido :minutes min).\n\n@:host #:code",
         'test' => 'SMS di prova dal portale ospiti.',
     ],
     'oidc' => [
