@@ -1,2 +1,6 @@
 #!/bin/sh
+# FPM's own log lines in UTC like the app. The display time zone is read from APP_TIMEZONE, else TZ
+# (config/portal.php), so it is handed over before TZ is replaced.
+export APP_TIMEZONE="${APP_TIMEZONE:-${TZ:-UTC}}"
+export TZ=UTC
 exec php-fpm84 --nodaemonize --force-stderr

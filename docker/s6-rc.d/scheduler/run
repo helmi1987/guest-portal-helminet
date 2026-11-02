@@ -1,3 +1,9 @@
-#!/bin/sh
+#!/usr/bin/execlineb -P
+# Laravel scheduler. Successful task runs are not logged (otherwise about four lines per minute);
+# failed tasks ("FAIL" with their command line), warnings and errors are passed through.
 cd /var/www/html
-exec s6-setuidgid portal php artisan schedule:work
+pipeline -w {
+    awk "/^[[:space:]]*$/ { next } / DONE[[:space:]]*$/ { skip = 1; next } skip && /⇂/ { skip = 0; next } { skip = 0; print; fflush() }"
+}
+fdmove -c 2 1
+s6-setuidgid portal php artisan schedule:work --no-ansi

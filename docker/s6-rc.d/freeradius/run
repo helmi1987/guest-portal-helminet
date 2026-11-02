@@ -1,6 +1,7 @@
 #!/bin/sh
-# -f: foreground, -l stdout: log to container output
+# -f: foreground, -l stdout: log to container output. Log timestamps in UTC like the app.
 INTERNAL_API_TOKEN="$(cat /run/portal/internal_api_token)"
 export INTERNAL_API_TOKEN
 export INTERNAL_PORT="${INTERNAL_PORT:-8080}"
+export TZ=UTC
 exec radiusd -f -l stdout
