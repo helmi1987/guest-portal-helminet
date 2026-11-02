@@ -2,7 +2,7 @@
 # Runs the generated RouterOS scripts of the setup assistant against a RouterOS CHR and checks that they
 # create/replace/remove only their own objects. See tests/routeros/README.md.
 #
-#   tests/routeros/run.sh [wifi-mode ...]     (default: capsman2 capsman1 local)
+#   tests/routeros/run.sh [wifi-mode ...]     (default: capsman2 capsman1 local multi)
 #
 # Needs a running CHR with a clean configuration (tests/routeros/chr.sh start <copy of base image>),
 # reachable via SSH (lib.sh), with the wireless and container packages installed. Environment:
@@ -18,7 +18,7 @@ PORTAL_IP=${PORTAL_IP:-10.0.2.2}
 PORTAL_PORT=${PORTAL_PORT:-8443}
 WORK=${WORK:-$(mktemp -d /tmp/routeros-harness.XXXXXX)}
 MODES=("${@:-capsman2}")
-[ $# -eq 0 ] && MODES=(capsman2 capsman1 local)
+[ $# -eq 0 ] && MODES=(capsman2 capsman1 local multi)
 TOKEN=testcerttoken0123456789abcdefABCD
 # Password of the read-only API user (fake test value, replaces <API_PASSWORD>)
 API_PASS=Test-api-pass-1
@@ -274,6 +274,154 @@ check_unmanaged() { # <rsc dir>
 }
 
 # ---------------------------------------------------------------------------------------------
+# Fixture "multi" (decision 2026-11-02): all three Wi-Fi modes together, guest SSID per CAP for the wifi
+# package (radios absent on the CHR: skip path; the add/update path is run with the radio lookup replaced
+# by a fixed configuration, "simulated radio"), the provisioning editor (guards, add-if-missing) and the
+# uninstall of both packages.
+prules() { # <provisioning menu> <rule comment> <property> -> value (lists comma separated)
+    ros ":put [:tostr [$1 get [find where comment=\"$2\"] $3]]" | tr ';' ','
+}
+pindex() { # <provisioning menu> <rule comment> -> position of the rule
+    ros ":put [:find [$1 find] [:pick [$1 find where comment=\"$2\"] 0]]"
+}
+multi_prep() { # <in> <out>: <COUNTRY> per package (legacy CAPsMAN takes lower case)
+    sed -e '/\/caps-man/s/<COUNTRY>/germany/g' "$1" > "$2"
+}
+
+run_multi() {
+    local R=$WORK/rsc/multi P1="/caps-man provisioning" P2="/interface wifi provisioning" got out f
+    local K1=$N:wifi:cap-aabbcc000001 K2=$N:wifi:cap-aabbcc000002
+    COUNTRY=Germany
+    sync_clock
+    log "[multi] all Wi-Fi modes together"
+    run_block "$R/network.vlan.rsc" "[multi] network.vlan"
+    multi_prep "$R/network.wifi.rsc" "$WORK/multi-wifi.rsc"
+    run_block "$WORK/multi-wifi.rsc" "[multi] network.wifi"
+    out=$WORK/out-multi-wifi.rsc.txt
+    for p in "/caps-man" "/interface wifi"; do
+        check "[multi] $p: dp-guest, sec-guest, cfg-guest with their keys" \
+            test "$(( $(ros ":put [:len [$p datapath find where comment=\"$N:wifi:dp-guest\"]]") + $(ros ":put [:len [$p security find where comment=\"$N:wifi:sec-guest\"]]") + $(ros ":put [:len [$p configuration find where comment=\"$N:wifi:cfg-guest\"]]") ))" = 3
+    done
+    got=$(prules "$P1" foreign slave-configurations); check "[multi] capsman1 master cfg-main: cfg-iot,cfg-guest (got $got)" test "$got" = "cfg-iot,cfg-guest"
+    got=$(prules "$P1" "foreign office" slave-configurations); check "[multi] capsman1 master cfg-office: cfg-guest (got $got)" test "$got" = "cfg-guest"
+    got=$(prules "$P2" foreign slave-configurations); check "[multi] capsman2 with CAP selection: masters not used, cfg-main rule unchanged (got $got)" test "$got" = "cfg-iot"
+    check "[multi] radio AA:BB:CC:00:00:01 absent: skipped" grep -q 'radio AA:BB:CC:00:00:01: not connected' "$out"
+    check "[multi] radio AA:BB:CC:00:00:02 absent: skipped" grep -q 'radio AA:BB:CC:00:00:02: not connected' "$out"
+    check "[multi] local master wifi1 absent: skipped" grep -q 'master interface wifi1 not found' "$out"
+    check "[multi] no own CAP rule without a radio" test "$(ros ":put [:len [$P2 find where comment~\"^$N:wifi:cap-\"]]")" = 0
+    snapshot "$WORK/multi1.txt"
+    run_block "$WORK/multi-wifi.rsc" "[multi] network.wifi (re-run)"
+    snapshot "$WORK/multi2.txt"
+    check "[multi] wifi re-run idempotent" diff -q "$WORK/multi1.txt" "$WORK/multi2.txt"
+
+    log "[multi] guest SSID per CAP, simulated radio (lookup replaced by configuration cfg-main)"
+    # The admin's rule carries cfg-guest and a band matcher: copied to the own rules, cfg-guest taken out of it
+    ros "$P2 set [find where comment=\"foreign\"] slave-configurations=cfg-iot,cfg-guest supported-bands=5ghz-ax,5ghz-ac" >/dev/null
+    sed -e 's/:local gpCfg ""/:local gpCfg "cfg-main"/' "$WORK/multi-wifi.rsc" > "$WORK/multi-sim.rsc"
+    run_block "$WORK/multi-sim.rsc" "[multi] network.wifi (simulated radios)"
+    for k in "$K1" "$K2"; do
+        check "[multi] own rule $k exists once" test "$(ros ":put [:len [$P2 find where comment=\"$k\"]]")" = 1
+        got=$(prules "$P2" "$k" master-configuration); check "[multi] $k master cfg-main (got $got)" test "$got" = cfg-main
+        got=$(prules "$P2" "$k" slave-configurations); check "[multi] $k slaves cfg-iot,cfg-guest (got $got)" test "$got" = "cfg-iot,cfg-guest"
+        got=$(prules "$P2" "$k" supported-bands); check "[multi] $k band matcher copied (got $got)" grep -q '5ghz-ax' <<<"$got"
+        got=$(prules "$P2" "$k" action); check "[multi] $k action copied (got $got)" test "$got" = create-dynamic-enabled
+        check "[multi] $k placed before the admin's rule" test "$(pindex "$P2" "$k")" -lt "$(pindex "$P2" foreign)"
+    done
+    got=$(prules "$P2" "$K1" radio-mac); check "[multi] $K1 radio-mac (got $got)" test "$got" = AA:BB:CC:00:00:01
+    got=$(prules "$P2" foreign slave-configurations); check "[multi] admin's rule: cfg-guest taken out (got $got)" test "$got" = cfg-iot
+    snapshot "$WORK/multi3.txt"
+    run_block "$WORK/multi-sim.rsc" "[multi] network.wifi (simulated radios, re-run)"
+    snapshot "$WORK/multi4.txt"
+    check "[multi] simulated radios: re-run idempotent (rules not moved again)" diff -q "$WORK/multi3.txt" "$WORK/multi4.txt"
+    run_block "$WORK/multi-wifi.rsc" "[multi] network.wifi (radios absent again)"
+    snapshot "$WORK/multi5.txt"
+    check "[multi] radios absent: own rules kept as they are" diff -q "$WORK/multi3.txt" "$WORK/multi5.txt"
+    # Deselected radios: the block of the single capsman2 fixture (no CAP selection) removes the own rules
+    multi_prep "$WORK/rsc/capsman2/network.wifi.rsc" "$WORK/multi-c2.rsc"
+    run_block "$WORK/multi-c2.rsc" "[multi] network.wifi of a site without CAP selection"
+    check "[multi] without CAP selection the own rules are removed" test "$(ros ":put [:len [$P2 find where comment~\"^$N:wifi:cap-\"]]")" = 0
+    run_block "$WORK/multi-sim.rsc" "[multi] network.wifi (simulated radios again)"
+    check "[multi] own rules added again" test "$(ros ":put [:len [$P2 find where comment~\"^$N:wifi:cap-\"]]")" = 2
+    check_keys_known "$R" "[multi] before uninstall"
+
+    log "[multi] provisioning editor (state query, guarded script)"
+    awk '/BEGIN CERTIFICATE/{n++} n==1' "$WORK/pki/leaf2/router.crt" > "$WORK/harness-api.crt"
+    ros_upload "$WORK/harness-api.crt" harness-api.crt && ros_upload "$WORK/pki/leaf2/router.key" harness-api.key
+    ros '/certificate import file-name=harness-api.crt passphrase="" name=harness-api; /certificate import file-name=harness-api.key passphrase="" name=harness-api; /file remove [find where name="harness-api.crt" || name="harness-api.key"]' >/dev/null
+    run_block "$R/api_access.rsc" "[multi] api_access"
+    local svc
+    svc=$(ros ':put ([/ip service get www-ssl certificate] . "|" . [/ip service get www-ssl disabled])')
+    ros '/ip service set www-ssl certificate=harness-api disabled=no' >/dev/null
+    sleep 3
+    local e2='{"mode":"capsman2","rules":{"cfg-office":{"master":"cfg-office","slaves":["cfg-iot"]}},"new":[{"band":"5ghz","master":"cfg-other","slaves":["cfg-guest"]}]}'
+    local e1='{"mode":"capsman1","rules":{"cfg-office":{"master":"cfg-office","slaves":["cfg-iot","cfg-guest"]}},"new":[{"band":"2ghz","master":"cfg-other","slaves":[]}]}'
+    local mode edit menu
+    for mode in capsman2 capsman1; do
+        if [ $mode = capsman2 ]; then edit=$e2; menu=$P2; else edit=$e1; menu=$P1; fi
+        mkdir -p "$WORK/state/multi"
+        (cd "$REPO" && RQ_EDIT=$edit RQ_TYPE=rest RQ_HOST=127.0.0.1 RQ_PORT=$ROS_REST_PORT RQ_CERT=$WORK/pki/leaf2/router.crt RQ_PASS=$API_PASS \
+            php tests/routeros/render.php "$WORK/state/multi" "$ROUTER_IP" "$PORTAL_IP" "$PORTAL_PORT" multi) >/dev/null
+        f=$WORK/state/multi/provisioning-rest.rsc
+        cp "$f" "$WORK/provisioning-$mode.rsc"
+        if grep -q '^error' "$f" || grep -q '^error' "$WORK/state/multi/state-rest.txt"; then
+            fail "[multi] editor $mode: $(head -c 300 "$f") $(grep '^error' "$WORK/state/multi/state-rest.txt")"; continue
+        fi
+        sed 's/^/    editor| /' "$f" | grep -v '^    editor| #' | head -5
+        check "[multi] editor $mode: never provisions" bash -c "! grep -v '^#' '$f' | grep -qw provision"
+        run_block "$WORK/provisioning-$mode.rsc" "[multi] editor $mode script"
+        got=$(prules "$menu" "foreign office" slave-configurations)
+        if [ $mode = capsman2 ]; then
+            check "[multi] editor $mode: changed rule set (got $got)" test "$got" = cfg-iot
+            got=$(ros ":put [:len [$menu find where master-configuration=cfg-other && !comment]]")
+            check "[multi] editor $mode: new rule added without comment" test "$got" = 1
+            got=$(ros ":put [:tostr [$menu get [find where master-configuration=cfg-other && !comment] supported-bands]]" | tr ';' ',')
+            check "[multi] editor $mode: band matcher of the new rule (got $got)" grep -q '5ghz-ac' <<<"$got"
+        else
+            check "[multi] editor $mode: changed rule set (got $got)" test "$got" = "cfg-iot,cfg-guest"
+            got=$(ros ":put [:tostr [$menu get [find where master-configuration=cfg-other && !comment] hw-supported-modes]]" | tr ';' ',')
+            check "[multi] editor $mode: new rule with band matcher (got $got)" grep -q 'gn' <<<"$got"
+        fi
+        snapshot "$WORK/multi-ed1-$mode.txt"
+        run_block "$WORK/provisioning-$mode.rsc" "[multi] editor $mode script (re-run)"
+        check "[multi] editor $mode re-run: changed rule skipped by the guard" grep -q 'was changed on the router after the state query, skipped' "$WORK/out-provisioning-$mode.rsc.txt"
+        check "[multi] editor $mode re-run: new rule not added twice" grep -q 'exists, not added' "$WORK/out-provisioning-$mode.rsc.txt"
+        snapshot "$WORK/multi-ed2-$mode.txt"
+        check "[multi] editor $mode re-run changes nothing" diff -q "$WORK/multi-ed1-$mode.txt" "$WORK/multi-ed2-$mode.txt"
+        # Reset by hand (the editor's rules belong to the admin)
+        ros "$menu remove [find where master-configuration=cfg-other && !comment]" >/dev/null
+    done
+    ros "$P2 unset [find where comment=\"foreign office\"] slave-configurations; $P1 set [find where comment=\"foreign office\"] slave-configurations=cfg-guest" >/dev/null
+    ros "/ip service set www-ssl certificate=$(cut -d'|' -f1 <<<"$svc") disabled=$(yesno "$(cut -d'|' -f2 <<<"$svc")")" >/dev/null
+    ros '/certificate remove [find where name~"^harness-api"]' >/dev/null
+
+    log "[multi] uninstall"
+    # A foreign rule whose comment only starts like an own key stays
+    ros "$P2 add action=create-dynamic-enabled master-configuration=cfg-other comment=\"$N:wifi:cap-x\"" >/dev/null
+    run_block "$R/uninstall.uninstall.rsc" "[multi] uninstall.uninstall"
+    run_block "$R/uninstall.uninstall_network.rsc" "[multi] uninstall.uninstall_network"
+    check "[multi] uninstall: own CAP rules removed" test "$(ros ":put [:len [$P2 find where comment~\"^$N:wifi:cap-[0-9a-f]\"]]")" = 0
+    check "[multi] uninstall: foreign look-alike rule kept" test "$(ros ":put [:len [$P2 find where comment=\"$N:wifi:cap-x\"]]")" = 1
+    got=$(prules "$P1" foreign slave-configurations); check "[multi] uninstall: capsman1 cfg-main slaves cfg-iot (got $got)" test "$got" = cfg-iot
+    got=$(prules "$P1" "foreign office" slave-configurations); check "[multi] uninstall: capsman1 cfg-office slaves empty (got '$got')" test -z "$got"
+    for p in "/caps-man" "/interface wifi"; do
+        check "[multi] uninstall: $p cfg-guest removed" test "$(ros ":put [:len [$p configuration find where name=cfg-guest]]")" = 0
+    done
+    ros "$P2 remove [find where comment=\"$N:wifi:cap-x\"]; $P2 unset [find where comment=\"foreign\"] supported-bands" >/dev/null
+    ros '/file remove [find where name="harness.rsc"]' >/dev/null
+    snapshot "$WORK/after-multi.txt"
+    run_block "$R/uninstall.uninstall.rsc" "[multi] uninstall.uninstall (re-run)"
+    run_block "$R/uninstall.uninstall_network.rsc" "[multi] uninstall.uninstall_network (re-run)"
+    ros '/file remove [find where name="harness.rsc"]' >/dev/null
+    snapshot "$WORK/after2-multi.txt"
+    check "[multi] uninstall re-run idempotent" diff -q "$WORK/after-multi.txt" "$WORK/after2-multi.txt"
+    local allowed='/radius incoming set|/interface wifi capsman set|/caps-man manager set|WiFi-CAPsMAN-|.*comment="place hotspot rules here"|(flash/)?hotspot(/|\|)|flash\|'
+    local d
+    d=$(diff "$WORK/before.txt" "$WORK/after-multi.txt" | grep '^[<>]' | grep -vE "^[<>] ($allowed)")
+    if [ -z "$d" ]; then pass "[multi] after uninstall the configuration equals the snapshot before"
+    else fail "[multi] configuration differs after uninstall"; printf '%s\n' "$d" | sed 's/^/    | /' | head -40; fi
+}
+
+# ---------------------------------------------------------------------------------------------
 log "Preparing (work dir $WORK)"
 ROUTER_IP=$(ros ':put [/ip address get [:pick [/ip address find where interface=ether1] 0] address]' | cut -d/ -f1)
 [ -n "$ROUTER_IP" ] || { echo "cannot read the CHR address of ether1"; exit 1; }
@@ -306,6 +454,7 @@ wc -l "$WORK/before.txt"
 
 first=1
 for MODE in "${MODES[@]}"; do
+    if [ "$MODE" = multi ]; then run_multi; continue; fi
     R=$WORK/rsc/$MODE
     sync_clock
     log "[$MODE] legacy objects of scripts before the comment keys (must be migrated/replaced)"

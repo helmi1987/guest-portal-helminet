@@ -6,10 +6,16 @@
  *
  * Usage: php tests/routeros/render.php <out-dir> [router-ip] [portal-ip] [portal-port] [wifi-mode]
  *
+ * Fixtures: capsman1, capsman2, local (one Wi-Fi mode each) and multi (all three modes together: masters
+ * cfg-main/cfg-office for capsman1, wifi1 for local, guest SSID per CAP for capsman2 with two radios
+ * absent on the CHR, so the masters of capsman2 are not used).
+ *
  * Router state query instead of rendering (same fixture, one Wi-Fi mode): environment RQ_TYPE (rest or
  * api-ssl), RQ_HOST, RQ_PORT, RQ_CERT (PEM whose key is pinned), RQ_PASS; writes one line per object to
  * <out-dir>/state-<type>.txt ("<key> <status> <diff>") or "error <kind> <detail>", and the adopt commands of
- * objects without comment ("unmanaged") to <out-dir>/adopt-<type>.rsc.
+ * objects without comment ("unmanaged") to <out-dir>/adopt-<type>.rsc. With RQ_EDIT (JSON: mode, rules by
+ * master configuration => {master, slaves}, new => list of {band, master, slaves}) also the provisioning
+ * editor script from that state to <out-dir>/provisioning-<type>.rsc (or "error <json>").
  */
 
 use App\Models\NasClient;
@@ -17,6 +23,7 @@ use App\Models\Site;
 use App\Nas\RouterOs\RouterStateQuery;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Validation\ValidationException;
 
 $out = $argv[1] ?? null;
 if ($out === null) {
@@ -26,7 +33,7 @@ if ($out === null) {
 $routerIp = $argv[2] ?? '10.0.2.15';
 $portalIp = $argv[3] ?? '10.0.2.2';
 $portalPort = (int) ($argv[4] ?? 8443);
-$wifiModes = isset($argv[5]) ? [$argv[5]] : ['capsman1', 'capsman2', 'local'];
+$wifiModes = isset($argv[5]) ? [$argv[5]] : ['capsman1', 'capsman2', 'local', 'multi'];
 
 // Isolated in-memory application: never touches the configured database.
 $tmp = sys_get_temp_dir().'/routeros-render-'.getmypid();
@@ -60,7 +67,8 @@ foreach ($wifiModes as $i => $mode) {
         'portal_url' => $portalUrl,
         'setup' => [
             'vlan_id' => 30, 'bridge' => 'bridge', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
-            'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => $mode,
+            'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi',
+            'wifi_modes' => $mode === 'multi' ? Site::WIFI_MODES : [$mode],
             // Mode "local" also covers the flash folder variant (a plain directory on the CHR).
             'html_directory' => $mode === 'local' ? 'flash/hotspot' : 'hotspot',
             // capsman2: open SSID; the others with a password using every character RouterOS escapes
@@ -69,7 +77,11 @@ foreach ($wifiModes as $i => $mode) {
     ]]);
     // Two guest Wi-Fi masters per mode (instance-local selection): local = radios (absent on the CHR: skipped),
     // CAPsMAN = master configurations of the seed's provisioning rules (cfg-main with a slave, cfg-office without)
-    $site->forceFill(['wifi_masters_local' => [$mode => $mode === 'local' ? ['wifi1', 'wifi2'] : ['cfg-main', 'cfg-office']]])->save();
+    $site->forceFill(['wifi_masters_local' => $mode === 'multi'
+        ? ['capsman1' => ['cfg-main', 'cfg-office'], 'capsman2' => ['cfg-main'], 'local' => ['wifi1']]
+        : [$mode => $mode === 'local' ? ['wifi1', 'wifi2'] : ['cfg-main', 'cfg-office']],
+        // Guest SSID per CAP (multi, capsman2): radios that are not on the CHR (skip path)
+        'wifi_caps_local' => $mode === 'multi' ? ['capsman2' => ['AA:BB:CC:00:00:01', 'AA:BB:CC:00:00:02']] : null])->save();
     $nas = $site->nasClients()->create(['name' => 'Test router', 'nas_ip' => $routerIp, 'coa_port' => 3799]);
     $nas = NasClient::find($nas->id);
     // Fixed test values (fake, not secrets).
@@ -102,6 +114,22 @@ foreach ($wifiModes as $i => $mode) {
                     }
                 }
             }
+            if ($edit = getenv('RQ_EDIT')) {
+                // Provisioning editor: rules addressed by their master configuration in the fixture
+                $edit = json_decode($edit, true);
+                $rules = $driver->provisioningRules($nas)[$edit['mode']]['rules'] ?? [];
+                $byMaster = [];
+                foreach ($edit['rules'] ?? [] as $master => $change) {
+                    $id = collect($rules)->first(fn ($r) => $r['master'] === $master && ! $r['own'])['id'] ?? '*FFFF';
+                    $byMaster[$id] = $change;
+                }
+                try {
+                    $script = $driver->provisioningScript($nas, ['mode' => $edit['mode'], 'rules' => $byMaster, 'new' => $edit['new'] ?? []]);
+                } catch (ValidationException $e) {
+                    $script = 'error '.json_encode($e->errors());
+                }
+                file_put_contents($out.'/provisioning-'.getenv('RQ_TYPE').'.rsc', $script."\n");
+            }
             // One-time adopt commands of objects without comment (as shown on the setup page)
             file_put_contents($out.'/adopt-'.getenv('RQ_TYPE').'.rsc', implode("\n", array_unique($adopt))."\n");
             $lines[] = 'version '.($nas->router_state['menus']['/system resource']['rows'][0]['version'] ?? '?');
@@ -133,7 +161,8 @@ foreach ($wifiModes as $i => $mode) {
     $files['api_access.rsc'] = $driver->apiAccessCommands($site, $nas);
     file_put_contents($dir.'/login.html', $driver->loginPage($site));
     file_put_contents($dir.'/nas_id', (string) $nas->id);
-    file_put_contents($dir.'/keys', implode("\n", array_merge(...array_map('array_keys', array_values($driver->managedObjects($site)))))."\n");
+    file_put_contents($dir.'/keys', implode("\n", array_unique(array_merge(...array_map(fn ($objects) => array_map(fn ($id, $o) => $o['key'] ?? $id,
+        array_keys($objects), $objects), array_values($driver->managedObjects($site))))))."\n");
     file_put_contents($dir.'/wifi_password', $mode === 'capsman2' ? '' : $wifiPassword);
     foreach ($files as $name => $rsc) {
         file_put_contents($dir.'/'.$name, rtrim($rsc)."\n");

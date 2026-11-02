@@ -50,6 +50,8 @@ add list=PORTAL address=192.0.2.80 comment="foreign entry in a list name we use"
 /certificate
 add name=CAPsMAN-CA-test common-name=CAPsMAN-CA-test key-size=2048 days-valid=3650 key-usage=key-cert-sign,crl-sign
 sign CAPsMAN-CA-test
+# Signing runs in the background (slow under TCG): wait until the CA is usable before signing with it
+:for gpI from=1 to=120 do={ :if ([:len [/certificate find where name=CAPsMAN-CA-test && authority]] = 0) do={ :delay 1s } }
 add name=CAPsMAN-test common-name=CAPsMAN-test key-size=2048 days-valid=365
 sign CAPsMAN-test ca=CAPsMAN-CA-test
 add name=guest-portal.example.com common-name=guest-portal.example.com key-size=2048 days-valid=365

@@ -9,7 +9,7 @@ Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, 
 
 | File | Purpose |
 |---|---|
-| `render.php` | Renders all blocks for a fixture site/router (in-memory SQLite, fake values) into `.rsc` files, one directory per Wi-Fi mode; with `RQ_*` variables runs the router state query against the CHR instead |
+| `render.php` | Renders all blocks for a fixture site/router (in-memory SQLite, fake values) into `.rsc` files, one directory per fixture (`capsman1`, `capsman2`, `local`, `multi` = all three modes with a CAP selection); with `RQ_*` variables runs the router state query against the CHR instead (with `RQ_EDIT` also the provisioning editor script from that state) |
 | `legacy.rsc` | Objects as created by scripts before the comment keys (migration check) |
 | `unmanaged.rsc` | Objects as created by versions 0.6.0 to 0.12.6 without comment (VLAN interface, DHCP server, `dp-guest`, `cfg-guest`): router state "unmanaged", adopt commands |
 | `seed.rsc` | "Foreign" defconf-like configuration: firewall, interface lists, bridge, certificates, hotspot profiles, DNS, DHCP, address lists, RADIUS, Wi-Fi/CAPsMAN, scripts; some names start with `guest-portal` on purpose |
@@ -26,7 +26,7 @@ tests/routeros/chr.sh prepare 7.24.5 ~/chr            # once: ~/chr/base.img
 qemu-img create -f qcow2 -b ~/chr/base.img -F raw ~/chr/work.qcow2
 tests/routeros/chr.sh start ~/chr/work.qcow2          # SSH on 127.0.0.1:2222 (admin, empty password)
 tests/routeros/chr.sh savevm clean                    # optional: fast reset point
-tests/routeros/run.sh                                 # all Wi-Fi modes, or e.g. run.sh capsman2
+tests/routeros/run.sh                                 # all fixtures, or e.g. run.sh capsman2 / run.sh multi
 tests/routeros/guard.sh                               # placeholder guard (paste + import), modes local capsman1
 tests/routeros/chr.sh loadvm clean                    # reset before the next run
 ```
@@ -78,9 +78,24 @@ dependencies. The run needs a router without configuration (fresh image or `load
   disabled "place hotspot rules here" placeholders RouterOS adds with the first hotspot and the files of
   the hotspot html-directory.
 
+- Several Wi-Fi modes together (fixture `multi`, decision 2026-11-02): dp-guest, sec-guest and cfg-guest once in
+  `/caps-man` and once in `/interface wifi`, cfg-guest appended to the capsman1 masters, the capsman2 masters not
+  used (CAP selection), both selected radios and the local master reported as absent and skipped, re-run identical.
+- Guest SSID per CAP with a simulated radio (the radio lookup of the block replaced by a fixed configuration
+  `cfg-main`, the CHR has no radios): one own rule per radio with its key, radio-mac, the admin rule's action,
+  master, slaves plus cfg-guest and band matcher, placed before the admin's rule; cfg-guest taken out of the
+  admin's rule; re-run identical (not moved again); with the radios absent again the own rules stay; the block of
+  a site without CAP selection removes them.
+- Provisioning editor (v1 and v2, script from a REST state query): changed rule set by id, new rule added without
+  comment with the band matcher; re-run: changed rule skipped by the guard (router changed since the query),
+  new rule not added twice, configuration identical.
+- Uninstall of `multi`: own CAP rules removed (a foreign rule with a look-alike comment kept), cfg-guest out of the
+  rules and the objects of both packages removed, re-run identical, configuration equals the snapshot.
+
 ## Not covered (CHR limits)
 
-Real CAPs/radios (provisioning, virtual APs `wifi-guest-<master>` and the rename of an earlier `wifi-guest`), guests on the hotspot (login, RADIUS
+Real CAPs/radios (provisioning, virtual APs `wifi-guest-<master>` and the rename of an earlier `wifi-guest`, the radio lookup of
+the guest SSID per CAP: `radio-mac` and `configuration` of a CAP interface, CAPsMAN applying rule changes to the CAPs), guests on the hotspot (login, RADIUS
 replies, Disconnect), `/container add` (needs device-mode, confirmed physically), a device with a flash
 folder (`flash/hotspot` is a plain directory on the CHR), and the source-IP check of the downloads
 (qemu user networking NATs the router's `src-address`).
