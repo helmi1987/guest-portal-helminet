@@ -5,6 +5,7 @@ namespace App\Federation;
 use App\Enums\Role;
 use App\Models\AuditLog;
 use App\Models\Setting;
+use App\Radius\ClientsFile;
 use App\Support\DeterministicId;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
@@ -377,6 +378,14 @@ class Applier
             }
         }
 
+        // Router rows end up in the FreeRADIUS clients file: id and address must be safe there (secrets are
+        // encrypted here and checked when the file is rendered).
+        if ($incomingWins && $table === 'nas_clients'
+            && ($reason = ClientsFile::rowProblem((string) $row['id'], (string) ($row['nas_ip'] ?? ''))) !== null) {
+            $this->refused($event, "router row refused: $reason");
+
+            return 'dropped';
+        }
         if ($incomingWins && ! $this->own && ($reason = $this->securityViolation($table, $event['origin'], $row, $local)) !== null) {
             $this->refused($event, $reason);
 

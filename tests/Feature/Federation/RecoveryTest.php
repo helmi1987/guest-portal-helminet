@@ -77,6 +77,68 @@ class RecoveryTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_clients_file_never_renders_unsafe_router_values(): void
+    {
+        $site = Site::create(['slug' => 'mine', 'name' => 'Mine', 'driver' => 'mikrotik_ros7']);
+        $good = $site->nasClients()->create(['name' => 'Good', 'nas_ip' => '10.0.0.1', 'coa_port' => 3799]);
+        $v6 = $site->nasClients()->create(['name' => 'V6', 'nas_ip' => '2001:db8::1', 'coa_port' => 3799]);
+        $net = $site->nasClients()->create(['name' => 'Net', 'nas_ip' => '10.0.9.0/24', 'coa_port' => 3799]);
+        $crafted = [
+            ['nas_ip' => "10.0.0.5\n}\nclient 0.0.0.0/0 {\n secret = \"x\"\n ipaddr = 0.0.0.0/0"],
+            ['nas_ip' => '0.0.0.0/0'],
+            ['nas_ip' => '10.0.0.6 '],
+            ['nas_ip' => 'radius.example.com'],
+            ['radius_secret' => "abc\"\n}\nclient 0.0.0.0/0 {"],
+            ['radius_secret' => 'with space'],
+            ['radius_secret' => 'brace{'],
+            ['radius_secret' => 'hash#tag'],
+            ['radius_secret' => 'back\\slash'],
+            ['radius_secret' => ''],
+            ['id' => '01JBAD ID {}0000000000000'],
+        ];
+        $bad = [];
+        foreach ($crafted as $i => $values) {
+            $nas = (new NasClient(['name' => "Bad $i", 'nas_ip' => '10.0.1.'.($i + 1), 'coa_port' => 3799]))->forceFill($values);
+            $nas->site()->associate($site)->save();
+            $bad[] = $nas->getKey();
+        }
+
+        $file = app(ClientsFile::class)->render();
+        foreach ([$good, $v6, $net] as $nas) {
+            $this->assertStringContainsString('client '.$nas->shortname().' {', $file);
+        }
+        $this->assertStringContainsString('ipaddr = 2001:db8::1', $file);
+        $this->assertStringContainsString('ipaddr = 10.0.9.0/24', $file);
+        foreach ($bad as $id) {
+            $this->assertStringNotContainsString("nas-$id", $file);
+        }
+        $this->assertStringNotContainsString('0.0.0.0/0', $file);
+        $this->assertSame(3, substr_count($file, 'client nas-'));
+    }
+
+    public function test_replicated_router_rows_with_unsafe_values_are_refused(): void
+    {
+        $this->federation();
+        $site = $this->on('hub', fn () => Site::create(['slug' => 's', 'name' => 'S', 'driver' => 'mikrotik_ros7']));
+        $nas = $this->on('hub', fn () => $site->nasClients()->create(['name' => 'R', 'nas_ip' => '10.0.2.1', 'coa_port' => 3799]));
+        $this->syncRound();
+
+        // Validly signed by the hub, but written without the admin form: dropped on a, the batch continues.
+        $this->on('hub', function () use ($nas) {
+            DB::transaction(function () use ($nas) {
+                DB::table('nas_clients')->where('id', $nas->id)->update(['nas_ip' => "10.0.2.1\n}\nclient 0.0.0.0/0 {",
+                    'version' => app(Hlc::class)->now()]);
+                app(Outbox::class)->record('nas_clients', $nas->id);
+            });
+        });
+        $later = $this->on('hub', fn () => $site->nasClients()->create(['name' => 'Later', 'nas_ip' => '10.0.2.2', 'coa_port' => 3799]));
+        $this->syncRound();
+
+        $this->assertSame('10.0.2.1', $this->rowOn('a', 'nas_clients', $nas->id)['nas_ip']);
+        $this->assertNotNull($this->rowOn('a', 'nas_clients', $later->id));
+        $this->assertTrue($this->on('a', fn () => AuditLog::where('action', 'federation.event_refused')->where('subject_id', $nas->id)->exists()));
+    }
+
     public function test_replacement_takes_over_a_site_and_a_certificate_source(): void
     {
         $this->federation();
