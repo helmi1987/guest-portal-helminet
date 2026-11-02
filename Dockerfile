@@ -19,7 +19,8 @@ COPY composer.json composer.lock ./
 RUN composer install --no-dev --no-scripts --no-autoloader --no-interaction --prefer-dist
 COPY . .
 RUN composer dump-autoload --no-dev --optimize --classmap-authoritative --no-interaction \
-    && php artisan package:discover --ansi
+    && php artisan package:discover --ansi \
+    && chmod -R go-w /app
 
 # --- Front-end assets ----------------------------------------------------------------
 FROM --platform=$BUILDPLATFORM ${NODE_IMAGE} AS assets
@@ -27,7 +28,7 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY --from=vendor /app /app
-RUN npm run build
+RUN npm run build && chmod -R go-w public/build
 
 # --- Runtime ---------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
@@ -49,7 +50,7 @@ RUN apk add --no-cache \
     && rm -rf /etc/raddb/sites-enabled /etc/raddb/mods-enabled /etc/nginx/http.d
 
 COPY docker/nginx/nginx.conf /etc/nginx/nginx.conf
-COPY docker/nginx/portal.conf.template docker/nginx/portal-app.conf /etc/nginx/
+COPY docker/nginx/portal.conf.template docker/nginx/portal-app.conf docker/nginx/portal-headers.conf /etc/nginx/
 COPY docker/php/php-fpm.conf /etc/php84/php-fpm.conf
 COPY docker/php/php.ini /etc/php84/conf.d/zz-portal.ini
 COPY docker/freeradius/radiusd.conf /etc/raddb/radiusd.conf
@@ -58,9 +59,12 @@ COPY docker/freeradius/sites/ /etc/raddb/portal-sites/
 COPY docker/s6-rc.d/ /etc/s6-overlay/s6-rc.d/
 COPY docker/bin/ /usr/local/bin/
 
+# Application code is owned by root and read-only for the app user portal (group/other write bits are
+# removed in the build stages); only storage/ and bootstrap/cache/ (Laravel caches, compiled views)
+# are writable. Persistent data lives in /data.
 WORKDIR /var/www/html
-COPY --from=vendor --chown=portal:portal /app /var/www/html
-COPY --from=assets --chown=portal:portal /app/public/build /var/www/html/public/build
+COPY --from=vendor /app /var/www/html
+COPY --from=assets /app/public/build /var/www/html/public/build
 RUN rm -rf node_modules tests docker .github .env .env.* database/database.sqlite \
     && echo "${VERSION}" > VERSION \
     && chown -R portal:portal storage bootstrap/cache
