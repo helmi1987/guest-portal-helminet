@@ -97,6 +97,10 @@
             <x-admin.step-status :ok="false" :label="__('portal.setup.optional')" /></summary>
         <p class="my-3 text-sm text-slate-600">{{ __('portal.setup.container.help') }}</p>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.container.docker') }}</p>
+        {{-- Hint only (router state): no container package, or device mode without containers --}}
+        @foreach ($containerProblems as $routerId => $problem)
+            <p class="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm font-medium text-amber-900" role="status" data-container-problem="{{ $problem }}">{{ __('portal.setup.container.problem.'.$problem, ['router' => $routers->firstWhere('id', $routerId)?->name]) }}</p>
+        @endforeach
         <form method="POST" action="{{ route('admin.sites.setup.container', $site) }}" class="mb-4 grid gap-3 md:grid-cols-3">
             @csrf
             <label class="label">{{ __('portal.setup.container.veth_address') }}

@@ -65,6 +65,8 @@ trait MikrotikRos7RouterState
         '/radius' => ['address', 'service', 'comment'],
         '/system script' => ['name', 'comment'],
         '/system scheduler' => ['name', 'interval', 'comment'],
+        // Container step hint (decision 2026-11-02): device mode allows containers (the menu exists without the package too)
+        '/system device-mode' => ['container'],
         '/container mounts' => ['list', 'src', 'dst', 'comment'],
         '/container envs' => ['list', 'key', 'comment'],
         '/user group' => ['name', 'policy', 'comment'],
@@ -531,6 +533,23 @@ trait MikrotikRos7RouterState
         };
 
         return $norm($want) === $norm($actual);
+    }
+
+    /**
+     * Why the RouterOS container cannot run on a router according to its stored state (hint of the container
+     * step, decision 2026-11-02): "package" when both /container menus are missing (no container package),
+     * "device_mode" when the device mode does not allow containers, null when fine or unknown.
+     */
+    public function containerProblem(array $state): ?string
+    {
+        $menus = (array) ($state['menus'] ?? []);
+        $missing = fn (string $menu) => is_array($menus[$menu] ?? null) && isset($menus[$menu]['error']);
+        if ($missing('/container mounts') && $missing('/container envs')) {
+            return 'package';
+        }
+        $mode = $menus['/system device-mode']['rows'][0]['container'] ?? null;
+
+        return in_array($mode, ['no', 'false', false], true) ? 'device_mode' : null;
     }
 
     public function deriveSetup(Site $site, array $state): array

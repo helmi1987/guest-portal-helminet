@@ -108,6 +108,9 @@ class SetupController extends Controller
             'provisioning' => $driver instanceof ProvisioningEditor
                 ? $apiRouters->mapWithKeys(fn (NasClient $nas) => [$nas->id => $driver->provisioningRules($nas)])->filter()->all() : [],
             'secretsUrl' => $stateDriver ? route('admin.sites.setup.secrets', $site) : null,
+            // Container step hint per router with a stored state: container package missing or device mode without containers
+            'containerProblems' => $stateDriver ? $apiRouters->filter(fn (NasClient $nas) => is_array($nas->router_state))
+                ->mapWithKeys(fn (NasClient $nas) => [$nas->id => $stateDriver->containerProblem($nas->router_state)])->filter()->all() : [],
         ];
     }
 

@@ -292,6 +292,10 @@ return [
             'docker' => 'Alternativa: eseguire l\'immagine su un host Docker o Unraid, vedi docs/docker-host.md (Compose, ad es. Unraid) nel repository; in tal caso saltare questo passo.',
             'veth_address' => 'IP/prefisso del container (veth)',
             'veth_gateway' => 'Gateway (indirizzo del router sul bridge dei container)',
+            'problem' => [
+                'package' => ':router: lo stato del router non mostra alcun pacchetto container (mancano i menu /container). Installare il pacchetto container, oppure eseguire il portale su un host Docker e saltare questo passo.',
+                'device_mode' => ':router: la modalità del dispositivo (device-mode) non consente ancora i container. Eseguire il primo blocco qui sotto e confermarlo sul dispositivo.',
+            ],
             'bridge' => 'Bridge dei container',
             'disk' => 'Disco (ad es. usb1)',
             'image' => 'Immagine',

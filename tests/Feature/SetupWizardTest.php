@@ -157,6 +157,39 @@ class SetupWizardTest extends TestCase
         $this->assertStringNotContainsString('progress[step]', $page);
     }
 
+    public function test_container_step_hints_at_a_missing_package_or_device_mode(): void
+    {
+        $driver = $this->site->driver();
+        $missing = ['error' => 'no such command prefix'];
+        $this->assertSame('package', $driver->containerProblem(['menus' => ['/container mounts' => $missing, '/container envs' => $missing]]));
+        $this->assertSame('device_mode', $driver->containerProblem(['menus' => ['/container mounts' => ['rows' => []],
+            '/container envs' => ['rows' => []], '/system device-mode' => ['rows' => [['container' => 'no']]]]]));
+        $this->assertNull($driver->containerProblem(['menus' => ['/container mounts' => ['rows' => []], '/container envs' => ['rows' => []],
+            '/system device-mode' => ['rows' => [['container' => 'yes']]]]]));
+        // Unknown (no state of these menus, or a device without the device-mode menu): no hint
+        $this->assertNull($driver->containerProblem(['menus' => ['/system device-mode' => $missing]]));
+        $this->assertArrayHasKey('/system device-mode', $driver->stateMenus($this->site));
+
+        // No hint without a stored state
+        $this->configureApi();
+        foreach ([$this->url($this->step('container')), "/admin/sites/{$this->site->id}/setup"] as $url) {
+            $this->assertStringNotContainsString('data-container-problem', $this->admin()->get($url)->assertOk()->getContent());
+        }
+        // Stored state without the container package: notice in the wizard step and on the setup page (only a hint,
+        // the step stays selectable)
+        $this->nas->forceFill(['router_state' => ['host' => '10.0.1.1', 'menus' => ['/container mounts' => $missing, '/container envs' => $missing]],
+            'router_state_at' => now()])->save();
+        foreach ([$this->url($this->step('container')), "/admin/sites/{$this->site->id}/setup"] as $url) {
+            $page = $this->admin()->get($url)->assertOk()->getContent();
+            $this->assertStringContainsString('data-container-problem="package"', $page);
+            $this->assertStringContainsString(e(__('portal.setup.container.problem.package', ['router' => 'Router A'])), $page);
+            $this->assertStringContainsString('name="veth_address"', $page);
+        }
+        $this->nas->forceFill(['router_state' => ['host' => '10.0.1.1', 'menus' => ['/container mounts' => ['rows' => []],
+            '/container envs' => ['rows' => []], '/system device-mode' => ['rows' => [['container' => 'false']]]]]])->save();
+        $this->assertStringContainsString('data-container-problem="device_mode"', $this->admin()->get($this->url($this->step('container')))->getContent());
+    }
+
     public function test_steps_show_their_blocks_and_save_back_to_the_wizard(): void
     {
         $network = $this->step('network');

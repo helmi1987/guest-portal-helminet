@@ -25,6 +25,12 @@ interface RouterStateDriver
     public function compareState(Site $site, array $state): array;
 
     /**
+     * Why the RouterOS container cannot run on the router of a stored state: "package" (container package
+     * missing), "device_mode" (device mode does not allow containers) or null (fine or unknown).
+     */
+    public function containerProblem(array $state): ?string;
+
+    /**
      * Setup assistant inputs derivable from the state: [field => [value, source]] (source: short
      * English hint where the value comes from).
      *

@@ -112,3 +112,6 @@ folder (`flash/hotspot` is a plain directory on the CHR), and the source-IP chec
   shows `*<id>` in `slave-configurations`), run the Wi-Fi block (append, per-CAP copy) and the network uninstall:
   the script must not abort and the rewritten rules must not carry the `*<id>`. Covered only by the PHP tests so far
   (`WifiModesAndCapsTest`, `ProvisioningEditorTest`).
+- Container hint (2026-11-02): the state query reads `/system device-mode` (property `container`); the harness runs
+  the query over REST and api-ssl, so a refused or unknown menu would show there. Not yet asserted: the value on
+  the CHR and the hint "no container package" (CHR without the container package: both `/container` menus missing).

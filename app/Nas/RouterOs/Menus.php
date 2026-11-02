@@ -20,6 +20,7 @@ final class Menus
         '/ip dns static', '/ip hotspot', '/ip hotspot profile', '/ip hotspot walled-garden', '/ip hotspot walled-garden ip',
         '/ip firewall filter', '/ip firewall address-list', '/ip service',
         '/radius', '/system script', '/system scheduler', '/container mounts', '/container envs', '/user', '/user group',
+        '/system device-mode',
     ];
 
     /** Property names never requested (secrets, script sources, keys). */

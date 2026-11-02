@@ -130,6 +130,10 @@
                 @case('container')
                     <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.container.help') }}</p>
                     <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.container.docker') }}</p>
+                    {{-- Hint only (router state): no container package, or device mode without containers --}}
+                    @foreach ($containerProblems as $routerId => $problem)
+                        <p class="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm font-medium text-amber-900" role="status" data-container-problem="{{ $problem }}">{{ __('portal.setup.container.problem.'.$problem, ['router' => $routers->firstWhere('id', $routerId)?->name]) }}</p>
+                    @endforeach
                     {{-- "Not used" counts as done; kept in the browser like the other progress --}}
                     <fieldset class="mb-4 text-sm" data-wizard-container-choice>
                         <label class="mr-4"><input type="radio" name="container_choice" value="used" x-bind:checked="!unused" x-on:change="setUnused(false)" data-wizard-container-used> {{ __('portal.wizard.container_used') }}</label>

@@ -292,6 +292,10 @@ return [
             'docker' => 'Alternative : exécuter l\'image sur un hôte Docker ou Unraid, voir docs/docker-host.md (Compose, p. ex. Unraid) dans le dépôt ; sauter alors cette étape.',
             'veth_address' => 'IP/préfixe du conteneur (veth)',
             'veth_gateway' => 'Passerelle (adresse du routeur sur le bridge des conteneurs)',
+            'problem' => [
+                'package' => ':router : l\'état du routeur ne montre aucun paquet container (les menus /container manquent). Installer le paquet container, ou exécuter le portail sur un hôte Docker et sauter cette étape.',
+                'device_mode' => ':router : le mode de l\'appareil (device-mode) n\'autorise pas encore les conteneurs. Exécuter le premier bloc ci-dessous et le confirmer sur l\'appareil.',
+            ],
             'bridge' => 'Bridge des conteneurs',
             'disk' => 'Disque (p. ex. usb1)',
             'image' => 'Image',
