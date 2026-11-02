@@ -72,7 +72,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
     Route::middleware('guest')->group(function () {
         Route::get('/login', Login::class)->name('login');
         Route::get('/oidc/redirect', [OidcController::class, 'redirect'])->name('oidc.redirect')->middleware('throttle:10,1,oidc-redirect');
-        Route::get('/oidc/callback', [OidcController::class, 'callback'])->name('oidc.callback')->middleware('throttle:20,1,oidc-callback');
+        Route::get('/oidc/callback', [OidcController::class, 'callback'])->name('oidc.callback')
+            ->middleware(['oidc.bounce', 'throttle:20,1,oidc-callback']);
     });
 
     Route::middleware('auth')->group(function () {

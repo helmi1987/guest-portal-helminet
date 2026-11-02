@@ -449,6 +449,11 @@ All login methods produce a **grant**; a code is a grant created in advance.
   `nonce`, `sub`. Userinfo (sub must match) fills email/`email_verified`/groups when missing in the ID token. Non-string
   query parameters (code, state, error) fail with the generic error. HTTPS only,
   TLS verified, 10 s timeout, no redirects followed; redirect 10/min, callback 20/min per IP.
+  Decision 2026-11-02 (v0.21.0): the admin session cookie stays `SameSite=Strict`, so the browser does not
+  send it on the identity provider's cross-site redirect; a callback without the cookie and without
+  `bounce=1` answers (before the session starts, so no new cookie replaces the old one) a minimal page that
+  reloads the same URL plus `bounce=1` by meta refresh; that navigation is same-site and carries the
+  cookie; without the flow after the bounce the login fails as before. Not yet verified with a real IdP.
   Users: matched by `oidc_subject` (`<iss> <sub>`); first login links an existing user by email only
   when linking is enabled and `email_verified` is true (otherwise denied; audited `user.oidc_linked`;
   a linked user with TOTP always enters the portal code on that linking login, whatever the 2FA mode),

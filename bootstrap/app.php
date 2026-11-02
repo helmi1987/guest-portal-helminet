@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\AuthenticateFederationPeer;
+use App\Http\Middleware\BounceOidcCallback;
 use App\Http\Middleware\DetectZone;
 use App\Http\Middleware\EnsureRole;
 use App\Http\Middleware\EnsureTwoFactor;
@@ -15,6 +16,7 @@ use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Middleware\SubstituteBindings;
+use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
 
 return Application::configure(basePath: dirname(__DIR__))
@@ -46,9 +48,12 @@ return Application::configure(basePath: dirname(__DIR__))
             'two_factor' => EnsureTwoFactor::class,
             'locale' => SetLocale::class,
             'federation.peer' => AuthenticateFederationPeer::class,
+            'oidc.bounce' => BounceOidcCallback::class,
         ]);
         // The zone check must run before auth redirects, otherwise /admin on the guest port redirects.
         $middleware->prependToPriorityList(EncryptCookies::class, EnsureZone::class);
+        // The OIDC callback bounce must answer before a session (and a new session cookie) is started.
+        $middleware->prependToPriorityList(StartSession::class, BounceOidcCallback::class);
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(fn () => route('admin.dashboard'));
         // Specific proxies only: a trust-all value is ignored (TrustedProxies, error logged by portal:init).
