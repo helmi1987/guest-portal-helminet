@@ -843,7 +843,7 @@ trait MikrotikRos7RouterState
             '}',
             '# Optional: allow this user only from the portal instance',
             "# /user set [find where name={$user} && comment=\"{$kUser}\"] address={$radius}/32",
-            "# The service must use the router certificate \"{$n}\" (imported by the certificate script, step 4):",
+            "# The service must use the router certificate \"{$n}\" (imported by the certificate script in the router script):",
             '# the portal pins its key. Not changed by this script (not an own object); check, and set it if needed:',
             "/ip service print where name={$service}",
             "# /ip service set {$service} certificate={$n} disabled=no port={$port}",

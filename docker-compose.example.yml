@@ -3,7 +3,7 @@
 # federation API 9443 (only with several instances; reachable from the other instances only, e.g. WireGuard).
 services:
   portal:
-    image: ghcr.io/helmi1987/mikrotik-guest-portal:latest   # or :edge, or a pinned X.Y.Z-YYYYMMDD tag
+    image: ghcr.io/helmi1987/mikrotik-guest-portal:edge   # pin to a release tag (X.Y.Z) once the first release is published
     container_name: guest-portal
     restart: unless-stopped
     ports:

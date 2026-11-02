@@ -295,11 +295,11 @@ return [
             'bridge' => 'Container bridge',
             'disk' => 'Disk (e.g. usb1)',
             'image' => 'Image',
-            'registry' => 'Private image on GHCR: enter the user name and a read-only token (scope read:packages) in /container/config; the token is a password and is not shown here.',
+            'registry' => 'If the image requires authentication (private GHCR package): enter the user name and a read-only token (scope read:packages) in /container/config; the token is a password and is not shown here.',
         ],
         'network' => [
             'title' => 'Guest network',
-            'help' => 'VLAN, Wi-Fi, DHCP/DNS and firewall for the guests. The values are stored with the site and also fill in the router script (step 4).',
+            'help' => 'VLAN, Wi-Fi, DHCP/DNS and firewall for the guests. The values are stored with the site and also fill in the router script (step "Router script").',
             'vlan_id' => 'VLAN ID',
             'bridge' => 'Bridge with the trunk port to the access points / CAPs',
             'bridge_help' => 'The existing bridge that contains the trunk port to the access points / CAPs (e.g. your LAN bridge), not a new empty bridge.',
@@ -366,7 +366,7 @@ return [
         ],
         'hotspot' => [
             'title' => 'Hotspot on the guest interface',
-            'help' => 'Hotspot profile and server "guest-portal" with login via HTTPS and RADIUS. They are also part of the router script (step 4); running both is fine. Requires the hotspot host names of the site.',
+            'help' => 'Hotspot profile and server "guest-portal" with login via HTTPS and RADIUS. They are also part of the router script (step "Router script"); running both is fine. Requires the hotspot host names of the site.',
             'captive_hosts' => 'Do not add captive check hosts (captive.apple.com, connectivitycheck.gstatic.com, msftconnecttest.com) to the walled garden: devices would then believe they are online and not show the login page.',
             'dns_entries' => 'Resulting DNS entries for the guests:',
             'dns_hotspot' => 'hotspot name: the router\'s own HTTPS login, guest gateway',

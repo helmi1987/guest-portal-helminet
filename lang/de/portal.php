@@ -295,11 +295,11 @@ return [
             'bridge' => 'Container-Bridge',
             'disk' => 'Datenträger (z. B. usb1)',
             'image' => 'Image',
-            'registry' => 'Privates Image auf GHCR: Benutzername und ein Lese-Token (Scope read:packages) in /container/config eintragen; das Token ist ein Passwort und wird hier nicht angezeigt.',
+            'registry' => 'Falls das Image eine Anmeldung verlangt (privates GHCR-Paket): Benutzername und ein Lese-Token (Scope read:packages) in /container/config eintragen; das Token ist ein Passwort und wird hier nicht angezeigt.',
         ],
         'network' => [
             'title' => 'Gästenetz',
-            'help' => 'VLAN, WLAN, DHCP/DNS und Firewall für die Gäste. Die Werte werden beim Standort gespeichert und füllen auch das Router-Skript (Schritt 4) aus.',
+            'help' => 'VLAN, WLAN, DHCP/DNS und Firewall für die Gäste. Die Werte werden beim Standort gespeichert und füllen auch das Router-Skript (Schritt "Router-Skript") aus.',
             'vlan_id' => 'VLAN-ID',
             'bridge' => 'Bridge mit dem Trunk-Port zu den Access Points / CAPs',
             'bridge_help' => 'Die bestehende Bridge, die den Trunk-Port zu den Access Points / CAPs enthält (z. B. die LAN-Bridge), keine neue leere Bridge.',
@@ -366,7 +366,7 @@ return [
         ],
         'hotspot' => [
             'title' => 'Hotspot auf dem Gäste-Interface',
-            'help' => 'Hotspot-Profil und -Server "guest-portal" mit Login über HTTPS und RADIUS. Sie sind auch im Router-Skript (Schritt 4) enthalten; beides auszuführen ist unproblematisch. Benötigt die Hotspot-Hostnamen des Standorts.',
+            'help' => 'Hotspot-Profil und -Server "guest-portal" mit Login über HTTPS und RADIUS. Sie sind auch im Router-Skript (Schritt "Router-Skript") enthalten; beides auszuführen ist unproblematisch. Benötigt die Hotspot-Hostnamen des Standorts.',
             'captive_hosts' => 'Keine Captive-Check-Hosts (captive.apple.com, connectivitycheck.gstatic.com, msftconnecttest.com) in den Walled Garden eintragen: Geräte halten sich sonst für online und zeigen die Login-Seite nicht an.',
             'dns_entries' => 'Resultierende DNS-Einträge für die Gäste:',
             'dns_hotspot' => 'Hotspot-Name: eigener HTTPS-Login des Routers, Gast-Gateway',

@@ -494,7 +494,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         $ws = fn (string $block, string $object) => self::ownedStatic(self::key($block, $object));
         $apiGroup = self::API_GROUP;
 
-        // Container network (step 1)
+        // Container network (step "RouterOS container")
         $containerNetwork = implode("\n", [
             $up('/interface/veth', 'name=veth-portal', $k('container', 'veth'), 'name=veth-portal',
                 "address={$c['veth_address']} gateway={$c['veth_gateway']}"),
@@ -521,7 +521,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 RSC,
                 'container_add' => <<<RSC
                 /container/config set registry-url=https://ghcr.io tmpdir={$c['disk']}/tmp
-                # Private image only: /container/config set username=<GITHUB_USER> password=<READ_ONLY_TOKEN>
+                # Only if the image requires authentication (private package): /container/config set username=<GITHUB_USER> password=<READ_ONLY_TOKEN>
                 {$containerLists}
                 /container add remote-image={$c['image']} interface=veth-portal \\
                     root-dir={$c['disk']}/portal-root mountlists=portal-data envlist=portal start-on-boot=yes logging=yes
@@ -745,7 +745,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 # garden) with the first hotspot; they are not removed here (other hotspots may use them).
                 RSC,
                 'uninstall_container' => <<<RSC
-                # OPTIONAL, only if the portal runs as RouterOS container on this router (step 1).
+                # OPTIONAL, only if the portal runs as RouterOS container on this router (step "RouterOS container").
                 # Data in {$c['disk']}/portal-data and {$c['disk']}/portal-root stays (back up, then /file remove).
                 # Device mode container=yes stays enabled.
                 /container stop [find where interface=veth-portal]
@@ -761,7 +761,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 # /interface veth print where name=veth-portal
                 RSC,
                 'uninstall_network' => <<<RSC
-                # OPTIONAL network infrastructure of step 2. Removes only objects with an own comment key (or the
+                # OPTIONAL network infrastructure of the step "Guest network". Removes only objects with an own comment key (or the
                 # comment "{$n}" of versions 0.12.7 to 0.13.x; older ones have none: check with the prints at
                 # the end and remove them manually). Wi-Fi first, VLAN interface last.
                 {$wifiRemove}
@@ -774,7 +774,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 /interface list member remove [find where list=GUEST && {$o('fw', 'list-member')}]
                 # (the list only when no member of others is left in it)
                 :if ([:len [/interface list member find where list=GUEST]] = 0) do={ /interface list remove [find where name=GUEST && {$o('fw', 'list-guest')}] }
-                # bridge VLAN entry (optional block of step 2)
+                # bridge VLAN entry (optional block of the step "Guest network")
                 /interface bridge vlan remove [find where bridge={$g['bridge']} && {$o('net', 'bridge-vlan')}]
                 # guest VLAN interface
                 /interface vlan remove [find where name={$g['interface']} && {$o('net', 'vlan')}]
@@ -1153,7 +1153,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         if ($g['wifi_unavailable']) {
             // WPA site whose password is kept on another instance: never fall back to an open network
             $security = "# Guest Wi-Fi password is set for this site but not available on this instance (kept local on another one).\n"
-                .'# sec-guest is NOT created or changed here: enter the password in step 2 on this instance, or run this on the instance that has it.';
+                .'# sec-guest is NOT created or changed here: enter the password in the setup assistant on this instance, or run this on the instance that has it.';
         } elseif ($g['wifi_password'] !== '') {
             // Masked for display (setup assistant page): the placeholder is replaced in the browser only
             // when the admin asks for it; a copy with the placeholder left in aborts before any change.

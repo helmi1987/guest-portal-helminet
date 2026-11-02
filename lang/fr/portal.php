@@ -295,11 +295,11 @@ return [
             'bridge' => 'Bridge des conteneurs',
             'disk' => 'Disque (p. ex. usb1)',
             'image' => 'Image',
-            'registry' => 'Image privée sur GHCR : saisir le nom d\'utilisateur et un jeton en lecture seule (scope read:packages) dans /container/config ; le jeton est un mot de passe et n\'est pas affiché ici.',
+            'registry' => 'Si l\'image exige une authentification (paquet GHCR privé) : saisir le nom d\'utilisateur et un jeton en lecture seule (scope read:packages) dans /container/config ; le jeton est un mot de passe et n\'est pas affiché ici.',
         ],
         'network' => [
             'title' => 'Réseau invités',
-            'help' => 'VLAN, Wi-Fi, DHCP/DNS et pare-feu pour les invités. Les valeurs sont enregistrées avec le site et remplissent aussi le script du routeur (étape 4).',
+            'help' => 'VLAN, Wi-Fi, DHCP/DNS et pare-feu pour les invités. Les valeurs sont enregistrées avec le site et remplissent aussi le script du routeur (étape « Script du routeur »).',
             'vlan_id' => 'ID VLAN',
             'bridge' => 'Bridge avec le port trunk vers les points d\'accès / CAP',
             'bridge_help' => 'Le bridge existant qui contient le port trunk vers les points d\'accès / CAP (p. ex. le bridge LAN), pas un nouveau bridge vide.',
@@ -366,7 +366,7 @@ return [
         ],
         'hotspot' => [
             'title' => 'Hotspot sur l\'interface invités',
-            'help' => 'Profil et serveur hotspot « guest-portal » avec login via HTTPS et RADIUS. Ils font aussi partie du script du routeur (étape 4) ; exécuter les deux ne pose pas de problème. Nécessite les noms d\'hôte hotspot du site.',
+            'help' => 'Profil et serveur hotspot « guest-portal » avec login via HTTPS et RADIUS. Ils font aussi partie du script du routeur (étape « Script du routeur ») ; exécuter les deux ne pose pas de problème. Nécessite les noms d\'hôte hotspot du site.',
             'captive_hosts' => 'Ne pas ajouter les hôtes de détection captive (captive.apple.com, connectivitycheck.gstatic.com, msftconnecttest.com) au walled garden : les appareils se croiraient en ligne et n\'afficheraient pas la page de login.',
             'dns_entries' => 'Entrées DNS résultantes pour les invités :',
             'dns_hotspot' => 'nom hotspot : login HTTPS propre du routeur, passerelle invités',

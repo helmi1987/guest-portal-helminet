@@ -21,10 +21,10 @@ Mode A: with macvlan the host itself cannot reach the container. If the host (or
 proxy on the host network) must reach the portal, add a macvlan shim interface on the host,
 or on Unraid enable Settings → Docker → "Host access to custom networks".
 
-## 2. Private image (GHCR)
+## 2. Registry login (private image only)
 
-While the repository is private, log in once on the Docker host with a GitHub token that has
-only `read:packages`:
+A public image needs no login. Only if the image requires authentication (private GHCR package),
+log in once on the Docker host with a GitHub token that has only `read:packages`:
 
 ```bash
 docker login ghcr.io -u <github-user>
@@ -40,7 +40,7 @@ Create a folder (e.g. `/opt/guest-portal`, Unraid: Compose Manager → Add New S
 ```yaml
 services:
   portal:
-    image: ghcr.io/helmi1987/mikrotik-guest-portal:edge          # :latest after the first release, or a pinned X.Y.Z-YYYYMMDD tag
+    image: ghcr.io/helmi1987/mikrotik-guest-portal:edge          # pin to a release tag (X.Y.Z) once the first release is published
     container_name: guest-portal
     restart: unless-stopped
     # --- Mode A: own LAN IP (remove the "ports:" block) ---

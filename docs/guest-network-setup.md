@@ -133,7 +133,7 @@ package CAPs, `/interface wifi` CAPsMAN manages `wifi` package CAPs. A site can 
 Common settings for both: open guest SSID (no Wi-Fi password; access control is the portal),
 client isolation on, VLAN 30 for the guest SSID only, the staff SSID untouched.
 
-Optional Wi-Fi password: the setup assistant (step 2) can store a guest Wi-Fi password per site. By
+Optional Wi-Fi password: the setup assistant (step "Guest network", in the wizard "Guest Wi-Fi") can store a guest Wi-Fi password per site. By
 default it stays on that instance only (encrypted with `APP_KEY`, not replicated); the checkbox
 "Share with other instances" replicates it (encrypted with the federation data key). Other instances
 only learn that the network has a password: without the password they print no Wi-Fi QR code, show a
@@ -244,13 +244,14 @@ Create both sets side by side (the names `dp-guest`, `cfg-guest` exist in separa
 Use the same SSID and VLAN so guests roam between old and new APs. Roaming does not preserve the
 hotspot session if the client IP changes, but the VLAN/subnet is the same so it normally does.
 
-The setup assistant (v0.19.0) takes several Wi-Fi modes at once (step 2: tick every mode the site uses):
+The setup assistant (v0.19.0) takes several Wi-Fi modes at once (step "Guest network", in the wizard "Guest Wi-Fi": tick every mode
+the site uses):
 the Wi-Fi block then has one part per mode and creates `dp-guest`, `sec-guest` and `cfg-guest` once per
 package (`/caps-man` and `/interface wifi`; CAPsMAN of the wifi package and a local radio share them).
 
 ### 3.5 Guest SSID only on some CAPs, provisioning rules
 
-Setup assistant, step 2, per CAPsMAN mode (optional): tick the CAP radios (radio-mac, from the router
+Setup assistant, step "Guest network" (wizard: "Guest Wi-Fi"), per CAPsMAN mode (optional): tick the CAP radios (radio-mac, from the router
 state) that get the guest SSID. Per radio the Wi-Fi block adds an own provisioning rule
 (`radio-mac=<mac>`, comment `guest-portal:wifi:cap-<mac>`) before your rule that provisions the radio now,
 copying it plus `cfg-guest`; your rules then do not get `cfg-guest`. Verified with the wifi package; legacy
@@ -732,7 +733,7 @@ Findings from a first real setup; the setup assistant shows the same checklist.
 
 ## 10b. Removing the portal from a router
 
-Setup assistant, step 8 "Remove everything again", generates the script. It removes, by name or comment
+Setup assistant, section "Remove everything again", generates the script. It removes, by name or comment
 `guest-portal`, in this order: certificate script + scheduler, hotspot server, hotspot profile, walled
 garden (host + IP), `/radius` entry, imported certificates (comment `guest-portal`, plus the exact names
 `guest-portal`, `guest-portal-ca-*`, `guest-portal-import*`, `guest-portal-new`, `guest-portal-new_*`

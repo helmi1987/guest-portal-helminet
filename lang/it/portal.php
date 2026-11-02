@@ -295,11 +295,11 @@ return [
             'bridge' => 'Bridge dei container',
             'disk' => 'Disco (ad es. usb1)',
             'image' => 'Immagine',
-            'registry' => 'Immagine privata su GHCR: inserire nome utente e un token di sola lettura (scope read:packages) in /container/config; il token è una password e non viene mostrato qui.',
+            'registry' => 'Se l\'immagine richiede l\'autenticazione (pacchetto GHCR privato): inserire nome utente e un token di sola lettura (scope read:packages) in /container/config; il token è una password e non viene mostrato qui.',
         ],
         'network' => [
             'title' => 'Rete ospiti',
-            'help' => 'VLAN, Wi-Fi, DHCP/DNS e firewall per gli ospiti. I valori sono salvati con la sede e compilano anche lo script del router (passo 4).',
+            'help' => 'VLAN, Wi-Fi, DHCP/DNS e firewall per gli ospiti. I valori sono salvati con la sede e compilano anche lo script del router (passo "Script del router").',
             'vlan_id' => 'ID VLAN',
             'bridge' => 'Bridge con la porta trunk verso gli access point / CAP',
             'bridge_help' => 'Il bridge esistente che contiene la porta trunk verso gli access point / CAP (ad es. il bridge LAN), non un nuovo bridge vuoto.',
@@ -366,7 +366,7 @@ return [
         ],
         'hotspot' => [
             'title' => 'Hotspot sull\'interfaccia ospiti',
-            'help' => 'Profilo e server hotspot "guest-portal" con login via HTTPS e RADIUS. Sono inclusi anche nello script del router (passo 4); eseguire entrambi non è un problema. Richiede i nomi host hotspot della sede.',
+            'help' => 'Profilo e server hotspot "guest-portal" con login via HTTPS e RADIUS. Sono inclusi anche nello script del router (passo "Script del router"); eseguire entrambi non è un problema. Richiede i nomi host hotspot della sede.',
             'captive_hosts' => 'Non inserire gli host di verifica captive (captive.apple.com, connectivitycheck.gstatic.com, msftconnecttest.com) nel walled garden: i dispositivi si crederebbero online e non mostrerebbero la pagina di login.',
             'dns_entries' => 'Voci DNS risultanti per gli ospiti:',
             'dns_hotspot' => 'nome hotspot: login HTTPS proprio del router, gateway ospiti',
