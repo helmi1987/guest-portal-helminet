@@ -731,8 +731,8 @@ return [
         'sms_countries_invalid' => 'Bitte zweistellige ISO-Ländercodes eingeben.',
         'sms_help' => 'Limits begrenzen die SMS-Kosten; 0 sperrt den Versand. Jede erste SMS und jedes erneute Senden zählt.',
         'sms_text' => 'SMS-Text',
-        'sms_text_help' => 'Pro Sprache. Platzhalter: :code (Pflicht, in einer Zeile ohne :host), :minutes, :host (Portal-Host der Anfrage). Zeilen mit :host entfallen ohne gültigen Host. Die letzte Zeile «@:host #:code» lässt iOS/Android den Code anbieten. Leer = Standardtext. Max. 300 Zeichen.',
-        'sms_text_missing_code' => 'Der Text muss :code in einer Zeile ohne :host enthalten.',
+        'sms_text_help' => 'Pro Sprache. Platzhalter: :code (Pflicht), :minutes, :host (Portal-Host der Anfrage). :code muss in einer Zeile ohne :host stehen, davor das Wort «Code» (IT auch «codice»). iOS bietet den Code nur an, wenn er direkt nach «Code: » steht (z.B. «Dein Code: :code»); Text wie «Wi-Fi» zwischen Wort und Doppelpunkt oder nach dem Code verhindert das. Zeilen mit :host entfallen ohne gültigen Host; die letzte Zeile «@:host #:code» bindet den Code an das Portal. Leer = Standardtext. Max. 300 Zeichen.',
+        'sms_text_missing_code' => 'Der Text muss :code in einer Zeile ohne :host enthalten, davor das Wort «Code» (z.B. «Dein Code: :code»).',
         'sms_caps' => [
             'phone_hour' => 'Max. SMS pro Nummer und Stunde',
             'phone_day' => 'Max. SMS pro Nummer und Tag',
@@ -871,7 +871,7 @@ return [
         'copy_missing' => 'Diese Instanz hat keine Quelle für dieses Zertifikat.',
     ],
     'sms' => [
-        'text' => ":code ist dein Code für das Gäste-WLAN (gültig :minutes Min.).\n\n@:host #:code",
+        'text' => "Dein Code: :code\nGäste-WLAN, gültig :minutes Min.\n\n@:host #:code",
         'test' => 'Test-SMS vom Gästeportal.',
     ],
     'oidc' => [

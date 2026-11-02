@@ -731,8 +731,8 @@ return [
         'sms_countries_invalid' => 'Veuillez saisir des codes pays ISO à deux lettres.',
         'sms_help' => 'Les limites plafonnent les coûts SMS ; 0 bloque l\'envoi. Chaque premier SMS et chaque renvoi compte.',
         'sms_text' => 'Texte du SMS',
-        'sms_text_help' => 'Par langue. Variables : :code (obligatoire, dans une ligne sans :host), :minutes, :host (hôte du portail de la requête). Les lignes avec :host sont omises sans hôte valide. La dernière ligne « @:host #:code » permet à iOS/Android de proposer le code. Vide = texte par défaut. Max. 300 caractères.',
-        'sms_text_missing_code' => 'Le texte doit contenir :code dans une ligne sans :host.',
+        'sms_text_help' => 'Par langue. Variables : :code (obligatoire), :minutes, :host (hôte du portail de la requête). :code doit être dans une ligne sans :host, précédé du mot « code ». iOS ne propose le code que s\'il suit directement « code : » (p. ex. « Votre code : :code ») ; un texte comme « Wi-Fi » entre le mot et les deux-points ou après le code l\'empêche. Les lignes avec :host sont omises sans hôte valide ; la dernière ligne « @:host #:code » lie le code au portail. Vide = texte par défaut. Max. 300 caractères.',
+        'sms_text_missing_code' => 'Le texte doit contenir :code dans une ligne sans :host, précédé du mot « code » (p. ex. « Votre code : :code »).',
         'sms_caps' => [
             'phone_hour' => 'SMS max. par numéro et heure',
             'phone_day' => 'SMS max. par numéro et jour',
@@ -871,7 +871,7 @@ return [
         'copy_missing' => 'Cette instance n\'a pas de source pour ce certificat.',
     ],
     'sms' => [
-        'text' => ":code est votre code Wi-Fi invité (valable :minutes min).\n\n@:host #:code",
+        'text' => "Votre code : :code\nWi-Fi invités, valable :minutes min.\n\n@:host #:code",
         'test' => 'SMS de test du portail invité.',
     ],
     'oidc' => [

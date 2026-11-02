@@ -301,7 +301,7 @@ CoovaChilli) are future/community work.
    supported), first enabled SMS provider by name.
    Decision 2026-11-02 (v0.19.2, SMS text for autofill): the text uses the domain-bound one-time code
    format (WebKit origin-bound codes, WHATWG sms-one-time-codes, Chrome WebOTP) so iOS/Android offer the code
-   for the portal page: code first (`123456 is your guest Wi-Fi code (valid for 10 min).`), a blank line, last
+   for the portal page: text (see v0.20.1 below), a blank line, last
    line `@<host> #<code>` (`OtpService::text()`). Host = host of the guest request that triggered the send
    (`Request::getHost()` of the start/resend request, the page the code is entered on; not APP_URL, since the
    guest zone may be reached under other names); lower case, no scheme, no port; invalid host (not a DNS name)
@@ -315,6 +315,12 @@ CoovaChilli) are future/community work.
    line `@:host #:code`; only texts differing from the default are stored, an empty field resets to it. Without
    a valid host every template line containing `:host` is omitted. The admin is responsible for keeping the
    autofill line in an own text.
+   Decision 2026-11-02 (v0.20.1, text for iOS code detection, tested on iOS): iOS only offers/copies the code
+   when it directly follows the word "code" (IT "codice") and a colon, e.g. `Your code: 123456`; text between
+   the word and the colon (e.g. "Wi-Fi") or after the code on the same line, or the code first, prevents it.
+   Defaults: line 1 `Your code: :code` (DE `Dein Code:`, FR `Votre code :`, IT `Il tuo codice:`), line 2
+   guest Wi-Fi and validity, blank line, `@:host #:code`. An own text is rejected unless a line without
+   `:host` contains `:code` preceded by the word "code" or "codice".
 3. Guest enters OTP; a grant is created with the configured SMS duration (setting, default 1 d),
    time running from login.
 4. Step 5 of A.

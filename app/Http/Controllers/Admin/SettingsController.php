@@ -149,9 +149,11 @@ class SettingsController extends Controller
         $texts = [];
         foreach (config('portal.locales') as $locale) {
             $text = trim(str_replace(["\r\n", "\r"], "\n", (string) ($data['sms_text'][$locale] ?? '')));
-            // The code must also survive without a valid host (OtpService drops every line with :host then).
-            $withoutHost = array_filter(explode("\n", $text), fn ($l) => ! str_contains($l, ':host'));
-            if ($text !== '' && ! str_contains(implode("\n", $withoutHost), ':code')) {
+            // The code must also survive without a valid host (OtpService drops every line with :host then)
+            // and be preceded by the word "code" (IT "codice"), which iOS needs to detect it.
+            $codeLine = collect(explode("\n", $text))->first(fn ($l) => ! str_contains($l, ':host') && str_contains($l, ':code')
+                && preg_match('/\b(code|codice)\b/iu', str_replace([':code', ':minutes'], '', strstr($l, ':code', true))));
+            if ($text !== '' && $codeLine === null) {
                 throw ValidationException::withMessages(["sms_text.$locale" => __('portal.settings.sms_text_missing_code')]);
             }
             if (mb_strlen($text) > SmsSettings::TEXT_MAX) {

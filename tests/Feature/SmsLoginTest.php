@@ -192,12 +192,12 @@ class SmsLoginTest extends TestCase
 
     public function test_sms_text_is_domain_bound_one_time_code(): void
     {
-        $this->assertSame("123456 is your guest Wi-Fi code (valid for 10 min).\n\n@portal.example.com #123456",
+        $this->assertSame("Your code: 123456\nGuest Wi-Fi, valid for 10 min.\n\n@portal.example.com #123456",
             OtpService::text('123456', 10, 'en', 'Portal.Example.com'));
-        $this->assertSame("123456 ist dein Code für das Gäste-WLAN (gültig 10 Min.).\n\n@portal.example.com #123456",
+        $this->assertSame("Dein Code: 123456\nGäste-WLAN, gültig 10 Min.\n\n@portal.example.com #123456",
             OtpService::text('123456', 10, 'de', 'portal.example.com'));
         foreach (['fr', 'it'] as $locale) {
-            $this->assertStringStartsWith('123456 ', OtpService::text('123456', 10, $locale, 'portal.example.com'));
+            $this->assertMatchesRegularExpression('/^\\D*codi?c?e ?: 123456\\n/iu', OtpService::text('123456', 10, $locale, 'portal.example.com'));
         }
         foreach ([null, '', 'bad host', 'a.b:8443', 'https://a.b', '[::1]'] as $host) {
             $text = OtpService::text('123456', 10, 'en', $host);
@@ -222,13 +222,20 @@ class SmsLoginTest extends TestCase
         $this->assertSame("Code 123456\nfor 10 min\n\n@portal.example.com #123456",
             OtpService::text('123456', 10, 'en', 'portal.example.com'));
         $this->assertSame("Code 123456\nfor 10 min", OtpService::text('123456', 10, 'en', 'bad host'));
-        $this->assertStringStartsWith('123456 ist dein Code', OtpService::text('123456', 10, 'de', 'portal.example.com'));
+        $this->assertStringStartsWith('Dein Code: 123456', OtpService::text('123456', 10, 'de', 'portal.example.com'));
 
         $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => 'No placeholder']])
             ->assertSessionHasErrors('sms_text.en');
         $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => "Hi\n@:host #:code"]])
             ->assertSessionHasErrors('sms_text.en');
-        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => ':code'.str_repeat('x', 300)]])
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => 'Your pin: :code']])
+            ->assertSessionHasErrors('sms_text.en');
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => ':code is your code']])
+            ->assertSessionHasErrors('sms_text.en');
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['it' => 'Codice di verifica: :code']])
+            ->assertSessionHasNoErrors();
+        Setting::put('sms_text', ['en' => "Code :code\nfor :minutes min\n\n@:host #:code"]);
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => 'Code: :code'.str_repeat('x', 300)]])
             ->assertSessionHasErrors('sms_text.en');
         $this->assertSame(['en' => "Code :code\nfor :minutes min\n\n@:host #:code"], Setting::get('sms_text'));
 
@@ -237,7 +244,7 @@ class SmsLoginTest extends TestCase
         $this->assertSame(['en' => "Code :code\nfor :minutes min\n\n@:host #:code"], Setting::get('sms_text'));
         $this->onZone('admin')->actingAs($admin)->post('/admin/settings/sms', $base + ['sms_text' => ['en' => '']])->assertSessionHasNoErrors();
         $this->assertSame([], Setting::get('sms_text'));
-        $this->assertStringStartsWith('123456 is your guest Wi-Fi code', OtpService::text('123456', 10, 'en', null));
+        $this->assertStringStartsWith('Your code: 123456', OtpService::text('123456', 10, 'en', null));
     }
 
     public function test_sent_sms_carries_request_host_line(): void
@@ -252,7 +259,7 @@ class SmsLoginTest extends TestCase
         $request = Http::recorded()->last()[0];
         $text = $request['content'] ?? $request['text'];
         $code = $this->sentCode();
-        $this->assertStringStartsWith($code.' is your guest Wi-Fi code', $text);
+        $this->assertStringStartsWith('Your code: '.$code."\n", $text);
         $this->assertStringEndsWith("\n\n@portal.example.com #{$code}", $text);
     }
 
