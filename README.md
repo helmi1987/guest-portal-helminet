@@ -158,6 +158,11 @@ php artisan serve          # PORTAL_DEFAULT_ZONE=all in .env serves guest and ad
 php artisan test
 ```
 
+## Contributing and security
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as described in
+[SECURITY.md](SECURITY.md), not in public issues.
+
 ## Notes for AI assistants
 
 - **Anonymity:** this repository must stay fully anonymous. The copyright notice in the README
