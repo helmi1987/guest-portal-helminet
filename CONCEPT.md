@@ -843,6 +843,9 @@ links) and change log events are purged after all direct peers have acknowledged
   router downloads no longer depends on it: always on, only `PORTAL_ROUTER_IP_CHECK=false` switches it
   off (warning at start; the former `PORTAL_ROUTER_CERT_CHECK_IP` is no longer read). A deployment whose
   routers reach the guest port through the same proxy as the admin UI (discouraged) must set it.
+- **Outbound requests (decision 2026-11-02):** approval channels, SMS gateways, certificate pull and OIDC
+  follow no redirects (a redirect is an error) and use short timeouts; private address ranges are not
+  blocked, since Gotify and similar services often run in the operator's LAN (only admins set these URLs).
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
 - **Web/privacy:** CSRF, strict CSP, HSTS, signed URLs, HMAC webhooks, bundled assets; minimal data, retention + purge.

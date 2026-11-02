@@ -3,8 +3,8 @@
 namespace App\Sms\Drivers;
 
 use App\Models\Channel;
+use App\Support\OutboundHttp;
 use App\Support\Redact;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
 
@@ -40,13 +40,13 @@ class ClickatellDriver implements SmsDriver
 
         // Errors carry the HTTP status only: provider responses may echo the number or the request.
         try {
-            $response = Http::asJson()->acceptJson()->timeout(15)
+            $response = OutboundHttp::client(15)->asJson()->acceptJson()
                 ->withHeaders(['Authorization' => $channel->conf('api_key')])
                 ->post($channel->conf('api_url', self::API), $payload);
         } catch (Throwable $e) {
             throw new RuntimeException('Clickatell send failed: '.Redact::secrets($e->getMessage(), $channel->secretValues()));
         }
-        if ($response->failed()) {
+        if ($response->failed() || $response->redirect()) {
             throw new RuntimeException('Clickatell send failed: HTTP '.$response->status());
         }
 
