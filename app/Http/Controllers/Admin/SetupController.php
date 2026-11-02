@@ -34,6 +34,16 @@ class SetupController extends Controller
 
     public function show(Site $site): View
     {
+        return view('admin.sites.setup', $this->viewData($site));
+    }
+
+    /**
+     * View data of the setup page, shared with the guided wizard (WizardController, decision 2026-11-02).
+     *
+     * @return array<string, mixed>
+     */
+    public function viewData(Site $site): array
+    {
         $site->load('nasClients');
         $driver = $site->driver();
         $routers = $site->nasClients->sortBy('name')->values();
@@ -65,7 +75,7 @@ class SetupController extends Controller
         $siteStatus = $stateDriver && ! $stale ? $statusOf($freshRouters) : [];
         $routerStatus = $stateDriver ? $freshRouters->mapWithKeys(fn (NasClient $nas) => [$nas->id => $statusOf(collect([$nas]))])->all() : [];
 
-        return view('admin.sites.setup', [
+        return [
             'site' => $site,
             'setup' => array_diff_key((array) $site->setting('setup', []), ['wifi_password' => true]),
             'derived' => $derived,
@@ -98,7 +108,20 @@ class SetupController extends Controller
             'provisioning' => $driver instanceof ProvisioningEditor
                 ? $apiRouters->mapWithKeys(fn (NasClient $nas) => [$nas->id => $driver->provisioningRules($nas)])->filter()->all() : [],
             'secretsUrl' => $stateDriver ? route('admin.sites.setup.secrets', $site) : null,
-        ]);
+        ];
+    }
+
+    /**
+     * After a save or state query: back to the wizard step that sent it (hidden field "wizard_step"),
+     * else to the anchor of the setup page.
+     */
+    private function back(Request $request, Site $site, string $anchor): RedirectResponse
+    {
+        $step = WizardController::stepNumber($request->input('wizard_step'));
+
+        return redirect()->to($step !== null
+            ? route('admin.sites.wizard', ['site' => $site, 'step' => $step]).'#wizard-step'
+            : route('admin.sites.setup', $site).'#'.$anchor);
     }
 
     /**
@@ -143,12 +166,12 @@ class SetupController extends Controller
     }
 
     /** Query the state of one router (read-only API), then back to the assistant. */
-    public function queryState(Site $site, NasClient $router, RouterStateQuery $query): RedirectResponse
+    public function queryState(Request $request, Site $site, NasClient $router, RouterStateQuery $query): RedirectResponse
     {
         $router->setRelation('site', $site);
         $error = $query->run($router);
 
-        return redirect()->to(route('admin.sites.setup', $site).'#step-state')
+        return $this->back($request, $site, 'step-state')
             ->with('status', $error === null ? __('portal.router_api.queried', ['name' => $router->name]) : null);
     }
 
@@ -256,7 +279,7 @@ class SetupController extends Controller
             'wifi_masters_local' => $masters, 'wifi_caps_local' => $caps])->save();
         Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true]) + ['wifi_masters' => $masters, 'wifi_caps' => $caps]);
 
-        return redirect()->to(route('admin.sites.setup', $site).'#step-network')->with('status', __('portal.saved'));
+        return $this->back($request, $site, 'step-network')->with('status', __('portal.saved'));
     }
 
     /**
@@ -365,7 +388,7 @@ class SetupController extends Controller
         LocalSetting::put(self::CONTAINER_KEY, $data);
         Audit::log('settings.setup_container', $site, $data);
 
-        return redirect()->to(route('admin.sites.setup', $site).'#step-container')->with('status', __('portal.saved'));
+        return $this->back($request, $site, 'step-container')->with('status', __('portal.saved'));
     }
 
     /**

@@ -18,6 +18,14 @@ name but without the key (manual setup without it, or assistant versions 0.6.0 t
 comment)" with a one-time command that sets the key, e.g.
 `/caps-man datapath set [find where name="dp-guest" && !comment] comment="guest-portal:wifi:dp-guest"`.
 
+Guided wizard (v0.19.0): the site page and the setup assistant link a step-by-step view of the same
+blocks. Each step shows its inputs and commands and a "Check" that queries the router (read-only API,
+§10c) and shows only that step's objects; "Next" is enabled when every router with API access shows
+them as present, routers without API access are confirmed by hand ("Done manually"), any step can be
+skipped. The router script (RADIUS secret, certificate token) is only linked, never shown in the wizard;
+its hotspot part needs the guest network, so run it again after the steps "Guest network" and "Hotspot".
+Removal: setup assistant, "Remove everything again".
+
 > Back up first on every router: `/system backup save name=pre-guest` and `/export file=pre-guest`.
 > Use Safe Mode (Winbox/terminal `Ctrl+X`) while changing bridge VLAN filtering or firewall rules.
 

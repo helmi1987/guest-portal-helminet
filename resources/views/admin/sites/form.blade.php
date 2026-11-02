@@ -1,7 +1,12 @@
 <x-layouts.admin :title="$site->exists ? $site->name : __('portal.sites.create')">
     <div class="mb-4 flex items-center justify-between">
         <h1 class="text-2xl font-semibold">{{ $site->exists ? $site->name : __('portal.sites.create') }}</h1>
-        @if ($site->exists) <a href="{{ route('admin.sites.setup', $site) }}" class="btn">{{ __('portal.setup.open_assistant') }}</a> @endif
+        @if ($site->exists)
+            <span class="flex flex-wrap gap-2">
+                <a href="{{ route('admin.sites.wizard', $site) }}" class="btn-light" data-wizard-link>{{ __('portal.wizard.open') }}</a>
+                <a href="{{ route('admin.sites.setup', $site) }}" class="btn">{{ __('portal.setup.open_assistant') }}</a>
+            </span>
+        @endif
     </div>
 
     <form method="POST" action="{{ $site->exists ? route('admin.sites.update', $site) : route('admin.sites.store') }}" class="card mb-6 grid gap-4 md:grid-cols-2">

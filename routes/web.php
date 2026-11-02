@@ -19,6 +19,7 @@ use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\TermsController;
 use App\Http\Controllers\Admin\ToolboxController;
 use App\Http\Controllers\Admin\UserController;
+use App\Http\Controllers\Admin\WizardController;
 use App\Http\Controllers\ApprovalLinkController;
 use App\Http\Controllers\Guest\LocaleController;
 use App\Http\Controllers\Guest\PortalController;
@@ -154,6 +155,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');
+                // Guided wizard: additional view of the setup assistant, one step per block (decision 2026-11-02)
+                Route::get('/sites/{site}/wizard', [WizardController::class, 'show'])->name('sites.wizard');
                 // Stored passwords for "Insert passwords" of the displayed commands (JSON, no-store)
                 Route::post('/sites/{site}/setup/secrets', [SetupController::class, 'secrets'])
                     ->name('sites.setup.secrets')->middleware('throttle:30,1,setup-secrets');

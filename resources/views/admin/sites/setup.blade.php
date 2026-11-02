@@ -11,14 +11,11 @@
     $net = fn ($key, $default = '') => old($key, $setup[$key] ?? ($derived[$key][0] ?? $default));
     $mark = fn ($key) => isset($derived[$key]) ? new \Illuminate\Support\HtmlString('<span class="gp-badge gp-badge-info ml-1 font-normal" data-derived="'.e($key).'" title="'
         .e(__('portal.router_api.derived_from.'.$derived[$key][1], ['router' => $derived[$key][2]])).'">'.e(__('portal.router_api.derived')).'</span>') : '';
-    // Solid badges (WCAG AA in both schemes); legacy/differs = will be updated by the next run,
-    // unmanaged = name taken by an object without comment (adopt command once, decision 2026-11-01)
-    $statusClass = ['present' => 'gp-badge gp-badge-ok', 'foreign' => 'gp-badge gp-badge-ok', 'legacy' => 'gp-badge gp-badge-warn', 'differs' => 'gp-badge gp-badge-warn',
-        'missing' => 'gp-badge gp-badge-error', 'unmanaged' => 'gp-badge gp-badge-unmanaged', 'unknown' => 'gp-badge gp-badge-neutral'];
 @endphp
 <x-layouts.admin :title="__('portal.setup.title')">
     <h1 class="mb-2 text-2xl font-semibold">{{ __('portal.setup.title') }}: {{ $site->name }}</h1>
-    <p class="mb-6 text-sm text-slate-600">{{ __('portal.setup.intro') }}</p>
+    <p class="mb-2 text-sm text-slate-600">{{ __('portal.setup.intro') }}</p>
+    <p class="mb-6"><a href="{{ route('admin.sites.wizard', $site) }}" class="btn-light" data-wizard-link>{{ __('portal.wizard.open') }}</a></p>
 
     @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $commands['diagnostics']['verify'] ?? ''])
 
@@ -67,31 +64,7 @@
                 @if ($st['compare'])
                     <div class="grid gap-2 md:grid-cols-3">
                         @foreach ($st['compare'] as $block => $items)
-                            @php($counts = collect($items)->countBy('status'))
-                            <details class="rounded border border-slate-300 p-2 text-sm" data-state-block="{{ $block }}">
-                                <summary class="cursor-pointer">
-                                    <span class="font-medium">{{ __('portal.router_api.blocks.'.$block) }}</span>
-                                    @foreach (['present', 'foreign', 'legacy', 'differs', 'missing', 'unmanaged', 'unknown'] as $status)
-                                        @if ($counts->get($status))
-                                            <span class="{{ $statusClass[$status] }}">{{ $counts->get($status) }} {{ __('portal.router_api.status.'.$status) }}</span>
-                                        @endif
-                                    @endforeach
-                                </summary>
-                                <ul class="mt-1 space-y-1">
-                                    @foreach ($items as $key => $item)
-                                        <li data-state-item="{{ $key }}" data-status="{{ $item['status'] }}">
-                                            <span class="{{ $statusClass[$item['status']] }}">{{ __('portal.router_api.status.'.$item['status']) }}</span>
-                                            <code class="text-xs">{{ $item['path'] }}{{ $item['name'] ? ' '.$item['name'] : '' }}</code> <span class="text-xs text-slate-500">{{ $key }}</span>
-                                            @if ($item['status'] === 'unmanaged')
-                                                <div class="pl-4 text-xs" data-adopt="{{ $key }}">@if ($item['adopt'] ?? null)<code>{{ $item['adopt'] }}</code>@else{{ __('portal.router_api.adopt_ambiguous') }}@endif</div>
-                                            @endif
-                                            @foreach ($item['diff'] as $prop => [$want, $actual])
-                                                <div class="pl-4 text-xs text-amber-800">{{ $prop }}: {{ __('portal.router_api.expected') }} <code>{{ $want }}</code>, {{ __('portal.router_api.actual') }} <code>{{ $actual === '' ? '–' : $actual }}</code></div>
-                                            @endforeach
-                                        </li>
-                                    @endforeach
-                                </ul>
-                            </details>
+                            @include('admin.sites.partials.state-block', ['block' => $block, 'items' => $items])
                         @endforeach
                     </div>
                 @endif
