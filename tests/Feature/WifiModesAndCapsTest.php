@@ -205,6 +205,28 @@ class WifiModesAndCapsTest extends TestCase
         }
     }
 
+    public function test_references_to_deleted_slave_configurations_are_never_copied(): void
+    {
+        // A deleted slave configuration shows as "*<id>" in slave-configurations: the append, the per-CAP copy and the
+        // removal skip it, so it is neither set again (the set would fail) nor carried into an own rule
+        $skip = '[:pick $gpSlave 0 1] != "*"';
+        foreach (['capsman1' => '/caps-man', 'capsman2' => '/interface wifi'] as $mode => $path) {
+            $append = $this->commands($this->site(['wifi_modes' => [$mode]], [$mode => ['cfg-main']]));
+            $caps = $this->commands($this->site(['wifi_modes' => [$mode]], [$mode => ['cfg-main']], [$mode => ['AA:BB:CC:DD:EE:01']]));
+            $loops = [
+                'append' => [$append['network']['wifi'], ":if ([:len \$gpSlave] > 0 && {$skip}) do={ :set gpList (\$gpList . \$gpSlave . \",\") }"],
+                'cap rule' => [$caps['network']['wifi'], ":if ([:len \$gpSlave] > 0 && \$gpSlave != \"cfg-guest\" && {$skip}) do={ :set gpSlaves"],
+                'per-CAP removal' => [$caps['network']['wifi'], ":if ([:len \$gpSlave] > 0 && {$skip}) do={ :set gpList (\$gpList . \",\" . \$gpSlave) }"],
+                'uninstall' => [$append['uninstall']['uninstall_network'], ":if ([:len \$gpSlave] > 0 && {$skip}) do={ :set gpList (\$gpList . \",\" . \$gpSlave) }"],
+            ];
+            foreach ($loops as $name => [$script, $needle]) {
+                $this->assertStringContainsString($needle, $script, "{$mode} {$name}");
+                // Every slave loop of the script has the skip
+                $this->assertSame(substr_count($script, ':foreach gpSlave in='), substr_count($script, $skip), "{$mode} {$name}");
+            }
+        }
+    }
+
     public function test_radio_choices_and_master_options_skip_own_rules(): void
     {
         $this->nas->forceFill(['api_host' => '10.0.1.1', 'api_type' => 'rest', 'api_user' => 'portal-ro', 'api_password' => 'Test pass 1',

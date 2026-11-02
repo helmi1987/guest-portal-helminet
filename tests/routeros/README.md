@@ -105,3 +105,10 @@ the guest SSID per CAP: `radio-mac` and `configuration` of a CAP interface, CAPs
 replies, Disconnect), `/container add` (needs device-mode, confirmed physically), a device with a flash
 folder (`flash/hotspot` is a plain directory on the CHR), and the source-IP check of the downloads
 (qemu user networking NATs the router's `src-address`).
+
+## Not yet in run.sh (to add)
+
+- Dead slave references (2026-11-02): remove a slave configuration that a provisioning rule lists (RouterOS then
+  shows `*<id>` in `slave-configurations`), run the Wi-Fi block (append, per-CAP copy) and the network uninstall:
+  the script must not abort and the rewritten rules must not carry the `*<id>`. Covered only by the PHP tests so far
+  (`WifiModesAndCapsTest`, `ProvisioningEditorTest`).

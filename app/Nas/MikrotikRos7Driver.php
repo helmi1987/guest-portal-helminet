@@ -1228,8 +1228,9 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 "        :if ([:len [{$p} get \$gpRule name-format]] > 0) do={ {$p} set \$gpOwn name-format=[{$p} get \$gpRule name-format] }",
                 "        :if ([:len [{$p} get \$gpRule slave-name-format]] > 0) do={ {$p} set \$gpOwn slave-name-format=[{$p} get \$gpRule slave-name-format] }"];
         $out = "# Guest SSID only on the selected CAP radios: own provisioning rule per radio (radio-mac, comment key\n"
-            ."# \"{$own}<mac>\") before the rule that provisions the radio now, copying it plus cfg-guest. Radio not\n"
-            .'# connected or no rule found: reported and skipped (an existing own rule stays as it is).';
+            ."# \"{$own}<mac>\") before the rule that provisions the radio now, copying it plus cfg-guest (without references\n"
+            ."# to deleted configurations, *<id>). Radio not connected or no rule found: reported and skipped (an existing\n"
+            .'# own rule stays as it is).';
         foreach ($caps as $mac) {
             $key = self::capKey($mac);
             $readd = $v1 ? '' : "        :if ([:len \$gpOwn] > 0) do={\n"
@@ -1255,7 +1256,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 ."        :put (\"guest-portal: radio {$mac}: not connected or no provisioning rule of the admin for its configuration (\" . \$gpCfg . \"), skipped\")\n"
                 ."    } else={\n"
                 ."        :local gpSlaves \"\"\n"
-                ."        :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={ :if ([:len \$gpSlave] > 0 && \$gpSlave != \"cfg-guest\") do={ :set gpSlaves (\$gpSlaves . \$gpSlave . \",\") } }\n"
+                ."        :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={ :if ([:len \$gpSlave] > 0 && \$gpSlave != \"cfg-guest\" && [:pick \$gpSlave 0 1] != \"*\") do={ :set gpSlaves (\$gpSlaves . \$gpSlave . \",\") } }\n"
                 ."        :set gpSlaves (\$gpSlaves . \"cfg-guest\")\n"
                 ."        :local gpOwn [:pick [{$p} find where comment=\"{$key}\"] 0]\n"
                 .$readd
@@ -1318,7 +1319,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
     {
         $p = "{$path} provisioning";
         $out = "# Guest SSID as additional slave of the provisioning rules of the selected master configurations:\n"
-            ."# cfg-guest is appended only when missing, existing slave configurations are kept, other rules are not changed.\n"
+            ."# cfg-guest is appended only when missing, existing slave configurations are kept (references to deleted\n"
+            ."# configurations, shown as *<id>, are dropped), other rules are not changed.\n"
             ."{$p} print";
         foreach ($masters as $m) {
             $find = "{$p} find where master-configuration=\"{$m}\"";
@@ -1328,7 +1330,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 ."    :local gpHas false\n"
                 ."    :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={\n"
                 ."        :if (\$gpSlave = \"cfg-guest\") do={ :set gpHas true }\n"
-                ."        :if ([:len \$gpSlave] > 0) do={ :set gpList (\$gpList . \$gpSlave . \",\") }\n"
+                ."        :if ([:len \$gpSlave] > 0 && [:pick \$gpSlave 0 1] != \"*\") do={ :set gpList (\$gpList . \$gpSlave . \",\") }\n"
                 ."    }\n"
                 ."    :if (!\$gpHas) do={ {$p} set \$gpRule slave-configurations=(\$gpList . \"cfg-guest\") }\n"
                 .'}';
@@ -1355,13 +1357,14 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
 
         return "# Approved exception to \"never change objects of others\" (like the append of the Wi-Fi block): cfg-guest\n"
             ."# out of the slave configurations of every provisioning rule that lists it (only while the own cfg-guest\n"
-            ."# exists); the other slave configurations are kept, nothing else of the rules is changed.\n"
+            ."# exists); the other slave configurations are kept (references to deleted ones, *<id>, are dropped), nothing\n"
+            ."# else of the rules is changed.\n"
             .":if ([:len [{$path} configuration find where name=cfg-guest && {$ownedCfg}]] > 0) do={\n"
             ."    :foreach gpRule in=[{$p} {$find}] do={\n"
             ."        :local gpList \"\"\n"
             ."        :local gpHas false\n"
             ."        :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={\n"
-            ."            :if (\$gpSlave = \"cfg-guest\") do={ :set gpHas true } else={ :if ([:len \$gpSlave] > 0) do={ :set gpList (\$gpList . \",\" . \$gpSlave) } }\n"
+            ."            :if (\$gpSlave = \"cfg-guest\") do={ :set gpHas true } else={ :if ([:len \$gpSlave] > 0 && [:pick \$gpSlave 0 1] != \"*\") do={ :set gpList (\$gpList . \",\" . \$gpSlave) } }\n"
             ."        }\n"
             ."        :if (\$gpHas) do={\n"
             ."            :if ([:len \$gpList] = 0) do={ {$empty} } else={ {$p} set \$gpRule slave-configurations=[:pick \$gpList 1 [:len \$gpList]] }\n"
