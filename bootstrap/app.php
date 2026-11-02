@@ -7,6 +7,7 @@ use App\Http\Middleware\EnsureTwoFactor;
 use App\Http\Middleware\EnsureZone;
 use App\Http\Middleware\InternalApiAuth;
 use App\Http\Middleware\SetLocale;
+use App\Support\TrustedProxies;
 use App\Support\Zone;
 use Illuminate\Cookie\Middleware\EncryptCookies;
 use Illuminate\Foundation\Application;
@@ -50,7 +51,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->prependToPriorityList(EncryptCookies::class, EnsureZone::class);
         $middleware->redirectGuestsTo(fn () => route('login'));
         $middleware->redirectUsersTo(fn () => route('admin.dashboard'));
-        $middleware->trustProxies(at: env('TRUSTED_PROXIES'));
+        // Specific proxies only: a trust-all value is ignored (TrustedProxies, error logged by portal:init).
+        $middleware->trustProxies(at: TrustedProxies::resolve(env('TRUSTED_PROXIES')));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         // Guest Wi-Fi password and router API credentials: never flashed to the session as old input

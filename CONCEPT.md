@@ -226,8 +226,8 @@ CoovaChilli) are future/community work.
   Implemented M3: files `/data/certs/router.crt` + `router.key`; `GET /router-cert/<router id>/
   {fingerprint|router.crt|router.key}` on the guest port, stateless (no session/cookies), with a
   per-router token in header `X-Portal-Token` (local, encrypted) and only from the router's NAS IP
-  (fetch with `src-address`; check off by default behind `TRUSTED_PROXIES`, env
-  `PORTAL_ROUTER_CERT_CHECK_IP`); denied requests are logged. Key files (decided M6): all keys in
+  (fetch with `src-address`; also behind `TRUSTED_PROXIES`, off only with `PORTAL_ROUTER_IP_CHECK=false`,
+  see §12); denied requests are logged. Key files (decided M6): all keys in
   `/data/certs` (`portal.key`, `router.key`, `selfsigned.key`, operator-provided or pulled) are set to
   `root:portal 640`, certificates `root:portal 644`, so the app can serve the router key, compare
   pulled files and include them in backups; legacy keys in `/certs` stay 600. The generated script is idempotent (removes its own entries named or
@@ -422,7 +422,8 @@ All login methods produce a **grant**; a code is a grant created in advance.
 ## 9. Admin
 
 - Admin UI on its **own port** (default 8443), guest portal on its own port (443): firewall rules
-  decide reachability. Access via VPN or reverse proxy; behind a proxy set `TRUSTED_PROXIES`.
+  decide reachability. Access via VPN or reverse proxy; behind a proxy set `TRUSTED_PROXIES` to its
+  address (§12).
 - 2FA (TOTP) strongly recommended, enforceable by setting (implemented M6: enrolment in the own
   profile with QR code, RFC 6238 ±1 step, each step accepted once, 8 hashed single-use recovery codes,
   disable with password + code; login asks for the code after the password (5 failures: start over
@@ -832,6 +833,12 @@ links) and change log events are purged after all direct peers have acknowledged
   `https` and a host listed in the site's hotspot host names; the post-login target (`dst`) is the
   portal status page (M3); the portal never redirects to `link-orig`.
 - **NAS addresses:** IPv4 only for now; IPv6 NAS addresses later.
+- **Proxies (decision 2026-11-02):** `TRUSTED_PROXIES` takes only specific proxy addresses or networks;
+  a value that trusts every client (`*`, a `/0` network) is ignored and logged as an error at container
+  start, since X-Forwarded-For would then choose the IP of every per-IP limit. The source-IP check of
+  router downloads no longer depends on it: always on, only `PORTAL_ROUTER_IP_CHECK=false` switches it
+  off (warning at start; the former `PORTAL_ROUTER_CERT_CHECK_IP` is no longer read). A deployment whose
+  routers reach the guest port through the same proxy as the admin UI (discouraged) must set it.
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
 - **Web/privacy:** CSRF, strict CSP, HSTS, signed URLs, HMAC webhooks, bundled assets; minimal data, retention + purge.

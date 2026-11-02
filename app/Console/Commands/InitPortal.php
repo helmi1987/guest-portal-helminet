@@ -8,7 +8,9 @@ use App\Federation\ResyncRequiredException;
 use App\Federation\Topology;
 use App\Models\User;
 use App\Support\LocalInstance;
+use App\Support\TrustedProxies;
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\Log;
 
 class InitPortal extends Command
 {
@@ -34,8 +36,24 @@ class InitPortal extends Command
         if (! User::query()->where('role', Role::Admin)->exists()) {
             $this->warn('No admin user yet. Create one with: artisan portal:admin');
         }
+        $this->checkProxySettings();
 
         return self::SUCCESS;
+    }
+
+    /** Security-relevant environment checked once per container start (CONCEPT.md §12). */
+    private function checkProxySettings(): void
+    {
+        if (TrustedProxies::trustsAll(env('TRUSTED_PROXIES'))) {
+            $message = 'TRUSTED_PROXIES trusts every client and is ignored: set the address of the reverse proxy instead.';
+            Log::error($message);
+            $this->error($message);
+        }
+        if (! config('portal.router_cert.check_source_ip')) {
+            $message = 'Router source IP check is off (PORTAL_ROUTER_IP_CHECK=false): router downloads, including the router key, are protected by the router token only.';
+            Log::warning($message);
+            $this->warn($message);
+        }
     }
 
     /**
