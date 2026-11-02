@@ -233,6 +233,26 @@ Create both sets side by side (the names `dp-guest`, `cfg-guest` exist in separa
 Use the same SSID and VLAN so guests roam between old and new APs. Roaming does not preserve the
 hotspot session if the client IP changes, but the VLAN/subnet is the same so it normally does.
 
+The setup assistant (v0.19.0) takes several Wi-Fi modes at once (step 2: tick every mode the site uses):
+the Wi-Fi block then has one part per mode and creates `dp-guest`, `sec-guest` and `cfg-guest` once per
+package (`/caps-man` and `/interface wifi`; CAPsMAN of the wifi package and a local radio share them).
+
+### 3.5 Guest SSID only on some CAPs, provisioning rules
+
+Setup assistant, step 2, per CAPsMAN mode (optional): tick the CAP radios (radio-mac, from the router
+state) that get the guest SSID. Per radio the Wi-Fi block adds an own provisioning rule
+(`radio-mac=<mac>`, comment `guest-portal:wifi:cap-<mac>`) before your rule that provisions the radio now,
+copying it plus `cfg-guest`; your rules then do not get `cfg-guest`. Verified with the wifi package; legacy
+CAPsMAN untested on hardware.
+
+The assistant also shows the provisioning rules of each router with a state query (master and slave
+configurations editable, new rules with band, master and slaves) and generates a script for the changes:
+it changes a rule only while it still has the values read by the query and adds a new rule only when none
+with the same band and master exists. Nothing is stored. CAPsMAN applies rule changes to the CAPs; if a
+CAP did not pick them up, check `/interface wifi provisioning print` (or `/caps-man provisioning print`)
+and provision that CAP manually. The scripts never provision: provisioning a CAP without a matching rule
+can remove its configuration.
+
 ## 4. Per site: addressing, DHCP and DNS
 
 ```
