@@ -173,6 +173,15 @@
         <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan')" :code="$commands['network']['vlan']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan'])" />
         <p class="mb-2 text-sm text-slate-600">{{ __('portal.setup.network.vlan_filtering_help') }}</p>
         <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan_filtering')" :code="$commands['network']['vlan_filtering']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan_filtering'])" />
+        {{-- Clean-up of the previous Wi-Fi mode per router (router state: own objects of modes no longer selected) --}}
+        @foreach ($wifiLeftovers as $routerId => $leftoverScript)
+            @php($leftoverRouter = $routers->firstWhere('id', $routerId))
+            <div class="mb-4 rounded border border-amber-300 bg-amber-50 p-3" data-wifi-leftover="{{ $routerId }}">
+                <h3 class="mb-1 font-semibold text-amber-900">{{ __('portal.setup.network.wifi_leftover_title', ['router' => $leftoverRouter?->name]) }}</h3>
+                <p class="mb-2 text-sm text-amber-900" role="status">{{ __('portal.setup.network.wifi_leftover_help', ['router' => $leftoverRouter?->name]) }}</p>
+                <x-admin.code :title="__('portal.setup.network.wifi_leftover_title', ['router' => $leftoverRouter?->name])" :code="$leftoverScript" />
+            </div>
+        @endforeach
         <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.wifi')" :code="$commands['network']['wifi']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['wifi'])" :secrets-url="$secretsUrl" />
         @if (array_intersect($wifiModes, \App\Models\Site::CAPSMAN_MODES) !== []) <p class="mb-4 text-sm text-amber-800">{{ __('portal.setup.network.slaves_help') }}</p> @endif
         {{-- Provisioning editor per router (CAPsMAN rules from the stored state; script preview, nothing stored) --}}

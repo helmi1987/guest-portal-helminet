@@ -115,3 +115,9 @@ folder (`flash/hotspot` is a plain directory on the CHR), and the source-IP chec
 - Container hint (2026-11-02): the state query reads `/system device-mode` (property `container`); the harness runs
   the query over REST and api-ssl, so a refused or unknown menu would show there. Not yet asserted: the value on
   the CHR and the hint "no container package" (CHR without the container package: both `/container` menus missing).
+- Wi-Fi mode switch (2026-11-02): run.sh only checks that the state query of mode `local` reports the cfg-guest the
+  open-site block (capsman2 fixture) appended to the wifi provisioning rules as `leftover` (then reset by hand). To
+  add: install `multi` (capsman1, capsman2), switch the site to `local`, query the state and run the clean-up block
+  (`leftoverCommands()`, written by render.php like the adopt commands): own CAP rules removed, cfg-guest out of the
+  rules of both packages (other slaves kept), the objects of `/caps-man` removed, those of `/interface wifi` kept for
+  mode local, re-run identical, then the uninstall of `local` gives the snapshot.

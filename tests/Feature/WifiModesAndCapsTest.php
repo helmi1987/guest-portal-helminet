@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Federation\Federation;
 use App\Http\Controllers\Admin\SetupController;
+use App\Http\Controllers\Admin\WizardController;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Models\User;
@@ -130,7 +131,7 @@ class WifiModesAndCapsTest extends TestCase
         [$block, $hint] = explode('# Not selected: /interface wifi CAPsMAN.', $wifi, 2);
         $this->assertStringNotContainsString('/interface wifi', $block);
         $this->assertStringNotContainsString('provisioning remove', $hint);
-        $this->assertStringContainsString(':put "guest-portal: /interface wifi is not selected; own cap rules there (if any) were not removed"', $hint);
+        $this->assertStringContainsString(':put "guest-portal: /interface wifi CAPsMAN is not selected; own cap rules and cfg-guest in its rules (if any) were not removed"', $hint);
         $objects = $this->site(['wifi_mode' => 'capsman1'])->driver()->managedObjects($this->site->fresh())['wifi'];
         $this->assertSame(['path' => '/caps-man datapath', 'name' => 'dp-guest'], $objects['guest-portal:wifi:dp-guest']);
     }
@@ -225,6 +226,117 @@ class WifiModesAndCapsTest extends TestCase
                 $this->assertSame(substr_count($script, ':foreach gpSlave in='), substr_count($script, $skip), "{$mode} {$name}");
             }
         }
+    }
+
+    /** Router state after a switch to mode local: own objects of the earlier CAPsMAN v1 and v2 modes, plus objects of others. */
+    private function switchedState(): array
+    {
+        $k = fn (string $o) => MikrotikRos7Driver::key('wifi', $o);
+
+        return ['menus' => [
+            '/interface wifi' => ['rows' => [['name' => 'wifi1', 'master-interface' => ''],
+                ['name' => 'wifi-guest-wifi1', 'master-interface' => 'wifi1', 'configuration' => 'cfg-guest', 'comment' => $k('wifi-guest-wifi1')]]],
+            '/interface wifi datapath' => ['rows' => [['name' => 'dp-guest', 'comment' => $k('dp-guest')]]],
+            '/interface wifi security' => ['rows' => [['name' => 'sec-guest', 'comment' => $k('sec-guest')]]],
+            '/interface wifi configuration' => ['rows' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi', 'comment' => $k('cfg-guest')]]],
+            '/interface wifi provisioning' => ['rows' => [
+                ['.id' => '*1', 'master-configuration' => 'cfg-main', 'slave-configurations' => 'cfg-iot;cfg-guest'],
+                ['.id' => '*2', 'master-configuration' => 'cfg-main', 'slave-configurations' => 'cfg-iot;cfg-guest', 'radio-mac' => 'AA:BB:CC:DD:EE:01',
+                    'comment' => $k('cap-aabbccddee01')],
+                ['.id' => '*3', 'master-configuration' => 'cfg-five', 'slave-configurations' => 'cfg-iot'],
+            ]],
+            '/caps-man configuration' => ['rows' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi', 'comment' => $k('cfg-guest')]]],
+            // Legacy comment: own; a sec-guest with a comment of others: never touched
+            '/caps-man datapath' => ['rows' => [['name' => 'dp-guest', 'comment' => 'guest-portal']]],
+            '/caps-man security' => ['rows' => [['name' => 'sec-guest', 'comment' => 'mine']]],
+            '/caps-man provisioning' => ['rows' => [['.id' => '*7', 'master-configuration' => 'cfg-old', 'slave-configurations' => 'cfg-guest']]],
+        ]];
+    }
+
+    public function test_switch_from_capsman_to_local_reports_leftovers_and_offers_a_clean_up(): void
+    {
+        $site = $this->site(['wifi_modes' => ['local']], ['local' => ['wifi1'], 'capsman2' => ['cfg-main']]);
+        $driver = $site->driver();
+        $state = $this->switchedState();
+
+        // The Wi-Fi block of mode local names both deselected CAPsMAN packages (hint only, no command there)
+        $wifi = $this->commands($site)['network']['wifi'];
+        foreach (['/caps-man', '/interface wifi'] as $path) {
+            $this->assertStringContainsString("# Not selected: {$path} CAPsMAN.", $wifi);
+            $this->assertStringContainsString(":put \"guest-portal: {$path} CAPsMAN is not selected; own cap rules and cfg-guest in its rules (if any) were not removed\"", $wifi);
+        }
+        $this->assertStringNotContainsString('provisioning remove', $wifi);
+
+        // Router state: the leftovers of the earlier modes, never objects of others or of the selected mode
+        $compare = $driver->compareState($site, $state)['wifi'];
+        $leftover = array_keys(array_filter($compare, fn ($i) => $i['status'] === 'leftover'));
+        sort($leftover);
+        $this->assertSame([
+            'leftover:/caps-man configuration:cfg-guest',
+            'leftover:/caps-man datapath:dp-guest',
+            'leftover:/caps-man provisioning:slave-*7',
+            'leftover:/interface wifi provisioning:guest-portal:wifi:cap-aabbccddee01',
+            'leftover:/interface wifi provisioning:slave-*1',
+        ], $leftover);
+        $this->assertSame(['path' => '/interface wifi provisioning', 'name' => 'cfg-main', 'status' => 'leftover', 'diff' => []],
+            $compare['leftover:/interface wifi provisioning:slave-*1']);
+        // A leftover never counts as done in the wizard
+        $this->assertFalse(WizardController::green(['wifi' => [$compare['leftover:/caps-man datapath:dp-guest']]]));
+
+        // Clean-up per router: same commands as the uninstall, per package in its order
+        $clean = $driver->leftoverCommands($site, $state);
+        $this->assertNotNull($clean);
+        // /caps-man part first (it has no own cap rules), then the /interface wifi part (starts with its cap rules)
+        $split = strpos($clean, '# Own provisioning rules of the guest SSID per CAP');
+        [$v1, $v2] = [substr($clean, 0, $split), substr($clean, $split)];
+        $this->assertStringNotContainsString('/interface wifi', $v1);
+        $this->assertStringNotContainsString('/caps-man', $v2);
+        $this->assertStringContainsString(':foreach gpRule in=[/caps-man provisioning find] do={', $v1);
+        $this->assertStringContainsString('/caps-man provisioning set $gpRule slave-configurations=""', $v1);
+        $this->assertLessThan(strpos($v1, '/caps-man configuration remove [find where name=cfg-guest'), strpos($v1, ':foreach gpRule in=[/caps-man provisioning find]'));
+        $this->assertStringContainsString('/caps-man datapath remove [find where name=dp-guest && ', $v1);
+        // No own cap rules in /caps-man: no removal emitted there
+        $this->assertStringNotContainsString('/caps-man provisioning remove', $v1);
+        $this->assertStringContainsString(':foreach gpR in=[/interface wifi provisioning find where comment~"^guest-portal:wifi:cap-[0-9a-f]{12}\\$"] do={ /interface wifi provisioning remove $gpR }', $v2);
+        $this->assertStringContainsString('/interface wifi provisioning unset $gpRule slave-configurations', $v2);
+        $this->assertLessThan(strpos($v2, ':if ([:len [/interface wifi configuration find where name=cfg-guest'), strpos($v2, 'provisioning remove $gpR'));
+        // Mode local still uses cfg-guest, sec-guest, dp-guest and its virtual AP: kept
+        $this->assertStringNotContainsString('/interface wifi configuration remove', $v2);
+        $this->assertStringNotContainsString('/interface wifi remove', $v2);
+        $this->assertDoesNotMatchRegularExpression('/^[^#\n]*\bprovision( |$)/m', $clean);
+
+        // Without the earlier modes' objects: nothing to clean up
+        $this->assertNull($driver->leftoverCommands($site, ['menus' => ['/interface wifi provisioning' => ['rows' => [['.id' => '*3', 'master-configuration' => 'cfg-five']]]]]));
+        // A package missing on the router: no command of its menus
+        $state['menus'] = array_merge($state['menus'], array_fill_keys(['/caps-man configuration', '/caps-man datapath', '/caps-man security', '/caps-man provisioning'], ['error' => 'no such command prefix']));
+        $this->assertStringNotContainsString('/caps-man', (string) $driver->leftoverCommands($site, $state));
+    }
+
+    public function test_switch_away_from_the_wifi_package_removes_its_virtual_aps_and_objects(): void
+    {
+        $site = $this->site(['wifi_modes' => ['capsman1']], ['capsman1' => ['cfg-old']]);
+        $state = $this->switchedState();
+        $state['menus']['/interface wifi']['rows'][] = ['name' => 'wifi-guest', 'master-interface' => 'wifi2', 'comment' => 'guest-portal'];
+        $state['menus']['/interface wifi']['rows'][] = ['name' => 'wifi-guest-wifi3', 'master-interface' => 'wifi3', 'comment' => 'mine'];
+        $compare = $site->driver()->compareState($site, $state)['wifi'];
+        foreach (['leftover:/interface wifi:wifi-guest-wifi1', 'leftover:/interface wifi:wifi-guest', 'leftover:/interface wifi configuration:cfg-guest',
+            'leftover:/interface wifi datapath:dp-guest', 'leftover:/interface wifi security:sec-guest'] as $id) {
+            $this->assertSame('leftover', $compare[$id]['status'] ?? null, $id);
+        }
+        $this->assertArrayNotHasKey('leftover:/interface wifi:wifi-guest-wifi3', $compare);
+        // capsman1 selected: nothing of /caps-man is left over
+        $this->assertEmpty(array_filter(array_keys($compare), fn ($id) => str_starts_with($id, 'leftover:/caps-man')));
+
+        $clean = (string) $site->driver()->leftoverCommands($site, $state);
+        $this->assertStringNotContainsString('/caps-man', $clean);
+        $ap = strpos($clean, '/interface wifi remove [find where name="wifi-guest-wifi1" && (comment="guest-portal:wifi:wifi-guest-wifi1" || ');
+        $this->assertNotFalse($ap);
+        $this->assertStringContainsString('/interface wifi remove [find where name="wifi-guest" && (comment="guest-portal:wifi:wifi-guest" || ', $clean);
+        $this->assertStringNotContainsString('wifi-guest-wifi3', $clean);
+        // Rules first (cfg-guest must still exist for the slave removal), then the virtual APs, then the objects
+        $this->assertLessThan($ap, strpos($clean, ':foreach gpRule in=[/interface wifi provisioning find] do={'));
+        $this->assertLessThan(strpos($clean, '/interface wifi configuration remove [find where name=cfg-guest'), $ap);
+        $this->assertStringContainsString('/interface wifi datapath remove [find where name=dp-guest && ', $clean);
     }
 
     public function test_radio_choices_and_master_options_skip_own_rules(): void

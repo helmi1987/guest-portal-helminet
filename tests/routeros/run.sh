@@ -606,6 +606,12 @@ for MODE in "${MODES[@]}"; do
         # Every generated object present with the expected values (container: removed again above; the
         # virtual AP of mode local needs a radio)
         bad=$(grep -vE '^(version |guest-portal:container:)' "$f" | grep -vE ' (present|foreign)$' | grep -vxE 'guest-portal:wifi:wifi-guest-wifi[12] missing')
+        if [ "$MODE" = local ] && [ -f "$WORK/rsc/capsman2/network.wifi.rsc" ]; then
+            # The Wi-Fi block of the open site (capsman2 fixture, run above) appended cfg-guest to the wifi provisioning
+            # rules: reported as left over by an earlier mode (mode switch, decision 2026-11-02), reset by hand below
+            check "[$MODE] $t: cfg-guest in the wifi provisioning rules reported as left over" grep -qE '^leftover:/interface wifi provisioning:slave-\*[0-9A-F]+ leftover$' "$f"
+            bad=$(printf '%s\n' "$bad" | grep -vxE 'leftover:/interface wifi provisioning:slave-\*[0-9A-F]+ leftover')
+        fi
         if [ -z "$bad" ]; then pass "[$MODE] $t: all objects present, values as expected"
         else fail "[$MODE] $t: objects not present or different"; printf '%s\n' "$bad" | sed 's/^/    | /'; fi
         check "[$MODE] $t: foreign RFC1918 10.0.0.0/8 entry (seed) reported as foreign, not added" \

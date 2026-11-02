@@ -190,6 +190,36 @@ class SetupWizardTest extends TestCase
         $this->assertStringContainsString('data-container-problem="device_mode"', $this->admin()->get($this->url($this->step('container')))->getContent());
     }
 
+    public function test_wifi_step_offers_the_clean_up_of_a_previous_mode(): void
+    {
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup", array_merge(self::NETWORK, ['wifi_modes' => ['local']]))->assertSessionHasNoErrors();
+        $this->configureApi();
+        $k = fn (string $o) => MikrotikRos7Driver::key('wifi', $o);
+        $menus = [
+            '/interface wifi configuration' => ['rows' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi', 'comment' => $k('cfg-guest')]]],
+            '/interface wifi provisioning' => ['rows' => [['.id' => '*1', 'master-configuration' => 'cfg-main', 'slave-configurations' => 'cfg-guest']]],
+        ];
+        $this->travel(2)->seconds();
+        $this->nas->forceFill(['router_state' => ['host' => '10.0.1.1', 'menus' => $menus], 'router_state_at' => now()->addSecond()])->save();
+
+        foreach ([$this->url($this->step('wifi')), "/admin/sites/{$this->site->id}/setup"] as $url) {
+            $page = $this->admin()->get($url)->assertOk()->getContent();
+            $this->assertStringContainsString('data-wifi-leftover="'.$this->nas->id.'"', $page);
+            $this->assertStringContainsString(e(__('portal.setup.network.wifi_leftover_title', ['router' => 'Router A'])), $page);
+            $this->assertStringContainsString('/interface wifi provisioning unset $gpRule slave-configurations', $page);
+            $this->assertStringContainsString('data-status="leftover"', $page);
+        }
+        // The Wi-Fi step is not verified while a leftover exists
+        $this->assertStringContainsString('data-wizard-router-ok="no"', $this->admin()->get($this->url($this->step('wifi')))->getContent());
+
+        // Cleaned up on the router: no block, no leftover
+        $menus['/interface wifi provisioning']['rows'][0]['slave-configurations'] = '';
+        $this->nas->forceFill(['router_state' => ['host' => '10.0.1.1', 'menus' => $menus]])->save();
+        $page = $this->admin()->get($this->url($this->step('wifi')))->getContent();
+        $this->assertStringNotContainsString('data-wifi-leftover', $page);
+        $this->assertStringNotContainsString('data-status="leftover"', $page);
+    }
+
     public function test_steps_show_their_blocks_and_save_back_to_the_wizard(): void
     {
         $network = $this->step('network');
