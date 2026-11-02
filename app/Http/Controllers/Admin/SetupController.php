@@ -8,6 +8,7 @@ use App\Models\LocalSetting;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Nas\NasDriver;
+use App\Nas\RouterOs\ProvisioningEditor;
 use App\Nas\RouterOs\RouterStateDriver;
 use App\Nas\RouterOs\RouterStateQuery;
 use App\Support\Audit;
@@ -89,6 +90,13 @@ class SetupController extends Controller
             // Guest Wi-Fi masters (decision 2026-11-01): choices from the stored router states, selection local to this instance
             'wifiMasterOptions' => $stateDriver ? $stateDriver->wifiMasterOptions($apiRouters) : array_fill_keys(Site::WIFI_MODES, []),
             'wifiMasters' => collect(Site::WIFI_MODES)->mapWithKeys(fn ($mode) => [$mode => $site->wifiMasters($mode)])->all(),
+            'wifiModes' => $view->wifiModes(),
+            // Guest SSID per CAP (decision 2026-11-02): radios from the stored router states, selection local to this instance
+            'wifiCapOptions' => $driver instanceof ProvisioningEditor ? $driver->wifiCapOptions($apiRouters) : array_fill_keys(Site::CAPSMAN_MODES, []),
+            'wifiCaps' => collect(Site::CAPSMAN_MODES)->mapWithKeys(fn ($mode) => [$mode => $site->wifiCaps($mode)])->all(),
+            // Provisioning editor per router with a stored state (decision 2026-11-02)
+            'provisioning' => $driver instanceof ProvisioningEditor
+                ? $apiRouters->mapWithKeys(fn (NasClient $nas) => [$nas->id => $driver->provisioningRules($nas)])->filter()->all() : [],
             'secretsUrl' => $stateDriver ? route('admin.sites.setup.secrets', $site) : null,
         ]);
     }
@@ -106,7 +114,8 @@ class SetupController extends Controller
     }
 
     /**
-     * Comment key (or hotspot:server|profile) => worst compare status over several router comparisons
+     * Comment key (or hotspot:server|profile) => worst compare status over several router comparisons and
+     * over the objects sharing a key
      * (unmanaged > missing > differs > legacy > foreign > present > unknown).
      *
      * @param  list<array<string, array<string, array{status: string}>>>  $compares
@@ -118,7 +127,10 @@ class SetupController extends Controller
         $out = [];
         foreach ($compares as $compare) {
             foreach ($compare as $items) {
-                foreach ($items as $key => $item) {
+                foreach ($items as $id => $item) {
+                    // By comment key: the /caps-man copy of a Wi-Fi object (state id "<key>@caps-man") shares
+                    // the key with the wifi package's one, its lines show the worse of both
+                    $key = (string) ($item['key'] ?? $id);
                     $status = (string) ($item['status'] ?? 'unknown');
                     if (! isset($out[$key]) || ($rank[$status] ?? 0) > ($rank[$out[$key]] ?? 0)) {
                         $out[$key] = $status;
@@ -202,9 +214,17 @@ class SetupController extends Controller
 
     public function updateNetwork(Request $request, Site $site): RedirectResponse
     {
+        // Single "wifi_mode" of forms before 0.19.0: read as a one-element list
+        if (! $request->has('wifi_modes') && is_string($request->input('wifi_mode'))) {
+            $request->merge(['wifi_modes' => [$request->input('wifi_mode')]]);
+        }
         $data = $this->validateWithin($request, $site->driver()->setupFields()['network'], 'subnet', ['gateway', 'pool']);
         $data['vlan_id'] = (int) $data['vlan_id'];
+        // Canonical order; "wifi_mode" (first mode) is kept for instances on versions before 0.19.0
+        $data['wifi_modes'] = Site::normalizeWifiModes(['wifi_modes' => $data['wifi_modes']]);
+        $data['wifi_mode'] = $data['wifi_modes'][0];
         $masters = $this->wifiMastersInput($request, $site);
+        $caps = $this->wifiCapsInput($request, $site);
         // Guest Wi-Fi password: empty field keeps the stored one, the checkbox removes it. Shared with other
         // instances: replicated setting encrypted with the federation data key; otherwise only in the local
         // column (APP_KEY). Toggling moves the value, no copy stays in the other storage. Only the non-secret
@@ -233,8 +253,8 @@ class SetupController extends Controller
             $local = $plain;
         }
         $site->forceFill(['settings' => array_merge($site->settings ?? [], ['setup' => $data]), 'wifi_password_local' => $local,
-            'wifi_masters_local' => $masters])->save();
-        Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true]) + ['wifi_masters' => $masters]);
+            'wifi_masters_local' => $masters, 'wifi_caps_local' => $caps])->save();
+        Audit::log('site.setup_network', $site, array_diff_key($data, ['wifi_password' => true]) + ['wifi_masters' => $masters, 'wifi_caps' => $caps]);
 
         return redirect()->to(route('admin.sites.setup', $site).'#step-network')->with('status', __('portal.saved'));
     }
@@ -274,6 +294,69 @@ class SetupController extends Controller
         }
 
         return $out;
+    }
+
+    /**
+     * Guest SSID per CAP (decision 2026-11-02): radios per CAPsMAN mode, ticked (wifi_caps[mode][]) plus a
+     * free-text list (wifi_caps_text[mode]); MACs normalized to AA:BB:CC:DD:EE:FF, at most 64 per mode.
+     * Instance-local column, not replicated. Modes not submitted keep their stored selection.
+     *
+     * @return array<string, list<string>>
+     */
+    private function wifiCapsInput(Request $request, Site $site): array
+    {
+        $out = [];
+        $errors = [];
+        foreach (Site::CAPSMAN_MODES as $mode) {
+            if (! $request->has("wifi_caps.{$mode}") && ! $request->has("wifi_caps_text.{$mode}")) {
+                $out[$mode] = $site->wifiCaps($mode);
+
+                continue;
+            }
+            $ticked = array_filter((array) $request->input("wifi_caps.{$mode}", []), 'is_string');
+            $text = preg_split('/[\s,;]+/', (string) $request->input("wifi_caps_text.{$mode}", ''), -1, PREG_SPLIT_NO_EMPTY);
+            $list = [];
+            $bad = [];
+            foreach ([...$ticked, ...$text] as $value) {
+                $mac = Site::normalizeMac((string) $value);
+                if ($mac === null) {
+                    $bad[] = mb_substr((string) $value, 0, 32);
+                } elseif (! in_array($mac, $list, true)) {
+                    $list[] = $mac;
+                }
+            }
+            if ($bad !== []) {
+                $errors["wifi_caps_text.{$mode}"] = __('portal.setup.network.wifi_caps_invalid', ['macs' => implode(', ', $bad)]);
+            } elseif (count($list) > 64) {
+                $errors["wifi_caps_text.{$mode}"] = __('portal.setup.network.wifi_masters_too_many', ['max' => 64]);
+            }
+            $out[$mode] = $list;
+        }
+        if ($errors !== []) {
+            throw ValidationException::withMessages($errors);
+        }
+
+        return $out;
+    }
+
+    /**
+     * Provisioning editor (decision 2026-11-02): script for the admin's edits of one router's provisioning
+     * rules, generated from the router's stored state (JSON, like the Toolbox preview). Admin only, POST
+     * with CSRF, throttled, not cached; the edits are not stored, logged or audited.
+     */
+    public function provisioningPreview(Request $request, Site $site, NasClient $router): JsonResponse
+    {
+        $driver = $site->driver();
+        if (! $driver instanceof ProvisioningEditor) {
+            abort(404);
+        }
+        $script = $driver->provisioningScript($router, [
+            'mode' => (string) $request->input('mode', ''),
+            'rules' => (array) $request->input('rules', []),
+            'new' => (array) $request->input('new', []),
+        ]);
+
+        return response()->json(['script' => $script])->header('Cache-Control', 'no-store, private');
     }
 
     public function updateContainer(Request $request, Site $site): RedirectResponse

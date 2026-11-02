@@ -110,7 +110,9 @@ class WifiMastersTest extends TestCase
             $this->assertSame(2, substr_count($script, ':if (!$gpHas) do={ '.$path.' provisioning set $gpRule slave-configurations=($gpList . "cfg-guest") }'));
             // No local named like a property; only the documented provisioning change; whole guarded block in one group
             $this->assertDoesNotMatchRegularExpression('/:local (name|comment|slave-configurations|master-configuration)\b/', $script);
-            $this->assertSame(0, preg_match('/provisioning (remove|unset)/', $script));
+            // Removed only: own rules per CAP no longer selected (by id after the exact key check)
+            $this->assertSame(1, preg_match_all('/provisioning (remove|unset)/', $script));
+            $this->assertStringContainsString(':if ([:typeof [:find $gpKeep ['.$path.' provisioning get $gpR comment]]] = "nil") do={ '.$path.' provisioning remove $gpR }', $script);
 
             // Without a selection: one placeholder master (skipped on the router when left unfilled)
             $this->assertStringContainsString('master-configuration="<MASTER_CFG>"', $this->wifi($this->withMode($mode, [])));

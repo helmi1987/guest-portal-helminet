@@ -296,7 +296,7 @@ class RouterStateTest extends TestCase
             $this->assertMatchesRegularExpression('/name="'.$field.'"[^>]*value="'.preg_quote($value, '/').'"/', $page, $field);
             $this->assertStringContainsString('data-derived="'.$field.'"', $page);
         }
-        $this->assertStringContainsString('data-derived="wifi_mode"', $page);
+        $this->assertStringContainsString('data-derived="wifi_modes"', $page);
         // Only objects with the exact key are used (the pool has a legacy comment)
         $this->assertStringNotContainsString('data-derived="pool"', $page);
         // Own profile wins over the default profile
@@ -368,7 +368,7 @@ class RouterStateTest extends TestCase
         // Own objects of router B win over assumptions of router A
         $this->assertMatchesRegularExpression('/name="bridge"[^>]*value="bridge1"/', $page);
         $this->assertMatchesRegularExpression('/name="interface"[^>]*value="vlan30-guest"/', $page);
-        $this->assertMatchesRegularExpression('/<option value="capsman2" selected>/', $page);
+        $this->assertMatchesRegularExpression('/name="wifi_modes\[\]" value="capsman2" x-model="wifiModes"\s+checked/', $page);
         $this->assertStringContainsString(e(trans('portal.router_api.derived_from.own', ['router' => 'Router B'])), $page);
         // A field only router A provides comes from router A
         $this->assertMatchesRegularExpression('/<option value="flash\/hotspot" selected>/', $page);
@@ -379,7 +379,7 @@ class RouterStateTest extends TestCase
         $second->storeRouterState(null, ['kind' => 'connect', 'detail' => 'down']);
         $page = $this->page();
         $this->assertMatchesRegularExpression('/name="bridge"[^>]*value="bridge-a"/', $page);
-        $this->assertMatchesRegularExpression('/<option value="capsman1" selected>/', $page);
+        $this->assertMatchesRegularExpression('/name="wifi_modes\[\]" value="capsman1" x-model="wifiModes"\s+checked/', $page);
         $this->assertStringNotContainsString('data-derived="interface"', $page);
     }
 

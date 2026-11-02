@@ -30,17 +30,24 @@ trait MikrotikRos7RouterState
         '/interface veth' => ['name', 'address', 'gateway', 'comment'],
         '/interface list' => ['name', 'comment'],
         '/interface list member' => ['list', 'interface', 'comment'],
-        '/interface wifi' => ['name', 'configuration', 'master-interface', 'comment'],
+        // radio-mac: radio of a master interface (guest SSID per CAP, decision 2026-11-02)
+        '/interface wifi' => ['name', 'configuration', 'master-interface', 'radio-mac', 'comment'],
+        '/interface wifi radio' => ['radio-mac', 'cap', 'bands'],
         '/interface wifi datapath' => ['name', 'bridge', 'vlan-id', 'comment'],
         '/interface wifi security' => ['name', 'authentication-types', 'comment'],
         '/interface wifi configuration' => ['name', 'ssid', 'datapath', 'security', 'comment'],
-        '/interface wifi provisioning' => ['action', 'master-configuration', 'slave-configurations', 'comment'],
+        // Provisioning editor (decision 2026-11-02): band matcher, matchers and name formats of every rule
+        '/interface wifi provisioning' => ['action', 'master-configuration', 'slave-configurations', 'comment', 'disabled',
+            'supported-bands', 'radio-mac', 'identity-regexp', 'common-name-regexp', 'name-format', 'slave-name-format'],
         '/interface wifi capsman' => ['enabled'],
         '/caps-man manager' => ['enabled'],
         '/caps-man datapath' => ['name', 'bridge', 'vlan-id', 'comment'],
         '/caps-man security' => ['name', 'authentication-types', 'comment'],
         '/caps-man configuration' => ['name', 'ssid', 'comment'],
-        '/caps-man provisioning' => ['action', 'master-configuration', 'slave-configurations', 'comment'],
+        '/caps-man provisioning' => ['action', 'master-configuration', 'slave-configurations', 'comment', 'disabled',
+            'hw-supported-modes', 'radio-mac', 'identity-regexp', 'common-name-regexp', 'name-format', 'name-prefix'],
+        '/caps-man radio' => ['radio-mac', 'remote-cap-name', 'remote-cap-identity', 'interface'],
+        '/caps-man interface' => ['name', 'master-interface', 'configuration', 'radio-mac'],
         '/ip address' => ['address', 'interface', 'comment'],
         '/ip pool' => ['name', 'ranges', 'comment'],
         '/ip dhcp-server' => ['name', 'interface', 'address-pool', 'comment'],
@@ -135,8 +142,21 @@ trait MikrotikRos7RouterState
             $k('api', 'group') => ['policy' => self::API_POLICY],
             $k('api', 'user') => ['group' => self::API_GROUP],
         ];
-        foreach ($g['wifi_mode'] === 'local' ? $g['wifi_masters'] : [] as $master) {
+        foreach ($g['wifi_masters']['local'] ?? [] as $master) {
             $expect[$k('wifi', self::guestInterface($master))] = ['master-interface' => $master, 'configuration' => 'cfg-guest'];
+        }
+        // Wi-Fi objects by state id (wifiId()): the /caps-man copies expect the same values
+        $wifi = $this->wifiManagedObjects($g);
+        foreach ($wifi as $id => $object) {
+            $key = $object['key'] ?? $id;
+            if ($id !== $key && isset($expect[$key])) {
+                $expect[$id] = $expect[$key];
+            }
+        }
+        foreach ($g['wifi_caps'] as $macs) {
+            foreach ($macs as $mac) {
+                $expect[self::capKey($mac)] = ['radio-mac' => $mac];
+            }
         }
         foreach (self::FW_RULES as $rule => $chain) {
             $expect[$k('fw', $rule)] = ['chain' => $chain, 'action' => in_array($rule, self::FW_DROP, true) ? 'drop' : 'accept'];
@@ -158,18 +178,32 @@ trait MikrotikRos7RouterState
         $expected = $this->expectedValues($site);
         $out = [];
         foreach ($this->managedObjects($site) as $block => $objects) {
-            foreach ($objects as $key => $object) {
+            foreach ($objects as $id => $object) {
+                // State id = comment key, except the /caps-man Wi-Fi objects next to the wifi package (wifiId())
+                $key = $object['key'] ?? $id;
                 $ident = $object['name'] !== null ? (self::IDENT[$object['path']] ?? 'name') : null;
-                $out[$block][$key] = ['path' => $object['path'], 'name' => $object['name']]
-                    + $this->compareObject($menus[$object['path']] ?? null, $key, $expected[$key] ?? [], $ident, $object['path']);
+                $out[$block][$id] = ['path' => $object['path'], 'name' => $object['name']] + ($key !== $id ? ['key' => $key] : [])
+                    + $this->compareObject($menus[$object['path']] ?? null, $key, $expected[$id] ?? [], $ident, $object['path']);
             }
         }
         $g = $this->guestValues($site);
+        // Own provisioning rule per CAP: present only while it lists cfg-guest
+        foreach ($g['wifi_caps'] as $macs) {
+            foreach ($macs as $mac) {
+                $item = &$out['wifi'][self::capKey($mac)];
+                $row = collect((array) ($menus[$item['path']]['rows'] ?? []))->first(fn ($r) => ($r['comment'] ?? null) === self::capKey($mac));
+                if ($row !== null && $item['status'] === 'present' && ! in_array('cfg-guest', self::listValue($row['slave-configurations'] ?? ''), true)) {
+                    $item['status'] = 'differs';
+                    $item['diff']['slave-configurations'] = ['+cfg-guest', (string) ($row['slave-configurations'] ?? '')];
+                }
+                unset($item);
+            }
+        }
         // Mode local: the single virtual AP "wifi-guest" of 0.6.0 to 0.12.6 (no comment) on a selected master
         // blocks nothing, but the Wi-Fi block would add a second one: adopt it with the key of the old name,
         // the block then renames it to wifi-guest-<master>.
         $wifiRows = (array) ($menus['/interface wifi']['rows'] ?? []);
-        foreach ($g['wifi_mode'] === 'local' ? $g['wifi_masters'] : [] as $master) {
+        foreach ($g['wifi_masters']['local'] ?? [] as $master) {
             $vk = self::key('wifi', self::guestInterface($master));
             if (($out['wifi'][$vk]['status'] ?? null) === 'missing') {
                 $old = $this->unmanaged($wifiRows, '/interface wifi', self::key('wifi', 'wifi-guest'), ['name' => 'wifi-guest', 'master-interface' => $master]);
@@ -190,11 +224,16 @@ trait MikrotikRos7RouterState
             $out['hotspot'][$path === '/ip hotspot' ? 'hotspot:server' : 'hotspot:profile'] = ['path' => $path, 'name' => self::NAME]
                 + $this->compareObject($menus[$path] ?? null, null, ['name' => self::NAME] + $props, 'name');
         }
-        // CAPsMAN: cfg-guest in the slave configurations of the selected masters' provisioning rules
-        if ($g['wifi_mode'] !== 'local') {
-            $path = ($g['wifi_mode'] === 'capsman1' ? '/caps-man' : '/interface wifi').' provisioning';
-            foreach ($g['wifi_masters'] as $master) {
-                $out['wifi'][self::slaveKey($master)] = ['path' => $path, 'name' => $master]
+        // CAPsMAN: cfg-guest in the slave configurations of the selected masters' provisioning rules (not with
+        // a CAP selection: then only the own rules per CAP carry it)
+        foreach (array_intersect($g['wifi_modes'], Site::CAPSMAN_MODES) as $mode) {
+            if (($g['wifi_caps'][$mode] ?? []) !== []) {
+                continue;
+            }
+            $path = self::wifiPath($mode).' provisioning';
+            foreach ($g['wifi_masters'][$mode] ?? [] as $master) {
+                $id = self::wifiId(self::slaveKey($master), $path, $g['wifi_modes']);
+                $out['wifi'][$id] = ['path' => $path, 'name' => $master] + ($id !== self::slaveKey($master) ? ['key' => self::slaveKey($master)] : [])
                     + $this->compareSlaves($menus[$path] ?? null, $master);
             }
         }
@@ -229,6 +268,22 @@ trait MikrotikRos7RouterState
         return $menus;
     }
 
+    /** Own provisioning rule of the guest SSID per CAP (exact key pattern "guest-portal:wifi:cap-<12 hex>"). */
+    private static function isCapRule(array $row): bool
+    {
+        return preg_match('/^'.preg_quote(self::NAME, '/').':wifi:cap-[0-9a-f]{12}\z/', (string) ($row['comment'] ?? '')) === 1;
+    }
+
+    /**
+     * List property of a state row ("a,b" or "a;b") as list of non-empty entries.
+     *
+     * @return list<string>
+     */
+    private static function listValue(mixed $value): array
+    {
+        return array_values(array_filter(array_map('trim', explode(',', str_replace(';', ',', (string) $value))), fn ($v) => $v !== ''));
+    }
+
     /** Status key (not a comment) of "cfg-guest appended to the provisioning rules of master configuration $master". */
     public static function slaveKey(string $master): string
     {
@@ -246,7 +301,8 @@ trait MikrotikRos7RouterState
         if ($menu === null || isset($menu['error'])) {
             return ['status' => 'unknown', 'diff' => []];
         }
-        $rules = array_values(array_filter((array) ($menu['rows'] ?? []), fn ($r) => ($r['master-configuration'] ?? null) === $master));
+        $rules = array_values(array_filter((array) ($menu['rows'] ?? []), fn ($r) => ($r['master-configuration'] ?? null) === $master
+            && ! self::isCapRule($r)));
         foreach ($rules as $rule) {
             $slaves = array_map('trim', explode(',', str_replace(';', ',', (string) ($rule['slave-configurations'] ?? ''))));
             if (! in_array('cfg-guest', $slaves, true)) {
@@ -278,7 +334,9 @@ trait MikrotikRos7RouterState
             }
             foreach (['capsman1' => '/caps-man provisioning', 'capsman2' => '/interface wifi provisioning'] as $mode => $menu) {
                 foreach ($rows($menu) as $r) {
-                    $out[$mode][] = (string) ($r['master-configuration'] ?? '');
+                    if (! self::isCapRule($r)) {
+                        $out[$mode][] = (string) ($r['master-configuration'] ?? '');
+                    }
                 }
             }
         }
@@ -425,7 +483,7 @@ trait MikrotikRos7RouterState
         $saved = (array) $site->setting('setup', []);
         $out = [];
         $set = function (string $field, mixed $value, string $source) use (&$out, $saved) {
-            if (($saved[$field] ?? '') === '' && $value !== null && $value !== '' && ! isset($out[$field])) {
+            if (($saved[$field] ?? '') === '' && $value !== null && $value !== '' && $value !== [] && ! isset($out[$field])) {
                 $out[$field] = [$value, $source];
             }
         };
@@ -451,16 +509,21 @@ trait MikrotikRos7RouterState
         $wifiCfg = $own('/interface wifi configuration', self::key('wifi', 'cfg-guest'));
         $set('ssid', ($capsCfg ?? $wifiCfg)['ssid'] ?? null, 'own');
         $enabled = fn (string $menu) => in_array(($rows($menu)[0]['enabled'] ?? ''), ['true', 'yes'], true);
-        if ($capsCfg !== null) {
-            $set('wifi_mode', 'capsman1', 'own');
-        } elseif (collect($rows('/interface wifi'))->contains(fn ($r) => str_starts_with((string) ($r['comment'] ?? ''), self::key('wifi', 'wifi-guest')))) {
-            $set('wifi_mode', 'local', 'own');
-        } elseif ($wifiCfg !== null && $enabled('/interface wifi capsman')) {
-            $set('wifi_mode', 'capsman2', 'own');
-        } elseif ($enabled('/caps-man manager') && ! $enabled('/interface wifi capsman')) {
-            $set('wifi_mode', 'capsman1', 'capsman1');
-        } elseif ($enabled('/interface wifi capsman') && ! $enabled('/caps-man manager')) {
-            $set('wifi_mode', 'capsman2', 'capsman2');
+        // Wi-Fi modes (decision 2026-11-02, a list): every mode with own objects, else the enabled CAPsMAN
+        // of exactly one package. Not derived when the site has saved modes (also the single one of earlier versions).
+        $own = array_values(array_filter([
+            $capsCfg !== null ? 'capsman1' : null,
+            $wifiCfg !== null && $enabled('/interface wifi capsman') ? 'capsman2' : null,
+            collect($rows('/interface wifi'))->contains(fn ($r) => str_starts_with((string) ($r['comment'] ?? ''), self::key('wifi', 'wifi-guest'))) ? 'local' : null,
+        ]));
+        if (! Site::hasSavedWifiModes($saved)) {
+            if ($own !== []) {
+                $set('wifi_modes', $own, 'own');
+            } elseif ($enabled('/caps-man manager') && ! $enabled('/interface wifi capsman')) {
+                $set('wifi_modes', ['capsman1'], 'capsman1');
+            } elseif ($enabled('/interface wifi capsman') && ! $enabled('/caps-man manager')) {
+                $set('wifi_modes', ['capsman2'], 'capsman2');
+            }
         }
         $profiles = $rows('/ip hotspot profile');
         $profile = collect($profiles)->first(fn ($p) => ($p['name'] ?? null) === self::NAME);

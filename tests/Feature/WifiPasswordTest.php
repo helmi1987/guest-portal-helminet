@@ -168,7 +168,8 @@ class WifiPasswordTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/comment="guest-portal(: [^"]*)?"/', $outside);
             // Never a bare prefix match on comments
             $this->assertStringNotContainsString('comment~"^guest-portal"', $all);
-            $this->assertDoesNotMatchRegularExpression('/comment~"\^guest-portal:[^ ]/', $all);
+            // (except the full key pattern of the own provisioning rules per CAP, anchored at both ends)
+            $this->assertDoesNotMatchRegularExpression('/comment~"\^guest-portal:(?!wifi:cap-\[0-9a-f\]\{12\}\\\\\$")[^ ]/', $all);
         }
     }
 
@@ -220,7 +221,7 @@ class WifiPasswordTest extends TestCase
         $this->assertNotNull($this->rawLocal());
         $this->assertSame('local-secret-1', Crypt::decryptString($this->rawLocal()));
         $this->assertSame('local-secret-1', $this->site->fresh()->wifiPassword());
-        $this->assertSame(['wifi_password_local', 'wifi_masters_local'], Federation::localColumns('sites'));
+        $this->assertSame(['wifi_password_local', 'wifi_masters_local', 'wifi_caps_local'], Federation::localColumns('sites'));
 
         // Replication payload carries neither the secret nor the local column
         app(Outbox::class)->record('sites', $this->site->id);

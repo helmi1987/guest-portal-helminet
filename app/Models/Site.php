@@ -30,8 +30,14 @@ class Site extends Model
 
     public const WIFI_SHARED = 'setup.wifi_password_shared';
 
-    /** Wi-Fi modes with selectable masters (setup assistant, column wifi_masters_local). */
+    /** Wi-Fi modes with selectable masters (setup assistant, column wifi_masters_local), in script order. */
     public const WIFI_MODES = ['capsman1', 'capsman2', 'local'];
+
+    /** CAPsMAN modes: guest SSID per CAP possible (column wifi_caps_local, decision 2026-11-02). */
+    public const CAPSMAN_MODES = ['capsman1', 'capsman2'];
+
+    /** Wi-Fi mode of sites saved without one (and of an invalid stored value). */
+    public const DEFAULT_WIFI_MODE = 'capsman2';
 
     /** Never serialized: instance-local Wi-Fi password (APP_KEY encrypted). */
     protected $hidden = ['wifi_password_local'];
@@ -41,7 +47,7 @@ class Site extends Model
 
     protected function casts(): array
     {
-        return ['settings' => 'array', 'wifi_password_local' => 'encrypted', 'wifi_masters_local' => 'array'];
+        return ['settings' => 'array', 'wifi_password_local' => 'encrypted', 'wifi_masters_local' => 'array', 'wifi_caps_local' => 'array'];
     }
 
     protected static function booted(): void
@@ -179,6 +185,68 @@ class Site extends Model
         $list = is_array($all[$mode] ?? null) ? $all[$mode] : [];
 
         return array_values(array_unique(array_filter(array_map('strval', $list), fn ($m) => self::validWifiMaster($m))));
+    }
+
+    /**
+     * Wi-Fi modes of the guest network (decision 2026-11-02): any combination of capsman1, capsman2 and
+     * local, stored as list "setup.wifi_modes" (replicated). Sites saved before keep the single value
+     * "setup.wifi_mode", read as a one-element list (no data migration). Invalid entries are dropped; no
+     * valid mode at all = the default mode. Ordered like WIFI_MODES (script order).
+     *
+     * @return list<string>
+     */
+    public function wifiModes(): array
+    {
+        return self::normalizeWifiModes($this->setting('setup', []));
+    }
+
+    /**
+     * Modes of a "setup" array (saved setting or form data): "wifi_modes" list, else the single
+     * "wifi_mode" of earlier versions, else the default.
+     *
+     * @return list<string>
+     */
+    public static function normalizeWifiModes(mixed $setup): array
+    {
+        $setup = (array) $setup;
+        $list = is_array($setup['wifi_modes'] ?? null) ? $setup['wifi_modes'] : (isset($setup['wifi_mode']) ? [$setup['wifi_mode']] : []);
+        $modes = array_values(array_intersect(self::WIFI_MODES, array_filter($list, 'is_string')));
+
+        return $modes !== [] ? $modes : [self::DEFAULT_WIFI_MODE];
+    }
+
+    /** Whether the saved setup carries Wi-Fi modes (list or the single value of earlier versions). */
+    public static function hasSavedWifiModes(mixed $setup): bool
+    {
+        $setup = (array) $setup;
+
+        return (is_array($setup['wifi_modes'] ?? null) && $setup['wifi_modes'] !== []) || (($setup['wifi_mode'] ?? '') !== '');
+    }
+
+    /**
+     * Radios (radio-mac, upper case with colons) selected on this instance for the guest SSID per CAP in a
+     * CAPsMAN mode (decision 2026-11-02, "variant A"). Empty = guest SSID on every CAP of the selected
+     * masters. Instance-local, not replicated. Only valid MACs are returned.
+     *
+     * @return list<string>
+     */
+    public function wifiCaps(string $mode): array
+    {
+        $all = is_array($this->wifi_caps_local) ? $this->wifi_caps_local : [];
+        $list = is_array($all[$mode] ?? null) ? $all[$mode] : [];
+
+        return array_values(array_unique(array_filter(array_map(fn ($m) => self::normalizeMac((string) $m), $list))));
+    }
+
+    /** MAC address in RouterOS notation (AA:BB:CC:DD:EE:FF), null when invalid (also - or no separators). */
+    public static function normalizeMac(string $mac): ?string
+    {
+        $hex = strtoupper((string) preg_replace('/[:\-.]/', '', trim($mac)));
+        if (preg_match('/^[0-9A-F]{12}\z/', $hex) !== 1) {
+            return null;
+        }
+
+        return implode(':', str_split($hex, 2));
     }
 
     /** Name of a Wi-Fi master: RouterOS name characters only, not one of the guest objects. */

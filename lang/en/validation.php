@@ -139,6 +139,7 @@ return [
         'api_password' => 'API password',
         'api_pin' => 'key pin',
         'wifi_mode' => 'Wi-Fi mode',
+        'wifi_modes' => 'Wi-Fi modes',
         'html_directory' => 'hotspot HTML directory',
         'veth_address' => 'VETH address',
         'veth_gateway' => 'VETH gateway',

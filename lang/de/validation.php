@@ -203,6 +203,7 @@ return [
         'api_password' => 'API-Passwort',
         'api_pin' => 'Schlüssel-Pin',
         'wifi_mode' => 'WLAN-Modus',
+        'wifi_modes' => 'WLAN-Modi',
         'html_directory' => 'Hotspot-HTML-Verzeichnis',
         'veth_address' => 'VETH-Adresse',
         'veth_gateway' => 'VETH-Gateway',

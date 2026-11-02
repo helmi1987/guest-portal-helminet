@@ -203,6 +203,7 @@ return [
         'api_password' => 'password API',
         'api_pin' => 'pin della chiave',
         'wifi_mode' => 'modalità Wi-Fi',
+        'wifi_modes' => 'modalità Wi-Fi',
         'html_directory' => 'cartella HTML dell\'hotspot',
         'veth_address' => 'indirizzo VETH',
         'veth_gateway' => 'gateway VETH',

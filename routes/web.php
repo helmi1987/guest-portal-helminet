@@ -161,6 +161,9 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     ->name('sites.setup.state')->middleware('throttle:10,1,router-state');
                 Route::post('/sites/{site}/setup/routers/{router}/state', [SetupController::class, 'queryState'])
                     ->scopeBindings()->name('sites.setup.router-state')->middleware('throttle:10,1,router-state');
+                // Provisioning editor: script preview from the stored state (nothing stored, decision 2026-11-02)
+                Route::post('/sites/{site}/setup/routers/{router}/provisioning', [SetupController::class, 'provisioningPreview'])
+                    ->scopeBindings()->name('sites.setup.provisioning')->middleware('throttle:60,1,setup-provisioning');
                 Route::scopeBindings()->prefix('/sites/{site}/routers')->name('sites.routers.')->group(function () {
                     Route::post('/', [SiteController::class, 'storeRouter'])->name('store');
                     Route::delete('/{router}', [SiteController::class, 'destroyRouter'])->name('destroy');

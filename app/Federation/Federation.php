@@ -51,7 +51,8 @@ final class Federation
     public const LOCAL_COLUMNS = [
         // Guest Wi-Fi password kept on this instance only (flag setup.wifi_password_shared off), encrypted with APP_KEY
         // Guest Wi-Fi masters of the setup assistant (per Wi-Fi mode), local like the router API access
-        'sites' => ['wifi_password_local', 'wifi_masters_local'],
+        // Guest SSID per CAP: selected radios (radio-mac) per CAPsMAN mode (decision 2026-11-02)
+        'sites' => ['wifi_password_local', 'wifi_masters_local', 'wifi_caps_local'],
         'nas_clients' => ['last_seen_at', 'cert_fetched_at', 'login_page_fetched_at', 'router_state', 'router_state_at', 'router_state_error',
             'api_host', 'api_type', 'api_port', 'api_user', 'api_password', 'api_pin'],
     ];

@@ -6,6 +6,7 @@ use App\Models\Grant;
 use App\Models\NasClient;
 use App\Models\RadiusAccounting;
 use App\Models\Site;
+use App\Nas\RouterOs\ProvisioningEditor;
 use App\Nas\RouterOs\RouterStateDriver;
 use App\Support\Mac;
 use Illuminate\Http\Request;
@@ -14,8 +15,9 @@ use Illuminate\Support\Facades\Log;
 /**
  * MikroTik RouterOS 7 hotspot (CONCEPT.md §2.1, §5.1).
  */
-class MikrotikRos7Driver implements NasDriver, RouterStateDriver
+class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDriver
 {
+    use MikrotikRos7Provisioning;
     use MikrotikRos7RouterState;
 
     /**
@@ -69,7 +71,6 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
     {
         $g = $this->guestValues($site);
         $o = fn (string $path, ?string $name = null) => ['path' => $path, 'name' => $name];
-        $wifi = $g['wifi_mode'] === 'capsman1' ? '/caps-man' : '/interface wifi';
         $blocks = [
             'radius' => ['server' => $o('/radius')],
             'walled' => ['portal-host' => $o('/ip hotspot walled-garden'), 'portal-ip' => $o('/ip hotspot walled-garden ip')],
@@ -83,11 +84,8 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
                 'gateway' => $o('/ip address', $g['interface']), 'pool' => $o('/ip pool', $g['pool_name']),
                 'dhcp-server' => $o('/ip dhcp-server', 'guest-dhcp'), 'dhcp-network' => $o('/ip dhcp-server network', $g['subnet']),
                 'option-114' => $o('/ip dhcp-server option', 'captive-portal')],
-            // Mode local: one virtual AP per selected master interface (decision 2026-11-01)
-            'wifi' => ['dp-guest' => $o($wifi.' datapath', 'dp-guest'), 'sec-guest' => $o($wifi.' security', 'sec-guest'),
-                'cfg-guest' => $o($wifi.' configuration', 'cfg-guest')]
-                + ($g['wifi_mode'] === 'local' ? array_combine($virtual = array_map(self::guestInterface(...), $g['wifi_masters']),
-                    array_map(fn ($name) => $o('/interface wifi', $name), $virtual)) : []),
+            // Filled below: shared objects per package path, virtual APs (local), own provisioning rules per CAP
+            'wifi' => [],
             'fw' => ['list-guest' => $o('/interface list', 'GUEST'), 'list-member' => $o('/interface list member', 'GUEST')]
                 + array_map(fn ($list) => $o('/ip firewall address-list', $list), self::FW_ADDRESSES)
                 + array_map(fn () => $o('/ip firewall filter'), self::FW_RULES),
@@ -96,12 +94,81 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
         ];
         $out = [];
         foreach ($blocks as $block => $objects) {
+            $out[$block] = [];
             foreach ($objects as $object => $entry) {
                 $out[$block][self::key($block, $object)] = $entry;
             }
         }
+        $out['wifi'] = $this->wifiManagedObjects($g);
 
         return $out;
+    }
+
+    /**
+     * Wi-Fi objects of the selected modes (decision 2026-11-02): dp-guest, sec-guest and cfg-guest once
+     * per package path (/caps-man for capsman1, /interface wifi for capsman2 and local), one virtual AP per
+     * master (local), one own provisioning rule per selected CAP radio (capsman1/capsman2). Indexed by
+     * wifiId(): the comment key, or "<key>@caps-man" for the /caps-man objects while the wifi package is
+     * selected too (same key in both packages); then the entry carries the comment key as "key".
+     *
+     * @return array<string, array{path: string, name: ?string, key?: string}>
+     */
+    private function wifiManagedObjects(array $g): array
+    {
+        $out = [];
+        $add = function (string $path, ?string $name, string $key) use (&$out, $g) {
+            $id = self::wifiId($key, $path, $g['wifi_modes']);
+            $out[$id] = ['path' => $path, 'name' => $name] + ($id !== $key ? ['key' => $key] : []);
+        };
+        foreach (self::wifiPaths($g['wifi_modes']) as $path) {
+            foreach (['datapath' => 'dp-guest', 'security' => 'sec-guest', 'configuration' => 'cfg-guest'] as $menu => $name) {
+                $add("{$path} {$menu}", $name, self::key('wifi', $name));
+            }
+        }
+        foreach ($g['wifi_caps'] as $mode => $macs) {
+            foreach ($macs as $mac) {
+                $add(self::wifiPath($mode).' provisioning', null, self::capKey($mac));
+            }
+        }
+        if (in_array('local', $g['wifi_modes'], true)) {
+            foreach ($g['wifi_masters']['local'] as $master) {
+                $add('/interface wifi', self::guestInterface($master), self::key('wifi', self::guestInterface($master)));
+            }
+        }
+
+        return $out;
+    }
+
+    /** Menu path of a Wi-Fi mode: legacy CAPsMAN (wireless package) or the wifi package. */
+    public static function wifiPath(string $mode): string
+    {
+        return $mode === 'capsman1' ? '/caps-man' : '/interface wifi';
+    }
+
+    /**
+     * Package paths of the selected modes, each once (capsman2 and local share /interface wifi).
+     *
+     * @param  list<string>  $modes
+     * @return list<string>
+     */
+    public static function wifiPaths(array $modes): array
+    {
+        return array_values(array_unique(array_map(self::wifiPath(...), $modes)));
+    }
+
+    /**
+     * State id of a Wi-Fi object: the comment key, or "<key>@caps-man" for an object in /caps-man while the
+     * wifi package is selected too (both packages carry the same comment keys, decision 2026-11-02).
+     */
+    public static function wifiId(string $key, string $path, array $modes): string
+    {
+        return str_starts_with($path, '/caps-man') && count(self::wifiPaths($modes)) > 1 ? $key.'@caps-man' : $key;
+    }
+
+    /** Comment key of the own provisioning rule of one CAP radio: "guest-portal:wifi:cap-<12 hex digits>". */
+    public static function capKey(string $mac): string
+    {
+        return self::key('wifi', 'cap-'.strtolower(str_replace(':', '', $mac)));
     }
 
     /**
@@ -342,7 +409,10 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
                 'wifi_password_clear' => ['nullable', 'boolean'],
                 // Share the password with other instances (replicated, data key); off: this instance only (APP_KEY)
                 'wifi_password_shared' => ['nullable', 'boolean'],
-                'wifi_mode' => ['required', 'in:capsman1,capsman2,local'],
+                // Any combination of the Wi-Fi modes (decision 2026-11-02); the single "wifi_mode" of earlier
+                // versions is still read (Site::normalizeWifiModes()), never written again
+                'wifi_modes' => ['required', 'array', 'min:1'],
+                'wifi_modes.*' => ['required', 'string', 'distinct', 'in:'.implode(',', Site::WIFI_MODES)],
                 'html_directory' => ['nullable', 'in:'.implode(',', self::HTML_DIRECTORIES)],
             ],
             'container' => [
@@ -381,103 +451,20 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
         $coaPorts = $site->nasClients->pluck('coa_port')->map(fn ($p) => (int) $p)
             ->filter(fn ($p) => $p >= 1 && $p <= 65535)->unique()->sort()->implode(',') ?: '3799';
 
-        $trunk = $g['wifi_mode'] === 'capsman2'
+        $capsman2 = in_array('capsman2', $g['wifi_modes'], true);
+        $trunk = $capsman2
             ? "# Trunk port to the CAPs: must already be a port of this bridge (see the print above); only if not:\n"
                 ."# /interface bridge port add bridge={$g['bridge']} interface=<TRUNK_PORT_TO_CAP>"
             : '# No trunk port needed (guest traffic is forwarded by this router into the bridge)';
-        $vlanTagged = $g['wifi_mode'] === 'capsman2' ? "{$g['bridge']},<TRUNK_PORT_TO_CAP>" : $g['bridge'];
+        $vlanTagged = $capsman2 ? "{$g['bridge']},<TRUNK_PORT_TO_CAP>" : $g['bridge'];
 
         // Keys of this site's objects (managedObjects()), short names for the heredocs below.
         $k = fn (string $block, string $object) => self::key($block, $object);
         $o = fn (string $block, string $object) => self::owned(self::key($block, $object));
         $up = self::upsert(...);
 
-        // Wi-Fi: datapath, security, configuration (and the virtual AP of a local radio) re-runnable.
-        $wifiPath = $g['wifi_mode'] === 'capsman1' ? '/caps-man' : '/interface wifi';
-        $kSec = $k('wifi', 'sec-guest');
-        $datapath = $g['wifi_mode'] === 'capsman1'
-            ? "bridge={$g['bridge']} vlan-id={$g['vlan_id']} vlan-mode=use-tag local-forwarding=no client-to-client-forwarding=no"
-            : "bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes";
-        $security = $up("{$wifiPath} security", 'name=sec-guest', $kSec, 'name=sec-guest', '');
-        if ($g['wifi_unavailable']) {
-            // WPA site whose password is kept on another instance: never fall back to an open network
-            $security = "# Guest Wi-Fi password is set for this site but not available on this instance (kept local on another one).\n"
-                .'# sec-guest is NOT created or changed here: enter the password in step 2 on this instance, or run this on the instance that has it.';
-        } elseif ($g['wifi_password'] !== '') {
-            // Masked for display (setup assistant page): the placeholder is replaced in the browser only
-            // when the admin asks for it; a copy with the placeholder left in aborts before any change.
-            $pass = $withSecrets ? self::quoted($g['wifi_password']) : self::WIFI_PASSWORD_PLACEHOLDER;
-            $auth = $g['wifi_mode'] === 'capsman1' ? 'authentication-types=wpa2-psk encryption=aes-ccm' : 'authentication-types=wpa2-psk,wpa3-psk';
-            $security .= "\n# Guest Wi-Fi password of the setup assistant (WPA2/WPA3 personal); re-running updates it\n"
-                ."{$wifiPath} security set [find where name=sec-guest && comment=\"{$kSec}\"] {$auth} passphrase=\"{$pass}\"";
-        } else {
-            $unset = $g['wifi_mode'] === 'capsman1' ? ['passphrase', 'authentication-types', 'encryption'] : ['passphrase', 'authentication-types'];
-            $security .= "\n# No guest Wi-Fi password in the setup assistant: open SSID (a password set earlier is removed)\n"
-                .implode("\n", array_map(fn ($p) => "{$wifiPath} security unset [find where name=sec-guest && comment=\"{$kSec}\"] {$p}", $unset));
-        }
-        $guard = ! $withSecrets && ! $g['wifi_unavailable'] && $g['wifi_password'] !== ''
-            ? ':if ("'.self::WIFI_PASSWORD_PLACEHOLDER.'" = ("<" . "'.substr(self::WIFI_PASSWORD_PLACEHOLDER, 1).'")) do={ :error "replace '
-                .self::WIFI_PASSWORD_PLACEHOLDER.' first" }'."\n"
-            : '';
-        $wifiObjects = $guard.$up("{$wifiPath} datapath", 'name=dp-guest', $k('wifi', 'dp-guest'), 'name=dp-guest', $datapath)."\n"
-            .$security."\n"
-            .$up("{$wifiPath} configuration", 'name=cfg-guest', $k('wifi', 'cfg-guest'), 'name=cfg-guest',
-                "ssid=\"{$g['ssid']}\" country=<COUNTRY> security=sec-guest datapath=dp-guest");
-        if ($guard !== '') {
-            // One "{ ... }" unit around the whole Wi-Fi block (closed after the match below): a terminal paste
-            // runs line by line, so lines outside the group would still run after the guard's :error.
-            $wifiObjects = "{\n".$wifiObjects;
-        }
-        $wifiHeader = "# Re-runnable: adds dp-guest, sec-guest and cfg-guest or updates the own ones (comment key\n"
-            ."# \"{$k('wifi', 'cfg-guest')}\" etc.); objects of others with these names are never changed (the add fails).";
-
-        // Masters (decision 2026-11-01): selected on this instance, else one placeholder master (a master
-        // that does not exist on the router is skipped with a message, also a placeholder left unfilled).
-        $masters = $g['wifi_masters'] !== [] ? $g['wifi_masters'] : [$g['wifi_mode'] === 'local' ? '<WIFI_INTERFACE>' : '<MASTER_CFG>'];
-        $slaves = $g['wifi_mode'] === 'local' ? '' : $this->wifiSlaveAppend($wifiPath, $masters);
-        $virtual = $g['wifi_mode'] === 'local' ? $this->wifiVirtualAps($masters) : '';
-
-        $wifi = match ($g['wifi_mode']) {
-            'capsman1' => <<<RSC
-            # Legacy CAPsMAN (/caps-man, wireless package): manager forwarding, VLAN tagged by the manager
-            {$wifiHeader}
-            {$wifiObjects}
-            {$slaves}
-            /caps-man manager set enabled=yes
-            RSC,
-            'capsman2' => <<<RSC
-            # CAPsMAN of the wifi package (/interface wifi). wifi-qcom-ac CAPs: do NOT set vlan-id
-            # (no VLAN offload); set PVID {$g['vlan_id']} on the CAP's bridge port instead.
-            {$wifiHeader}
-            {$wifiObjects}
-            {$slaves}
-            /interface wifi capsman set enabled=yes
-            # On each CAP: /interface wifi cap set enabled=yes discovery-interfaces=<IF> caps-man-addresses=<MANAGER_IP>
-            RSC,
-            default => <<<RSC
-            # Local radio of this router (wifi package): virtual AP on an existing radio
-            {$wifiHeader}
-            {$wifiObjects}
-            # configuration=<name> on a virtual AP (to verify); alternative: inline configuration.ssid="{$g['ssid']}"
-            {$virtual}
-            RSC,
-        };
-        if ($guard !== '') {
-            $wifi .= "\n}";
-        }
-
-        $wifiRemoveObjects = "{$wifiPath} configuration remove [find where name=cfg-guest && {$o('wifi', 'cfg-guest')}]\n"
-            ."{$wifiPath} security remove [find where name=sec-guest && {$o('wifi', 'sec-guest')}]\n"
-            ."{$wifiPath} datapath remove [find where name=dp-guest && {$o('wifi', 'dp-guest')}]";
-        $wifiRemove = match ($g['wifi_mode']) {
-            'capsman1', 'capsman2' => $this->wifiSlaveRemove($wifiPath, $o('wifi', 'cfg-guest'))."\n"
-                ."# only if created for the guest network: configuration, security, datapath\n".$wifiRemoveObjects,
-            // Virtual APs per master (and the single one of scripts before 0.16), then the configuration
-            default => "# only if created for the guest network: virtual APs and their configuration\n"
-                .implode('', array_map(fn ($m) => '/interface wifi remove [find where name="'.self::guestInterface($m).'" && '
-                    .self::owned(self::key('wifi', self::guestInterface($m)))."]\n", $g['wifi_masters']))
-                ."/interface wifi remove [find where name=wifi-guest && {$o('wifi', 'wifi-guest')}]\n".$wifiRemoveObjects,
-        };
+        // Wi-Fi (decision 2026-11-02: every selected mode, shared objects once per package path)
+        [$wifi, $wifiRemove] = $this->wifiCommands($g, $withSecrets);
 
         // Firewall: exact keys of the address-list entries and filter rules
         $addrKeys = self::keys('fw', array_keys(self::FW_ADDRESSES));
@@ -822,9 +809,11 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             'pool' => $pool ?: '<POOL_START>-<POOL_END>',
             'pool_name' => $pool ? 'guest-pool' : '<GUEST_POOL>',
             'ssid' => trim(self::safe($s['ssid'] ?? null)) ?: 'Guest-WiFi',
-            'wifi_mode' => $mode = in_array($s['wifi_mode'] ?? null, Site::WIFI_MODES, true) ? $s['wifi_mode'] : 'capsman2',
-            // Selected masters of this mode (instance-local, decision 2026-11-01)
-            'wifi_masters' => $site->wifiMasters($mode),
+            // Selected modes (decision 2026-11-02), their masters (instance-local, decision 2026-11-01) and the
+            // CAP radios of the guest SSID per CAP (CAPsMAN modes, instance-local, decision 2026-11-02)
+            'wifi_modes' => $modes = $site->wifiModes(),
+            'wifi_masters' => array_combine($modes, array_map(fn ($m) => $site->wifiMasters($m), $modes)),
+            'wifi_caps' => array_filter(array_combine($modes, array_map(fn ($m) => in_array($m, Site::CAPSMAN_MODES, true) ? $site->wifiCaps($m) : [], $modes))),
             'html_directory' => in_array($s['html_directory'] ?? null, self::HTML_DIRECTORIES, true) ? $s['html_directory'] : 'hotspot',
             // Decrypted guest Wi-Fi password, '' for an open SSID; only printable ASCII is kept
             'wifi_unavailable' => $site->wifiPasswordUnavailable(),
@@ -1033,6 +1022,262 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
     }
 
     /**
+     * Wi-Fi block and its uninstall part for every selected mode (decision 2026-11-02): one sub-block per
+     * mode in the order capsman1, capsman2, local; dp-guest, sec-guest and cfg-guest once per package path
+     * (capsman2 and local share the /interface wifi objects), generated with the first mode of the path.
+     * One password guard and one "{ ... }" group around the whole block. A single mode gives the block of
+     * earlier versions.
+     *
+     * @return array{0: string, 1: string} Wi-Fi block, uninstall part
+     */
+    private function wifiCommands(array $g, bool $withSecrets): array
+    {
+        $guard = ! $withSecrets && ! $g['wifi_unavailable'] && $g['wifi_password'] !== ''
+            ? ':if ("'.self::WIFI_PASSWORD_PLACEHOLDER.'" = ("<" . "'.substr(self::WIFI_PASSWORD_PLACEHOLDER, 1).'")) do={ :error "replace '
+                .self::WIFI_PASSWORD_PLACEHOLDER.' first" }'."\n"
+            : '';
+        $k = self::key('wifi', 'cfg-guest');
+        $wifiHeader = "# Re-runnable: adds dp-guest, sec-guest and cfg-guest or updates the own ones (comment key\n"
+            ."# \"{$k}\" etc.); objects of others with these names are never changed (the add fails).";
+        $done = [];
+        $parts = [];
+        foreach ($g['wifi_modes'] as $mode) {
+            $path = self::wifiPath($mode);
+            if (! isset($done[$path])) {
+                $objects = $this->wifiObjects($path, $g, $withSecrets);
+                if ($done === [] && $guard !== '') {
+                    // One "{ ... }" unit around the whole Wi-Fi block (closed at the end): a terminal paste runs
+                    // line by line, so lines outside the group would still run after the guard's :error.
+                    $objects = "{\n".$guard.$objects;
+                }
+                $objects = $wifiHeader."\n".$objects;
+                $done[$path] = true;
+            } else {
+                $objects = '# dp-guest, sec-guest and cfg-guest of the wifi package: created above (shared with CAPsMAN of the wifi package)';
+            }
+            $masters = $g['wifi_masters'][$mode] ?? [];
+            // Masters (decision 2026-11-01): selected on this instance, else one placeholder master (a master
+            // that does not exist on the router is skipped with a message, also a placeholder left unfilled).
+            $masters = $masters !== [] ? $masters : [$mode === 'local' ? '<WIFI_INTERFACE>' : '<MASTER_CFG>'];
+            $tail = $mode === 'local' ? '' : $this->wifiProvisioning($path, $masters, $g['wifi_caps'][$mode] ?? []);
+            $parts[] = match ($mode) {
+                'capsman1' => <<<RSC
+                # Legacy CAPsMAN (/caps-man, wireless package): manager forwarding, VLAN tagged by the manager
+                {$objects}
+                {$tail}
+                /caps-man manager set enabled=yes
+                RSC,
+                'capsman2' => <<<RSC
+                # CAPsMAN of the wifi package (/interface wifi). wifi-qcom-ac CAPs: do NOT set vlan-id
+                # (no VLAN offload); set PVID {$g['vlan_id']} on the CAP's bridge port instead.
+                {$objects}
+                {$tail}
+                /interface wifi capsman set enabled=yes
+                # On each CAP: /interface wifi cap set enabled=yes discovery-interfaces=<IF> caps-man-addresses=<MANAGER_IP>
+                RSC,
+                default => <<<RSC
+                # Local radio of this router (wifi package): virtual AP on an existing radio
+                {$objects}
+                # configuration=<name> on a virtual AP (to verify); alternative: inline configuration.ssid="{$g['ssid']}"
+                {$this->wifiVirtualAps($masters)}
+                RSC,
+            };
+        }
+        $wifi = implode("\n", $parts).($guard !== '' ? "\n}" : '');
+
+        $remove = [];
+        foreach (self::wifiPaths($g['wifi_modes']) as $path) {
+            $ownedCfg = self::owned(self::key('wifi', 'cfg-guest'));
+            $lines = [];
+            $capsman = $path === '/caps-man' || in_array('capsman2', $g['wifi_modes'], true);
+            if ($capsman) {
+                // Own provisioning rules per CAP first (they list cfg-guest), then cfg-guest out of the others
+                $lines[] = $this->wifiCapRulesRemove($path);
+                $lines[] = $this->wifiSlaveRemove($path, $ownedCfg);
+            }
+            if ($path === '/interface wifi' && in_array('local', $g['wifi_modes'], true)) {
+                // Virtual APs per master (and the single one of scripts before 0.16), then the configuration
+                $lines[] = "# only if created for the guest network: virtual APs and their configuration\n"
+                    .implode('', array_map(fn ($m) => '/interface wifi remove [find where name="'.self::guestInterface($m).'" && '
+                        .self::owned(self::key('wifi', self::guestInterface($m)))."]\n", $g['wifi_masters']['local'] ?? []))
+                    .'/interface wifi remove [find where name=wifi-guest && '.self::owned(self::key('wifi', 'wifi-guest')).']';
+            } else {
+                $lines[] = '# only if created for the guest network: configuration, security, datapath';
+            }
+            $lines[] = "{$path} configuration remove [find where name=cfg-guest && {$ownedCfg}]\n"
+                ."{$path} security remove [find where name=sec-guest && ".self::owned(self::key('wifi', 'sec-guest'))."]\n"
+                ."{$path} datapath remove [find where name=dp-guest && ".self::owned(self::key('wifi', 'dp-guest')).']';
+            $remove[] = implode("\n", $lines);
+        }
+
+        return [$wifi, implode("\n", $remove)];
+    }
+
+    /** dp-guest, sec-guest (password or open) and cfg-guest of one package path, add-or-update. */
+    private function wifiObjects(string $path, array $g, bool $withSecrets): string
+    {
+        $v1 = $path === '/caps-man';
+        $kSec = self::key('wifi', 'sec-guest');
+        $datapath = $v1
+            ? "bridge={$g['bridge']} vlan-id={$g['vlan_id']} vlan-mode=use-tag local-forwarding=no client-to-client-forwarding=no"
+            : "bridge={$g['bridge']} vlan-id={$g['vlan_id']} client-isolation=yes";
+        $security = self::upsert("{$path} security", 'name=sec-guest', $kSec, 'name=sec-guest', '');
+        if ($g['wifi_unavailable']) {
+            // WPA site whose password is kept on another instance: never fall back to an open network
+            $security = "# Guest Wi-Fi password is set for this site but not available on this instance (kept local on another one).\n"
+                .'# sec-guest is NOT created or changed here: enter the password in step 2 on this instance, or run this on the instance that has it.';
+        } elseif ($g['wifi_password'] !== '') {
+            // Masked for display (setup assistant page): the placeholder is replaced in the browser only
+            // when the admin asks for it; a copy with the placeholder left in aborts before any change.
+            $pass = $withSecrets ? self::quoted($g['wifi_password']) : self::WIFI_PASSWORD_PLACEHOLDER;
+            $auth = $v1 ? 'authentication-types=wpa2-psk encryption=aes-ccm' : 'authentication-types=wpa2-psk,wpa3-psk';
+            $security .= "\n# Guest Wi-Fi password of the setup assistant (WPA2/WPA3 personal); re-running updates it\n"
+                ."{$path} security set [find where name=sec-guest && comment=\"{$kSec}\"] {$auth} passphrase=\"{$pass}\"";
+        } else {
+            $unset = $v1 ? ['passphrase', 'authentication-types', 'encryption'] : ['passphrase', 'authentication-types'];
+            $security .= "\n# No guest Wi-Fi password in the setup assistant: open SSID (a password set earlier is removed)\n"
+                .implode("\n", array_map(fn ($p) => "{$path} security unset [find where name=sec-guest && comment=\"{$kSec}\"] {$p}", $unset));
+        }
+
+        return self::upsert("{$path} datapath", 'name=dp-guest', self::key('wifi', 'dp-guest'), 'name=dp-guest', $datapath)."\n"
+            .$security."\n"
+            .self::upsert("{$path} configuration", 'name=cfg-guest', self::key('wifi', 'cfg-guest'), 'name=cfg-guest',
+                "ssid=\"{$g['ssid']}\" country=<COUNTRY> security=sec-guest datapath=dp-guest");
+    }
+
+    /**
+     * Provisioning part of a CAPsMAN mode: without a CAP selection cfg-guest is appended to the rules of the
+     * selected masters (decision 2026-11-01); with one, every selected radio gets an own rule (guest SSID per
+     * CAP, decision 2026-11-02) and cfg-guest is taken out of the other rules. Own rules of radios no longer
+     * selected are removed in both cases. Never provisions: CAPsMAN applies rule changes to the CAPs itself
+     * (reported by the maintainer, not verified on the CHR); the script only prints the rules and a hint.
+     *
+     * @param  list<string>  $masters
+     * @param  list<string>  $caps  radio MACs (AA:BB:CC:DD:EE:FF)
+     */
+    private function wifiProvisioning(string $path, array $masters, array $caps): string
+    {
+        $out = $caps === []
+            ? $this->wifiSlaveAppend($path, $masters)
+            : $this->wifiCapRules($path, $caps)."\n"
+                ."# Guest SSID per CAP: cfg-guest out of the slave configurations of the other provisioning rules\n"
+                .$this->wifiSlaveRemove($path, self::owned(self::key('wifi', 'cfg-guest')), true);
+        $out .= "\n".$this->wifiCapRulesCleanup($path, $caps);
+
+        return $out."\n"
+            ."{$path} provisioning print\n"
+            ."# Rule changes are applied to the CAPs by CAPsMAN. If a CAP did not pick them up (check the print above\n"
+            ."# and the CAP's interfaces), provision that CAP manually; this script never provisions.";
+    }
+
+    /**
+     * Guest SSID per CAP, "variant A" (decision 2026-11-02, verified on wifi package hardware with RouterOS
+     * 7.24.5; /caps-man untested on hardware): per selected radio an own provisioning rule
+     * "radio-mac=<mac>" with comment key "guest-portal:wifi:cap-<mac>", placed before the rule of the admin
+     * that provisions the radio now (first match wins), copying its action, band matcher, master and slave
+     * configurations and name formats, plus cfg-guest. The admin's rule is found on the router: the master
+     * configuration of the radio's master interface (radio-mac, no master interface), then the first rule
+     * that is not an own CAP rule with that master configuration and no other radio-mac. Radio or rule not
+     * found: reported and skipped (an existing own rule stays as it is). Add-or-update by the key; moved
+     * before the admin's rule only when it comes after it (re-runs change nothing).
+     *
+     * @param  list<string>  $caps
+     */
+    private function wifiCapRules(string $path, array $caps): string
+    {
+        $p = "{$path} provisioning";
+        $v1 = $path === '/caps-man';
+        $ifMenu = $v1 ? '/caps-man interface' : '/interface wifi';
+        $band = $v1 ? 'hw-supported-modes' : 'supported-bands';
+        $own = self::NAME.':wifi:cap-';
+        // Copied from the admin's rule (RouterOS 7.24.5, checked on the CHR): /caps-man sets every property
+        // (also empty values, it has no unset); /interface wifi unsets an empty band matcher, while its name
+        // formats cannot be unset: an own rule with a name format the admin's rule no longer has is removed
+        // (by id after the key match) and added again
+        $copy = $v1
+            ? ["        {$p} set \$gpOwn {$band}=[{$p} get \$gpRule {$band}] name-format=[{$p} get \$gpRule name-format] name-prefix=[{$p} get \$gpRule name-prefix]"]
+            : ["        :if ([:len [{$p} get \$gpRule {$band}]] > 0) do={ {$p} set \$gpOwn {$band}=[{$p} get \$gpRule {$band}] } else={ {$p} unset \$gpOwn {$band} }",
+                "        :if ([:len [{$p} get \$gpRule name-format]] > 0) do={ {$p} set \$gpOwn name-format=[{$p} get \$gpRule name-format] }",
+                "        :if ([:len [{$p} get \$gpRule slave-name-format]] > 0) do={ {$p} set \$gpOwn slave-name-format=[{$p} get \$gpRule slave-name-format] }"];
+        $out = "# Guest SSID only on the selected CAP radios: own provisioning rule per radio (radio-mac, comment key\n"
+            ."# \"{$own}<mac>\") before the rule that provisions the radio now, copying it plus cfg-guest. Radio not\n"
+            .'# connected or no rule found: reported and skipped (an existing own rule stays as it is).';
+        foreach ($caps as $mac) {
+            $key = self::capKey($mac);
+            $readd = $v1 ? '' : "        :if ([:len \$gpOwn] > 0) do={\n"
+                ."            :if (([:len [{$p} get \$gpRule name-format]] = 0 && [:len [{$p} get \$gpOwn name-format]] > 0) || ([:len [{$p} get \$gpRule slave-name-format]] = 0 && [:len [{$p} get \$gpOwn slave-name-format]] > 0)) do={\n"
+                ."                {$p} remove \$gpOwn\n"
+                ."                :set gpOwn \"\"\n"
+                ."            }\n"
+                ."        }\n";
+            $out .= "\n{\n"
+                ."    :local gpCfg \"\"\n"
+                ."    :foreach gpIf in=[{$ifMenu} find where radio-mac={$mac}] do={\n"
+                ."        :local gpMaster [:tostr [{$ifMenu} get \$gpIf master-interface]]\n"
+                ."        :if (\$gpMaster = \"\" || \$gpMaster = \"none\") do={ :set gpCfg [:tostr [{$ifMenu} get \$gpIf configuration]] }\n"
+                ."    }\n"
+                ."    :local gpRule \"\"\n"
+                ."    :if ([:len \$gpCfg] > 0) do={\n"
+                ."        :foreach gpR in=[{$p} find where master-configuration=\$gpCfg] do={\n"
+                ."            :local gpRm [:tostr [{$p} get \$gpR radio-mac]]\n"
+                ."            :if ([:len \$gpRule] = 0 && !([:tostr [{$p} get \$gpR comment]] ~ \"^{$own}\") && (\$gpRm = \"\" || \$gpRm = \"00:00:00:00:00:00\" || \$gpRm = \"{$mac}\")) do={ :set gpRule \$gpR }\n"
+                ."        }\n"
+                ."    }\n"
+                ."    :if ([:len \$gpRule] = 0) do={\n"
+                ."        :put (\"guest-portal: radio {$mac}: not connected or no provisioning rule of the admin for its configuration (\" . \$gpCfg . \"), skipped\")\n"
+                ."    } else={\n"
+                ."        :local gpSlaves \"\"\n"
+                ."        :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={ :if ([:len \$gpSlave] > 0 && \$gpSlave != \"cfg-guest\") do={ :set gpSlaves (\$gpSlaves . \$gpSlave . \",\") } }\n"
+                ."        :set gpSlaves (\$gpSlaves . \"cfg-guest\")\n"
+                ."        :local gpOwn [:pick [{$p} find where comment=\"{$key}\"] 0]\n"
+                .$readd
+                ."        :if ([:len \$gpOwn] = 0) do={\n"
+                ."            {$p} add place-before=\$gpRule action=[{$p} get \$gpRule action] radio-mac={$mac} master-configuration=\$gpCfg slave-configurations=\$gpSlaves comment=\"{$key}\"\n"
+                ."            :set gpOwn [:pick [{$p} find where comment=\"{$key}\"] 0]\n"
+                ."        }\n"
+                ."        {$p} set \$gpOwn action=[{$p} get \$gpRule action] radio-mac={$mac} master-configuration=\$gpCfg slave-configurations=\$gpSlaves\n"
+                .implode("\n", $copy)."\n"
+                ."        :if ([:find [{$p} find] \$gpOwn] > [:find [{$p} find] \$gpRule]) do={ {$p} move \$gpOwn destination=\$gpRule }\n"
+                ."    }\n"
+                .'}';
+        }
+
+        return $out;
+    }
+
+    /**
+     * Own provisioning rules per CAP whose radio is no longer selected (all of them without a selection):
+     * removed by id after comparing the comment with the exact keys (never a bare prefix match).
+     *
+     * @param  list<string>  $caps
+     */
+    private function wifiCapRulesCleanup(string $path, array $caps): string
+    {
+        $p = "{$path} provisioning";
+        // An empty "{}" is a syntax error on RouterOS 7.24.5: [:toarray ""]
+        $keep = $caps === [] ? '[:toarray ""]' : '{'.implode(';', array_map(fn ($m) => '"'.self::capKey($m).'"', $caps)).'}';
+        $pattern = '^'.self::NAME.':wifi:cap-[0-9a-f]{12}\$';
+
+        return "# Own provisioning rules of CAP radios no longer selected for the guest SSID are removed\n"
+            ."{\n"
+            ."    :local gpKeep {$keep}\n"
+            ."    :foreach gpR in=[{$p} find where comment~\"{$pattern}\"] do={\n"
+            ."        :if ([:typeof [:find \$gpKeep [{$p} get \$gpR comment]]] = \"nil\") do={ {$p} remove \$gpR }\n"
+            ."    }\n"
+            .'}';
+    }
+
+    /** Uninstall: own provisioning rules per CAP (exact key pattern, by id). */
+    private function wifiCapRulesRemove(string $path): string
+    {
+        $p = "{$path} provisioning";
+        $pattern = '^'.self::NAME.':wifi:cap-[0-9a-f]{12}\$';
+
+        return '# Own provisioning rules of the guest SSID per CAP (comment key "'.self::NAME.":wifi:cap-<mac>\"), by id\n"
+            .":foreach gpR in=[{$p} find where comment~\"{$pattern}\"] do={ {$p} remove \$gpR }";
+    }
+
+    /**
      * CAPsMAN v1/v2: append cfg-guest to the slave configurations of every provisioning rule whose
      * master-configuration is one of the selected masters, only when missing; the existing slaves are kept
      * (computed on the router). This append is the only change the scripts make to objects of others
@@ -1072,9 +1317,11 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
      * empty value, unset restores the state of a rule without slaves). Like the append, this is an approved change to objects of
      * others (decision 2026-11-01). Runs before the configuration is removed; re-running changes nothing.
      */
-    private function wifiSlaveRemove(string $path, string $ownedCfg): string
+    private function wifiSlaveRemove(string $path, string $ownedCfg, bool $exceptOwnRules = false): string
     {
         $p = "{$path} provisioning";
+        // Guest SSID per CAP: the own rules per radio keep cfg-guest (exact key pattern)
+        $find = $exceptOwnRules ? 'find where !(comment~"^'.self::NAME.':wifi:cap-[0-9a-f]{12}\\$")' : 'find';
         // Empty list: /caps-man has no "unset" for it (set ""); the wifi package's unset restores the default
         $empty = $path === '/caps-man' ? "{$p} set \$gpRule slave-configurations=\"\"" : "{$p} unset \$gpRule slave-configurations";
 
@@ -1082,7 +1329,7 @@ class MikrotikRos7Driver implements NasDriver, RouterStateDriver
             ."# out of the slave configurations of every provisioning rule that lists it (only while the own cfg-guest\n"
             ."# exists); the other slave configurations are kept, nothing else of the rules is changed.\n"
             .":if ([:len [{$path} configuration find where name=cfg-guest && {$ownedCfg}]] > 0) do={\n"
-            ."    :foreach gpRule in=[{$p} find] do={\n"
+            ."    :foreach gpRule in=[{$p} {$find}] do={\n"
             ."        :local gpList \"\"\n"
             ."        :local gpHas false\n"
             ."        :foreach gpSlave in=[{$p} get \$gpRule slave-configurations] do={\n"
