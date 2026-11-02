@@ -35,8 +35,11 @@ trait Replicated
 
         // Federated tables only: a new version (HLC, reads the stored clock state) and an outbox event
         // per real write. Local tables with replication columns pay nothing (accounting hot path).
+        // A save that changes only local columns (Federation::LOCAL_COLUMNS) is no replicated write: a new
+        // version would win last-write-wins against a remote edit not yet received here. Its updated_at still
+        // moves locally (the setup assistant compares it with the router state age); the next real write carries it.
         static::saving(function ($model) {
-            $write = $model->isFederated() && (! $model->exists || $model->isDirty());
+            $write = $model->isFederated() && (! $model->exists || $model->hasReplicatedChanges());
             self::$pendingEvent[$model] = $write;
             if ($write) {
                 $model->version = app(Hlc::class)->now();
@@ -69,6 +72,12 @@ trait Replicated
     public function isFederated(): bool
     {
         return Federation::isReplicated($this->getTable());
+    }
+
+    /** Whether a column other than the local ones (Federation::LOCAL_COLUMNS) is dirty. */
+    public function hasReplicatedChanges(): bool
+    {
+        return array_diff(array_keys($this->getDirty()), Federation::localColumns($this->getTable())) !== [];
     }
 
     public function save(array $options = [])
