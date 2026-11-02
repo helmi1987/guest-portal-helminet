@@ -228,6 +228,9 @@ return [
             'missing' => 'fehlt',
             'unknown' => 'unbekannt',
         ],
+        'info' => [
+            'dynamic' => 'dynamisch (Hotspot)',
+        ],
         'expected' => 'erwartet',
         'actual' => 'Router',
         'access_commands' => 'Befehle: API-Zugang nur lesen',
@@ -392,8 +395,8 @@ return [
             'steps' => [
                 'portal_cert' => 'Portal-Zertifikat installiert (Zertifikate, Portal)',
                 'router_cert' => 'Router-Zertifikat im Portal geholt (Zertifikate, Router)',
-                'router_script' => 'Router-Skript inkl. Zertifikat-Skript auf jedem Router ausgeführt (Schritt 4; der Router hat das Zertifikat geholt)',
-                'login' => 'login.html auf jeden Router hochgeladen (Schritt 5)',
+                'router_script' => 'Router-Skript inkl. Zertifikat-Skript auf jedem Router ausgeführt (Schritt "Router-Skript"; der Router hat das Zertifikat geholt)',
+                'login' => 'login.html auf jeden Router hochgeladen (Schritt "login.html")',
                 'verify' => 'Auf dem Router mit den Befehlen unten prüfen: Zertifikat vorhanden, Profil mit login-by=https,mac und ssl-certificate, login.html vorhanden',
             ],
         ],

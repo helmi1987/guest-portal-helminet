@@ -75,7 +75,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
             'radius' => ['server' => $o('/radius')],
             'walled' => ['portal-host' => $o('/ip hotspot walled-garden'), 'portal-ip' => $o('/ip hotspot walled-garden ip')],
             'cert' => ['script' => $o('/system script', self::NAME.'-cert'), 'scheduler' => $o('/system scheduler', self::NAME.'-cert')],
-            'dns' => ['hotspot-name' => $o('/ip dns static'), 'portal-a' => $o('/ip dns static', self::NAME.'-v4.internal'),
+            // No own hotspot-name entry (decision 2026-11-02): the hotspot adds a dynamic one for its dns-name
+            'dns' => ['portal-a' => $o('/ip dns static', self::NAME.'-v4.internal'),
                 'portal-cname' => $o('/ip dns static')],
             'container' => ['veth' => $o('/interface veth', 'veth-portal'), 'bridge' => $o('/interface bridge'),
                 'bridge-port' => $o('/interface bridge port', 'veth-portal'), 'gateway' => $o('/ip address'),
@@ -182,6 +183,17 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         $alts = array_map(fn ($k) => 'comment="'.$k.'"', $keys);
 
         return '('.implode(' || ', [...$alts, "comment=\"{$n}\"", "comment~\"^{$n}: \""]).')';
+    }
+
+    /**
+     * owned() for the menus with dynamic entries of the hotspot (decision 2026-11-02): /ip hotspot
+     * walled-garden (and ip) and /ip dns static. RouterOS adds dynamic entries there itself (a
+     * walled-garden copy of every walled-garden ip entry with its comment, e.g. "guest-portal" of a legacy
+     * ip entry; the A entry of the hotspot dns-name); they cannot be removed and are never ours.
+     */
+    private static function ownedStatic(string ...$keys): string
+    {
+        return '('.self::owned(...$keys).' && !dynamic)';
     }
 
     /** Keys of one block, optionally only the given objects. */
@@ -312,8 +324,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         $kHost = self::key('walled', 'portal-host');
         $kIp = self::key('walled', 'portal-ip');
         $oRadius = self::owned($kRadius);
-        $oHost = self::owned($kHost);
-        $oIp = self::owned($kIp);
+        $oHost = self::ownedStatic($kHost);
+        $oIp = self::ownedStatic($kIp);
 
         return <<<RSC
         # Guest portal - site "{$name}", router "{$routerName}" ({$nasIp})
@@ -326,7 +338,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         # holding the token, so check the log after running this too (/log print where message~"{$n}").
         # Idempotent: re-running replaces only its own entries: hotspot and profile named "{$n}", other
         # entries by their comment key "{$n}:<block>:<object>" (or the comment "{$n}" / "{$n}: ..." of
-        # earlier versions). Re-running recreates the hotspot, which logs out connected guests.
+        # earlier versions). Dynamic entries RouterOS adds for the hotspot (walled garden, DNS) are never
+        # touched. Re-running recreates the hotspot, which logs out connected guests.
 
         # RADIUS client (authentication + accounting) pointing to the portal instance. RouterOS >= 7.15
         # requires Message-Authenticator in replies (require-message-auth); the instance always adds it.
@@ -476,7 +489,9 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         $kDhcpNet = $k('net', 'dhcp-network');
         $kOpt = $k('net', 'option-114');
         $oOpt = $o('net', 'option-114');
-        $dnsOwned = self::owned(...self::keys('dns', ['hotspot-name', 'portal-a', 'portal-cname']));
+        // hotspot-name: own entry of versions before 0.19.1, only removed (decision 2026-11-02)
+        $dnsOwned = self::ownedStatic(...self::keys('dns', ['hotspot-name', 'portal-a', 'portal-cname']));
+        $ws = fn (string $block, string $object) => self::ownedStatic(self::key($block, $object));
         $apiGroup = self::API_GROUP;
 
         // Container network (step 1)
@@ -626,12 +641,12 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 # for the portal name the router's own /tool fetch (src-address=IPv4) then picks IPv6 and fails
                 # ("Address family not supported by protocol"). With the CNAME the router answers AAAA with
                 # "no appropriate record" and IPv4 is used. (A static type=NXDOMAIN entry would block A too.)
-                # The hotspot name keeps a plain A entry: it is the router itself, the router never fetches it,
-                # and guests use IPv4 on the guest network (if the guest network gets IPv6 and the hotspot name
-                # has a public AAAA, use the same CNAME pattern for it).
+                # The hotspot name gets no own entry: RouterOS adds a dynamic A entry for the dns-name of the
+                # hotspot profile (to the hotspot address). An own static entry of earlier versions is removed;
+                # dynamic entries are never touched. (If the guest network gets IPv6 and the hotspot name has a
+                # public AAAA, the router does not cover AAAA for it.)
                 /ip dns static
                 remove [find where {$dnsOwned}]
-                add name={$dnsName} address={$g['gateway']} comment="{$k('dns', 'hotspot-name')}"
                 add name={$n}-v4.internal address={$portalIp} comment="{$k('dns', 'portal-a')}"
                 add name={$portalHost} type=CNAME cname={$n}-v4.internal comment="{$k('dns', 'portal-cname')}"
                 # Check: IPv4 address, and "no appropriate record" for IPv6
@@ -683,8 +698,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 /system script remove [find where name="{$n}-cert" && ({$o('cert', 'script')} || !comment)]
                 /ip hotspot remove [find where name="{$n}"]
                 /ip hotspot profile remove [find where name="{$n}"]
-                /ip hotspot walled-garden remove [find where {$o('walled', 'portal-host')}]
-                /ip hotspot walled-garden ip remove [find where {$o('walled', 'portal-ip')}]
+                /ip hotspot walled-garden remove [find where {$ws('walled', 'portal-host')}]
+                /ip hotspot walled-garden ip remove [find where {$ws('walled', 'portal-ip')}]
                 /radius remove [find where {$o('radius', 'server')}]
                 # /radius incoming has no comment: only if nothing else uses Disconnect/CoA on this router:
                 # /radius incoming set accept=no
@@ -697,7 +712,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 # certificates have no comment): leaf, CAs "-ca-<n>", temporary import and legacy names
                 /certificate remove [find where name="{$n}" || name~"^{$n}-ca-[0-9]+\\$" || name~"^{$n}-import" || name="{$n}-new" || name~"^{$n}-new_"]
                 /file remove [find where name="{$n}.crt" || name="{$n}.key"]
-                # Static DNS entries of the assistant (hotspot name, portal CNAME and its internal A record)
+                # Static DNS entries of the assistant (portal CNAME and its internal A record, the hotspot name
+                # entry of earlier versions); dynamic entries of the hotspot are not touched
                 /ip dns static remove [find where {$dnsOwned}]
                 # DHCP option 114 of the own guest network: the reference is cleared only if it is the network's
                 # only option; otherwise a hint is printed (remove captive-portal from dhcp-option manually).

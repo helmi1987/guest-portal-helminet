@@ -228,6 +228,9 @@ return [
             'missing' => 'mancante',
             'unknown' => 'sconosciuto',
         ],
+        'info' => [
+            'dynamic' => 'dinamico (hotspot)',
+        ],
         'expected' => 'atteso',
         'actual' => 'router',
         'access_commands' => 'Comandi: accesso API in sola lettura',
@@ -392,8 +395,8 @@ return [
             'steps' => [
                 'portal_cert' => 'Certificato del portale installato (Certificati, portale)',
                 'router_cert' => 'Certificato del router scaricato nel portale (Certificati, router)',
-                'router_script' => 'Script del router incl. script del certificato eseguito su ogni router (passo 4; il router ha scaricato il certificato)',
-                'login' => 'login.html caricato su ogni router (passo 5)',
+                'router_script' => 'Script del router incl. script del certificato eseguito su ogni router (passo "Script del router"; il router ha scaricato il certificato)',
+                'login' => 'login.html caricato su ogni router (passo "login.html")',
                 'verify' => 'Verificare sul router con i comandi sotto: certificato presente, profilo con login-by=https,mac e ssl-certificate, login.html presente',
             ],
         ],

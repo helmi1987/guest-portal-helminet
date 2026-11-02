@@ -159,7 +159,8 @@ class WifiPasswordTest extends TestCase
             $used = array_unique($m[1]);
             // Exact legacy comment "guest-portal" appears only inside the removal/re-run guards
             // (and the key of the single virtual AP before 0.16, only in the find conditions of mode local)
-            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest'])), $mode);
+            // (and the DNS entry of the hotspot name before 0.19.1, only removed)
+            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest', 'guest-portal:dns:hotspot-name'])), $mode);
             // Outside the find conditions no add/set writes a legacy comment
             $outside = $all;
             do {

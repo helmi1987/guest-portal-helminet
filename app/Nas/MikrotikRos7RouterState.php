@@ -53,11 +53,12 @@ trait MikrotikRos7RouterState
         '/ip dhcp-server' => ['name', 'interface', 'address-pool', 'comment'],
         '/ip dhcp-server network' => ['address', 'gateway', 'dns-server', 'dhcp-option', 'comment'],
         '/ip dhcp-server option' => ['name', 'code', 'comment'],
-        '/ip dns static' => ['name', 'address', 'type', 'cname', 'comment'],
+        // dynamic: entries RouterOS adds for the hotspot (decision 2026-11-02), never own
+        '/ip dns static' => ['name', 'address', 'type', 'cname', 'comment', 'dynamic'],
         '/ip hotspot' => ['name', 'interface', 'address-pool', 'profile', 'disabled'],
         '/ip hotspot profile' => ['name', 'html-directory', 'dns-name', 'hotspot-address', 'login-by', 'ssl-certificate', 'default'],
-        '/ip hotspot walled-garden' => ['dst-host', 'action', 'comment'],
-        '/ip hotspot walled-garden ip' => ['dst-address', 'protocol', 'dst-port', 'action', 'comment'],
+        '/ip hotspot walled-garden' => ['dst-host', 'action', 'comment', 'dynamic'],
+        '/ip hotspot walled-garden ip' => ['dst-address', 'protocol', 'dst-port', 'action', 'comment', 'dynamic'],
         '/ip firewall filter' => ['chain', 'action', 'comment', 'dynamic', 'disabled'],
         '/ip firewall address-list' => ['list', 'address', 'comment'],
         '/ip service' => ['name', 'port', 'disabled', 'certificate'],
@@ -90,6 +91,12 @@ trait MikrotikRos7RouterState
     /** Objects the scripts replace also without a comment (certificate script and scheduler by name): legacy, not unmanaged. */
     private const LEGACY_NO_COMMENT = ['guest-portal:cert:script', 'guest-portal:cert:scheduler'];
 
+    /**
+     * Menus with dynamic entries of the hotspot (decision 2026-11-02): those rows are never own, legacy,
+     * foreign or unmanaged (filtered before the comparison; the adopt command skips them too).
+     */
+    private const DYNAMIC_MENUS = ['/ip hotspot walled-garden', '/ip hotspot walled-garden ip', '/ip dns static'];
+
     /** Filter rules with action drop (all others accept). */
     private const FW_DROP = ['in-drop-mgmt', 'fwd-drop-lan', 'fwd-drop-new'];
 
@@ -121,7 +128,6 @@ trait MikrotikRos7RouterState
             $k('radius', 'server') => ['address' => $radius, 'service' => 'hotspot'],
             $k('walled', 'portal-host') => ['dst-host' => $portalHost, 'action' => 'allow'],
             $k('walled', 'portal-ip') => ['dst-address' => $portalIp, 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept'],
-            $k('dns', 'hotspot-name') => ['name' => $dnsName, 'address' => $g['gateway']],
             $k('dns', 'portal-a') => ['address' => $portalIp],
             $k('dns', 'portal-cname') => ['name' => $portalHost, 'type' => 'CNAME', 'cname' => self::NAME.'-v4.internal'],
             $k('net', 'vlan') => ['interface' => $g['bridge'], 'vlan-id' => $g['vlan_id']],
@@ -174,7 +180,8 @@ trait MikrotikRos7RouterState
 
     public function compareState(Site $site, array $state): array
     {
-        $menus = self::ownWifiComments((array) ($state['menus'] ?? []));
+        $all = (array) ($state['menus'] ?? []);
+        $menus = self::ownWifiComments(self::withoutDynamic($all));
         $expected = $this->expectedValues($site);
         $out = [];
         foreach ($this->managedObjects($site) as $block => $objects) {
@@ -214,6 +221,7 @@ trait MikrotikRos7RouterState
         }
         // Hotspot server and profile have no comment: identified by name
         $dnsName = self::token(((array) $site->setting('hotspot_hosts', []))[0] ?? null);
+        $out['dns'] = ['dns:hotspot-name' => $this->hotspotNameEntry($all['/ip dns static'] ?? null, $dnsName)] + $out['dns'];
         $byName = [
             '/ip hotspot' => ['interface' => $g['interface'], 'address-pool' => $g['pool_name'], 'profile' => self::NAME],
             '/ip hotspot profile' => ['html-directory' => $g['html_directory'], 'dns-name' => $dnsName, 'hotspot-address' => $g['gateway'],
@@ -239,6 +247,53 @@ trait MikrotikRos7RouterState
         }
 
         return $out;
+    }
+
+    /** State without the dynamic rows of DYNAMIC_MENUS. */
+    private static function withoutDynamic(array $menus): array
+    {
+        foreach (self::DYNAMIC_MENUS as $path) {
+            if (isset($menus[$path]['rows']) && is_array($menus[$path]['rows'])) {
+                $menus[$path]['rows'] = array_values(array_filter($menus[$path]['rows'], fn ($r) => ! self::isDynamic($r)));
+            }
+        }
+
+        return $menus;
+    }
+
+    private static function isDynamic(mixed $row): bool
+    {
+        return is_array($row) && in_array($row['dynamic'] ?? null, [true, 'true', 'yes'], true);
+    }
+
+    /**
+     * DNS entry of the hotspot name (decision 2026-11-02): no own entry any more, RouterOS adds a dynamic
+     * one for the dns-name of the hotspot profile. "present" when any entry with that name exists (info
+     * "dynamic" when it is the router's), "legacy" when an own static entry of earlier versions (key
+     * guest-portal:dns:hotspot-name or legacy comment) exists (removed by the next run of the DNS block).
+     *
+     * @return array{path: string, name: ?string, status: string, diff: array, info?: string}
+     */
+    private function hotspotNameEntry(?array $menu, string $dnsName): array
+    {
+        $item = ['path' => '/ip dns static', 'name' => $dnsName !== '' && ! str_contains($dnsName, '<') ? $dnsName : null];
+        if ($menu === null || isset($menu['error']) || $item['name'] === null) {
+            return $item + ['status' => 'unknown', 'diff' => []];
+        }
+        $rows = array_values(array_filter((array) ($menu['rows'] ?? []), fn ($r) => is_array($r) && ($r['name'] ?? null) === $dnsName));
+        $n = self::NAME;
+        foreach ($rows as $row) {
+            $comment = (string) ($row['comment'] ?? '');
+            if (! self::isDynamic($row) && ($comment === self::key('dns', 'hotspot-name') || $comment === $n || str_starts_with($comment, $n.': '))) {
+                return $item + ['status' => 'legacy', 'diff' => []];
+            }
+        }
+        if ($rows === []) {
+            return $item + ['status' => 'missing', 'diff' => []];
+        }
+
+        return $item + ['status' => 'present', 'diff' => []]
+            + (collect($rows)->contains(fn ($r) => self::isDynamic($r)) ? ['info' => 'dynamic'] : []);
     }
 
     /**
@@ -452,8 +507,11 @@ trait MikrotikRos7RouterState
             $empty = $empty === '!comment' ? $empty : "({$empty})";
         }
 
+        // Dynamic rows of the hotspot are filtered before; the command skips them on the router too
+        $static = in_array($path, self::DYNAMIC_MENUS, true) ? ' && !dynamic' : '';
+
         return ['status' => 'unmanaged', 'diff' => [],
-            'adopt' => count($found) === 1 ? "{$path} set [find where {$cond} && {$empty}] comment=\"{$key}\"" : null];
+            'adopt' => count($found) === 1 ? "{$path} set [find where {$cond} && {$empty}{$static}] comment=\"{$key}\"" : null];
     }
 
     private static function same(string $prop, string $want, string $actual): bool

@@ -56,6 +56,12 @@ dependencies. The run needs a router without configuration (fresh image or `load
   authentication (capsman1, local), open (capsman2); re-run, and in mode local password removed and set again.
 - Network blocks re-runnable (wifi, dhcp, vlan run twice).
 - DNS: the router resolves the portal name via the CNAME.
+- Dynamic hotspot entries (decision 2026-11-02): an own static hotspot-name entry of earlier versions is removed by the
+  DNS block and not added again; after the hotspot block the dynamic entries of the walled garden, walled garden ip
+  and DNS are printed (7.24.5 CHR: the DNS A entry of the hotspot dns-name and a dynamic walled-garden copy of every
+  walled-garden ip entry with its comment, own and foreign; none in walled garden ip) and the hotspot name resolves; the DNS block re-run, the router
+  script and its re-run, and the walled-garden/DNS lines of the uninstall run alone while the hotspot exists leave
+  the dynamic entries unchanged; afterwards no own walled-garden/DNS entry is left.
 - Certificate script: first import (leaf `guest-portal` with key and served fingerprint, CAs
   `guest-portal-ca-1/2`, profile uses it), second run and router script re-run are no-ops, rotation to a
   new leaf; foreign certificates (also `guest-portal-ca-x`, `guest-portal-backup`,

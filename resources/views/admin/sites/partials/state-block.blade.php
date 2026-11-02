@@ -21,6 +21,9 @@
             <li data-state-item="{{ $key }}" data-status="{{ $item['status'] }}">
                 <span class="{{ $statusClass[$item['status']] }}">{{ __('portal.router_api.status.'.$item['status']) }}</span>
                 <code class="text-xs">{{ $item['path'] }}{{ $item['name'] ? ' '.$item['name'] : '' }}</code> <span class="text-xs text-slate-500">{{ $key }}</span>
+                @if ($item['info'] ?? null)
+                    <span class="gp-badge gp-badge-neutral" data-state-info="{{ $item['info'] }}">{{ __('portal.router_api.info.'.$item['info']) }}</span>
+                @endif
                 @if ($item['status'] === 'unmanaged')
                     <div class="pl-4 text-xs" data-adopt="{{ $key }}">@if ($item['adopt'] ?? null)<code>{{ $item['adopt'] }}</code>@else{{ __('portal.router_api.adopt_ambiguous') }}@endif</div>
                 @endif

@@ -228,6 +228,9 @@ return [
             'missing' => 'missing',
             'unknown' => 'unknown',
         ],
+        'info' => [
+            'dynamic' => 'dynamic (hotspot)',
+        ],
         'expected' => 'expected',
         'actual' => 'router',
         'access_commands' => 'Commands: read-only API access',
@@ -392,8 +395,8 @@ return [
             'steps' => [
                 'portal_cert' => 'Portal certificate installed (Certificates, portal)',
                 'router_cert' => 'Router certificate pulled in the portal (Certificates, routers)',
-                'router_script' => 'Router script incl. certificate script run on each router (step 4; the router has fetched the certificate)',
-                'login' => 'login.html uploaded to each router (step 5)',
+                'router_script' => 'Router script incl. certificate script run on each router (step "Router script"; the router has fetched the certificate)',
+                'login' => 'login.html uploaded to each router (step "login.html")',
                 'verify' => 'Check on the router with the commands below: certificate present, profile with login-by=https,mac and ssl-certificate, login.html present',
             ],
         ],

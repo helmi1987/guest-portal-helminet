@@ -685,6 +685,60 @@ class RouterStateTest extends TestCase
         $this->assertStringNotContainsString('&& !comment]', $all);
     }
 
+    public function test_dynamic_hotspot_entries_are_never_own_legacy_or_unmanaged(): void
+    {
+        $this->saveNetwork();
+        $this->configureApi();
+        // Dynamic entries RouterOS adds for the hotspot (decision 2026-11-02): walled-garden copy of a
+        // walled-garden ip entry with its legacy comment "guest-portal", the A entry of the hotspot dns-name;
+        // a dynamic row with the name of an own entry and no comment would otherwise be "unmanaged"
+        $menus = [
+            '/ip hotspot walled-garden' => [['action' => 'allow', 'comment' => 'guest-portal', 'dynamic' => 'true']],
+            '/ip hotspot walled-garden ip' => [['dst-address' => '10.0.0.10', 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept',
+                'comment' => 'guest-portal', 'dynamic' => 'true']],
+            '/ip dns static' => [['name' => 'hotspot-a.guest.example.com', 'address' => '10.30.0.1', 'dynamic' => 'true'],
+                ['name' => 'guest-portal-v4.internal', 'address' => '10.0.0.10', 'dynamic' => 'true']],
+        ] + $this->routerMenus();
+        $this->fakeRest($menus);
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+        foreach (['ip/hotspot/walled-garden', 'ip/hotspot/walled-garden/ip', 'ip/dns/static'] as $path) {
+            Http::assertSent(fn (Request $r) => str_ends_with($r->url(), "/rest/{$path}/print") && in_array('dynamic', $r->data()['.proplist'], true));
+        }
+
+        $site = Site::with('nasClients')->find($this->site->id);
+        $compare = $site->driver()->compareState($site, $this->nas->fresh()->router_state);
+        $this->assertSame('missing', $compare['walled']['guest-portal:walled:portal-host']['status']);
+        $this->assertSame('missing', $compare['walled']['guest-portal:walled:portal-ip']['status']);
+        $this->assertSame('missing', $compare['dns']['guest-portal:dns:portal-a']['status']);
+        $this->assertArrayNotHasKey('adopt', $compare['dns']['guest-portal:dns:portal-a']);
+        // No own hotspot-name entry any more: present by name, shown as dynamic
+        $this->assertArrayNotHasKey('guest-portal:dns:hotspot-name', $compare['dns']);
+        $this->assertSame(['path' => '/ip dns static', 'name' => 'hotspot-a.guest.example.com', 'status' => 'present', 'diff' => [], 'info' => 'dynamic'],
+            $compare['dns']['dns:hotspot-name']);
+        $page = $this->page();
+        $this->assertStringContainsString('data-state-item="dns:hotspot-name" data-status="present"', $page);
+        $this->assertStringContainsString('data-state-info="dynamic">'.e(__('portal.router_api.info.dynamic')).'</span>', $page);
+
+        // Static rows: an own hotspot-name entry of earlier versions is legacy (removed by the DNS block),
+        // a static row without comment is unmanaged and its adopt command skips dynamic rows
+        $state = $this->nas->fresh()->router_state;
+        $state['menus']['/ip dns static']['rows'] = [
+            ['name' => 'hotspot-a.guest.example.com', 'address' => '10.30.0.1', 'comment' => 'guest-portal:dns:hotspot-name', 'dynamic' => 'false'],
+            ['name' => 'guest-portal-v4.internal', 'address' => '10.0.0.10', 'dynamic' => 'false'],
+        ];
+        $compare = $site->driver()->compareState($site, $state);
+        $this->assertSame('legacy', $compare['dns']['dns:hotspot-name']['status']);
+        $this->assertArrayNotHasKey('info', $compare['dns']['dns:hotspot-name']);
+        $this->assertSame('unmanaged', $compare['dns']['guest-portal:dns:portal-a']['status']);
+        $this->assertSame('/ip dns static set [find where name="guest-portal-v4.internal" && !comment && !dynamic] comment="guest-portal:dns:portal-a"',
+            $compare['dns']['guest-portal:dns:portal-a']['adopt']);
+        // Hotspot without its dynamic entry: missing; unknown without a hotspot name
+        $state['menus']['/ip dns static']['rows'] = [];
+        $this->assertSame('missing', $site->driver()->compareState($site, $state)['dns']['dns:hotspot-name']['status']);
+        unset($state['menus']['/ip dns static']);
+        $this->assertSame('unknown', $site->driver()->compareState($site, $state)['dns']['dns:hotspot-name']['status']);
+    }
+
     public function test_placeholders_get_inputs_with_suggestions_from_the_router_state(): void
     {
         $this->saveNetwork();

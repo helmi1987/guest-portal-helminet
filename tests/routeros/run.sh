@@ -139,6 +139,17 @@ check_keys_known() { # <rsc dir> <label>
     if [ -z "$legacy" ]; then pass "$2: no legacy comments left"; else fail "$2: legacy comments left"; printf '%s\n' "$legacy" | sed 's/^/    | /'; fi
 }
 
+# Dynamic entries RouterOS adds for a hotspot (decision 2026-11-02): never removed or changed by the scripts.
+HS_NAME=hotspot.guest.example.com
+# (walled garden: RouterOS adds a dynamic copy of every walled-garden ip entry with its comment, also of the own
+# one; those copies come and go with the own entry, so only the others are counted)
+dyn() { ros ':put ("walled-garden=" . [:len [/ip hotspot walled-garden find where dynamic && !(comment~"^guest-portal:")]] . " walled-garden-ip=" . [:len [/ip hotspot walled-garden ip find where dynamic]] . " dns-static=" . [:len [/ip dns static find where dynamic]])'; }
+# The router script re-creates the hotspot: its dynamic entries come back within seconds
+dyn_is() { local i; for i in $(seq 1 15); do [ "$(dyn)" = "$1" ] && return 0; sleep 2; done; echo "    got: $(dyn)"; return 1; }
+dyn_print() { ros '/ip hotspot walled-garden print terse where dynamic; /ip hotspot walled-garden ip print terse where dynamic; /ip dns static print terse where dynamic'; }
+# Own (key or legacy comment) static entries in the menus with dynamic hotspot entries
+own_static() { ros ":put ([:len [/ip hotspot walled-garden find where !dynamic && (comment~\"^$N:\" || comment=\"$N\" || comment~\"^$N: \")]] + [:len [/ip hotspot walled-garden ip find where !dynamic && (comment~\"^$N:\" || comment=\"$N\" || comment~\"^$N: \")]] + [:len [/ip dns static find where !dynamic && (comment~\"^$N:\" || comment=\"$N\" || comment~\"^$N: \")]])"; }
+
 # Static rules of a chain as "comment" lines in order.
 chain_rules() { ros ":foreach r in=[/ip firewall filter find where chain=$1 && dynamic=no] do={ :put [/ip firewall filter get \$r comment] }"; }
 chain_all() { ros ":foreach r in=[/ip firewall filter find where chain=$1] do={ :put ([/ip firewall filter get \$r dynamic] . \"|\" . [/ip firewall filter get \$r comment]) }"; }
@@ -495,10 +506,24 @@ for MODE in "${MODES[@]}"; do
     check_firewall_order "$R" "[$MODE] firewall (no hotspot yet)"
 
     log "[$MODE] hotspot step"
+    # Own static hotspot-name entry of versions before 0.19.1: removed by the DNS block, not added again
+    ros "/ip dns static add name=$HS_NAME address=10.30.0.1 comment=\"$N:dns:hotspot-name\"" >/dev/null
     run_block "$R/hotspot.dns.rsc" "[$MODE] hotspot.dns"
+    check "[$MODE] own hotspot-name entry of earlier versions removed, no static entry for $HS_NAME" \
+        test "$(ros ":put [:len [/ip dns static find where name=\"$HS_NAME\" && !dynamic]]")" = 0
     check "[$MODE] router resolves the portal name via the CNAME to $PORTAL_IP" \
         test "$(ros ':put [:resolve portal.example.com]')" = "$PORTAL_IP"
     run_block "$R/hotspot.hotspot.rsc" "[$MODE] hotspot.hotspot"
+    sleep 2
+    log "[$MODE] dynamic entries of the hotspot (walled garden, walled garden ip, DNS)"
+    DYN=$(dyn); echo "    $DYN"
+    dyn_print | sed 's/^/    dyn| /'
+    check "[$MODE] hotspot dns-name resolves on the router (dynamic entry of the hotspot)" \
+        test "$(ros ":put [:resolve $HS_NAME]")" = 10.30.0.1
+    run_block "$R/hotspot.dns.rsc" "[$MODE] hotspot.dns (re-run, dynamic hotspot entries present)"
+    check "[$MODE] hotspot.dns re-run: dynamic entries unchanged ($DYN)" dyn_is "$DYN"
+    check "[$MODE] hotspot.dns re-run: still no static entry for $HS_NAME" \
+        test "$(ros ":put [:len [/ip dns static find where name=\"$HS_NAME\" && !dynamic]]")" = 0
     run_block "$R/network.firewall.rsc" "[$MODE] network.firewall (re-run, hotspot dynamic rules present)"
     check_firewall_order "$R" "[$MODE] firewall (with hotspot)"
 
@@ -506,6 +531,9 @@ for MODE in "${MODES[@]}"; do
     cp "$WORK/pki/leaf1/router.crt" "$WORK/pki/leaf1/router.key" "$WORK/pki/current/"
     run_block "$R/router.rsc" "[$MODE] router.rsc"
     wait_cert_script
+    DYN=$(dyn)
+    check "[$MODE] router script: own walled-garden entries present next to the dynamic ones ($DYN)" \
+        test "$(ros ":put ([:len [/ip hotspot walled-garden find where comment=\"$N:walled:portal-host\" && !dynamic]] . [:len [/ip hotspot walled-garden ip find where comment=\"$N:walled:portal-ip\" && !dynamic]])")" = 11
     ros "/log print where message~\"$N\"" | tail -5 | sed 's/^/    log| /'
     check_cert_state "[$MODE] after first import" "$WORK/pki/leaf1"
     ids1=$(certs)
@@ -516,6 +544,7 @@ for MODE in "${MODES[@]}"; do
     check "[$MODE] second run changed nothing" test "$(certs)" = "$ids1"
     run_block "$R/router.rsc" "[$MODE] router.rsc (re-run)"
     wait_cert_script
+    check "[$MODE] router script re-run: dynamic entries unchanged ($DYN)" dyn_is "$DYN"
     check "[$MODE] router script re-run keeps the certificates" test "$(certs)" = "$ids1"
     profile_ok "[$MODE] profile after router script re-run"
 
@@ -614,7 +643,16 @@ for MODE in "${MODES[@]}"; do
         # to the wifi provisioning rules; the uninstall of mode local does not touch provisioning: reset by hand
         ros '/interface wifi provisioning set [find where comment="foreign"] slave-configurations=cfg-iot; /interface wifi provisioning unset [find where comment="foreign office"] slave-configurations' >/dev/null
     fi
+    DYN=$(dyn)
+    # The walled-garden and DNS lines of the uninstall alone while the hotspot (and its dynamic entries)
+    # still exists: own entries removed, dynamic ones untouched (the full uninstall removes the hotspot first)
+    grep -E '^/ip (hotspot walled-garden|dns static) ' "$R/uninstall.uninstall.rsc" > "$WORK/uninstall-dyn.rsc"
+    run_block "$WORK/uninstall-dyn.rsc" "[$MODE] uninstall walled-garden/DNS lines (dynamic hotspot entries present)"
+    check "[$MODE] uninstall lines: dynamic entries unchanged ($DYN)" dyn_is "$DYN"
+    check "[$MODE] uninstall lines: no own walled-garden / DNS entry left" test "$(own_static)" = 0
     run_block "$R/uninstall.uninstall.rsc" "[$MODE] uninstall.uninstall"
+    echo "    dynamic entries before the uninstall: $DYN, after: $(dyn)"
+    check "[$MODE] uninstall: no own walled-garden / DNS entry left" test "$(own_static)" = 0
     run_block "$R/uninstall.uninstall_network.rsc" "[$MODE] uninstall.uninstall_network"
     if [ "$MODE" != local ]; then
         got=$(slaves cfg-main); check "[$MODE] uninstall: cfg-main slaves cfg-iot (cfg-guest removed, other slave kept, got: $got)" test "$got" = "cfg-iot"

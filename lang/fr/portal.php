@@ -228,6 +228,9 @@ return [
             'missing' => 'manquant',
             'unknown' => 'inconnu',
         ],
+        'info' => [
+            'dynamic' => 'dynamique (hotspot)',
+        ],
         'expected' => 'attendu',
         'actual' => 'routeur',
         'access_commands' => 'Commandes : accès API en lecture seule',
@@ -392,8 +395,8 @@ return [
             'steps' => [
                 'portal_cert' => 'Certificat du portail installé (Certificats, portail)',
                 'router_cert' => 'Certificat du routeur récupéré dans le portail (Certificats, routeurs)',
-                'router_script' => 'Script du routeur avec le script de certificat exécuté sur chaque routeur (étape 4 ; le routeur a récupéré le certificat)',
-                'login' => 'login.html téléversé sur chaque routeur (étape 5)',
+                'router_script' => 'Script du routeur avec le script de certificat exécuté sur chaque routeur (étape « Script du routeur » ; le routeur a récupéré le certificat)',
+                'login' => 'login.html téléversé sur chaque routeur (étape « login.html »)',
                 'verify' => 'Vérifier sur le routeur avec les commandes ci-dessous : certificat présent, profil avec login-by=https,mac et ssl-certificate, login.html présent',
             ],
         ],

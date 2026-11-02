@@ -435,12 +435,16 @@ Manual import (troubleshooting only):
 ### 6.2 DNS name for the hotspot host
 The hotspot name is the router's own HTTPS login name and resolves to the guest gateway; the portal
 name is the portal instance. They must differ (the admin UI rejects a hotspot host equal to the portal
-host). Guests must resolve the hotspot name to the router's guest address:
+host). Guests must resolve the hotspot name to the router's guest address. No own entry is needed: the
+hotspot adds a dynamic A entry (flag D) for the `dns-name` of its profile to the hotspot address
+(decision 2026-11-02). An own static entry of earlier versions makes nothing better; remove it (dynamic
+entries cannot be removed and are never touched):
 ```
-/ip dns static add name=hotspot-a.guest.example.com address=10.30.0.1 comment="guest-portal:dns:hotspot-name"
+/ip dns static print where name=hotspot-a.guest.example.com
+/ip dns static remove [find where comment="guest-portal:dns:hotspot-name" && !dynamic]
 ```
-The hotspot name keeps a plain A entry: it is the router itself and the router never fetches it. If the
-guest network gets IPv6 and the hotspot name has a public AAAA record, use the CNAME pattern of 8.1 for it too.
+If the guest network gets IPv6 and the hotspot name has a public AAAA record, the router does not cover
+AAAA for it.
 
 ### 6.3 Hotspot: setup wizard or manual
 - **Manual (recommended, reproducible):** paste the script generated in **Admin -> Sites -> (site) -> RouterOS script**. It creates the RADIUS client, `/radius

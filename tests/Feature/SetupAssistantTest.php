@@ -55,7 +55,7 @@ class SetupAssistantTest extends TestCase
             ->assertSee('/ip address add interface=vlan30-guest address=10.30.0.1/24', false)
             ->assertSee('/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250', false)
             ->assertSee('value="\'https://portal.example.com/captive/site-a\'"')
-            ->assertSee('add name=hotspot-a.guest.example.com address=10.30.0.1', false)
+            ->assertDontSee('add name=hotspot-a.guest.example.com', false)
             ->assertSee('/ip/address add interface=containers address=172.17.0.1/24', false)
             ->assertSee('mountlists=portal-data envlist=portal', false)
             ->assertSee('remote-image=ghcr.io/owner/repo:latest', false)
@@ -282,7 +282,7 @@ class SetupAssistantTest extends TestCase
             ->assertSee('/interface bridge port print where bridge=bridge1', false)
             ->assertSee('/interface bridge vlan add bridge=bridge1 tagged=bridge1,<TRUNK_PORT_TO_CAP> vlan-ids=30')
             ->assertDontSee('/interface bridge set bridge1 vlan-filtering=yes', false)
-            ->assertSee('add name=hotspot-a.guest.example.com address=10.30.0.1', false)
+            ->assertDontSee('add name=hotspot-a.guest.example.com', false)
             ->assertSee('add name=guest-portal-v4.internal address=10.0.0.10', false)
             ->assertSee('add name=portal.example.com type=CNAME cname=guest-portal-v4.internal', false)
             ->assertSee('/ip hotspot profile print where name=guest-portal', false)
@@ -299,10 +299,10 @@ class SetupAssistantTest extends TestCase
         foreach (['/system scheduler remove [find where name="guest-portal-cert" && ((comment="guest-portal:cert:scheduler" || comment="guest-portal" || comment~"^guest-portal: ") || !comment)]',
             '/system script remove [find where name="guest-portal-cert" && ((comment="guest-portal:cert:script" || comment="guest-portal" || comment~"^guest-portal: ") || !comment)]',
             '/ip hotspot remove [find where name="guest-portal"]', '/ip hotspot profile remove [find where name="guest-portal"]',
-            '/ip hotspot walled-garden remove [find where (comment="guest-portal:walled:portal-host" || comment="guest-portal" || comment~"^guest-portal: ")]', '/ip hotspot walled-garden ip remove [find where (comment="guest-portal:walled:portal-ip" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip hotspot walled-garden remove [find where ((comment="guest-portal:walled:portal-host" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]', '/ip hotspot walled-garden ip remove [find where ((comment="guest-portal:walled:portal-ip" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]',
             '/radius remove [find where (comment="guest-portal:radius:server" || comment="guest-portal" || comment~"^guest-portal: ")]', '# /radius incoming set accept=no',
             '/certificate remove [find where name="guest-portal" || name~"^guest-portal-ca-[0-9]+\\$" || name~"^guest-portal-import" || name="guest-portal-new" || name~"^guest-portal-new_"]',
-            '/ip dns static remove [find where (comment="guest-portal:dns:hotspot-name" || comment="guest-portal:dns:portal-a" || comment="guest-portal:dns:portal-cname" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/ip dns static remove [find where ((comment="guest-portal:dns:hotspot-name" || comment="guest-portal:dns:portal-a" || comment="guest-portal:dns:portal-cname" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]',
             '/ip dhcp-server network find where address="10.30.0.0/24" && (comment="guest-portal:net:dhcp-network" || comment="guest-portal" || comment~"^guest-portal: ")]',
             '/ip dhcp-server network set $gpNet dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal" && (comment="guest-portal:net:option-114" || comment="guest-portal" || comment~"^guest-portal: ")]',
             '/ip firewall nat remove [find where comment~"^guest-portal: "]',
@@ -372,7 +372,9 @@ class SetupAssistantTest extends TestCase
 
         // Walled garden ip: only the own entry is replaced; a foreign drop entry is reported, not changed.
         $script = $site->driver()->configScript($site, $this->nas);
-        $this->assertStringContainsString("/ip hotspot walled-garden ip\n".'remove [find where (comment="guest-portal:walled:portal-ip" || comment="guest-portal" || comment~"^guest-portal: ")]', $script);
+        $this->assertStringContainsString("/ip hotspot walled-garden ip\n".'remove [find where ((comment="guest-portal:walled:portal-ip" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]', $script);
+        // Dynamic walled-garden entries of the hotspot (comment "guest-portal" = server name) are never removed
+        $this->assertStringContainsString("/ip hotspot walled-garden\n".'remove [find where ((comment="guest-portal:walled:portal-host" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]', $script);
         $this->assertSame(1, substr_count($script, 'walled-garden ip'."\n".'remove'));
         $this->assertStringContainsString('/ip hotspot walled-garden ip print', $c['diagnostics']['verify']);
         $this->assertStringContainsString('action=drop', $c['diagnostics']['verify']);
@@ -514,8 +516,12 @@ class SetupAssistantTest extends TestCase
             'setup' => ['subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1']])]);
         $dns = $this->site->fresh()->driver()->setupCommands($this->site->fresh(), [])['hotspot']['dns'];
 
-        $remove = 'remove [find where (comment="guest-portal:dns:hotspot-name" || comment="guest-portal:dns:portal-a" || comment="guest-portal:dns:portal-cname" || comment="guest-portal" || comment~"^guest-portal: ")]';
-        $this->assertStringContainsString($remove."\nadd name=hotspot-a.guest.example.com address=10.30.0.1 comment=\"guest-portal:dns:hotspot-name\"", $dns);
+        // The own hotspot-name entry of earlier versions is only removed (decision 2026-11-02: RouterOS adds a
+        // dynamic entry for the hotspot dns-name; dynamic entries are never touched)
+        $remove = 'remove [find where ((comment="guest-portal:dns:hotspot-name" || comment="guest-portal:dns:portal-a" || comment="guest-portal:dns:portal-cname" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]';
+        $this->assertStringContainsString($remove."\nadd name=guest-portal-v4.internal", $dns);
+        $this->assertStringNotContainsString('add name=hotspot-a.guest.example.com', $dns);
+        $this->assertSame(1, substr_count($dns, 'comment="guest-portal:dns:hotspot-name"'));
         $this->assertStringContainsString('add name=guest-portal-v4.internal address=10.0.0.20 comment="guest-portal:dns:portal-a"', $dns);
         $this->assertStringContainsString('add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment="guest-portal:dns:portal-cname"', $dns);
         $this->assertStringNotContainsString('add name=portal.example.com address=', $dns);
