@@ -126,7 +126,11 @@ class WifiModesAndCapsTest extends TestCase
     {
         $wifi = $this->commands($this->site(['wifi_mode' => 'capsman1'], ['capsman1' => ['cfg-main']]))['network']['wifi'];
         $this->assertStringStartsWith('# Legacy CAPsMAN (/caps-man, wireless package)', $wifi);
-        $this->assertStringNotContainsString('/interface wifi', $wifi);
+        // Only the hint about the other, not selected CAPsMAN package names it (no command, nothing removed there)
+        [$block, $hint] = explode('# Not selected: /interface wifi CAPsMAN.', $wifi, 2);
+        $this->assertStringNotContainsString('/interface wifi', $block);
+        $this->assertStringNotContainsString('provisioning remove', $hint);
+        $this->assertStringContainsString(':put "guest-portal: /interface wifi is not selected; own cap rules there (if any) were not removed"', $hint);
         $objects = $this->site(['wifi_mode' => 'capsman1'])->driver()->managedObjects($this->site->fresh())['wifi'];
         $this->assertSame(['path' => '/caps-man datapath', 'name' => 'dp-guest'], $objects['guest-portal:wifi:dp-guest']);
     }
@@ -174,6 +178,8 @@ class WifiModesAndCapsTest extends TestCase
             $this->assertStringContainsString("{$p} add place-before=\$gpRule action=[{$p} get \$gpRule action] radio-mac=AA:BB:CC:DD:EE:01 master-configuration=\$gpCfg slave-configurations=\$gpSlaves comment=\"{$key}\"", $wifi);
             $this->assertStringContainsString(':set gpSlaves ($gpSlaves . "cfg-guest")', $wifi);
             $this->assertStringContainsString("{$p} set \$gpOwn {$band}=[{$p} get \$gpRule {$band}]", $wifi);
+            // A disabled rule of the admin is never the one copied
+            $this->assertStringContainsString(":if ([:len \$gpRule] = 0 && [:tostr [{$p} get \$gpR disabled]] != \"true\" && ", $wifi);
             $this->assertStringContainsString("{$p} move \$gpOwn destination=\$gpRule", $wifi);
             // Masters not used: no append; cfg-guest out of every rule except the own ones
             $this->assertStringNotContainsString('master-configuration="cfg-main"', $wifi);

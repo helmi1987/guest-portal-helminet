@@ -13,7 +13,7 @@
             async generate() {
                 this.loading = true; this.errors = []; this.script = '';
                 var rules = {};
-                this.rules.forEach(function (r) { if (!r.own) rules[r.id] = { master: r.master, slaves: r.slaves }; });
+                this.rules.forEach(function (r) { if (!r.own && r.editable) rules[r.id] = { master: r.master, slaves: r.slaves }; });
                 try {
                     var r = await fetch(cfg.url, { method: 'POST', credentials: 'same-origin', cache: 'no-store',
                         headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': cfg.csrf, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' },
@@ -51,8 +51,8 @@
                                 <td><code x-text="rule.id"></code></td>
                                 <td x-text="rule.band || @js(__('portal.setup.provisioning.any_band'))"></td>
                                 <td>
-                                    <template x-if="rule.own"><span x-text="rule.master"></span></template>
-                                    <template x-if="!rule.own">
+                                    <template x-if="(rule.own || !rule.editable)"><span x-text="rule.master"></span></template>
+                                    <template x-if="!(rule.own || !rule.editable)">
                                         <select class="field py-1" x-model="rule.master" :aria-label="@js(__('portal.setup.provisioning.master'))">
                                             <template x-for="c in configurations" :key="c"><option :value="c" x-text="c" :selected="c === rule.master"></option></template>
                                         </select>
@@ -62,9 +62,9 @@
                                     <span class="flex flex-wrap items-center gap-1">
                                         <template x-for="(s, i) in rule.slaves" :key="s">
                                             <span class="gp-badge gp-badge-neutral"><span x-text="s"></span>
-                                                <button type="button" x-show="!rule.own" class="ml-1" x-on:click="removeSlave(rule.slaves, i)" :aria-label="@js(__('portal.setup.provisioning.remove_slave')) + ' ' + s">&times;</button></span>
+                                                <button type="button" x-show="!(rule.own || !rule.editable)" class="ml-1" x-on:click="removeSlave(rule.slaves, i)" :aria-label="@js(__('portal.setup.provisioning.remove_slave')) + ' ' + s">&times;</button></span>
                                         </template>
-                                        <select class="field py-1 text-xs" x-show="!rule.own" x-on:change="addSlave(rule.slaves, $event.target.value); $event.target.value = ''" :aria-label="@js(__('portal.setup.provisioning.add_slave'))">
+                                        <select class="field py-1 text-xs" x-show="!(rule.own || !rule.editable)" x-on:change="addSlave(rule.slaves, $event.target.value); $event.target.value = ''" :aria-label="@js(__('portal.setup.provisioning.add_slave'))">
                                             <option value="">{{ __('portal.setup.provisioning.add_slave') }}</option>
                                             <template x-for="c in configurations" :key="c"><option :value="c" x-text="c"></option></template>
                                         </select>
@@ -75,6 +75,7 @@
                                     <span x-show="rule.identity" x-text="'identity ' + rule.identity"></span>
                                     <span x-show="rule.disabled" class="text-amber-800">{{ __('portal.setup.provisioning.disabled') }}</span>
                                     <span x-show="rule.own" class="gp-badge gp-badge-info">{{ __('portal.setup.provisioning.own') }}</span>
+                                    <span x-show="!rule.own && !rule.editable" class="gp-badge gp-badge-neutral">{{ __('portal.setup.provisioning.not_editable') }}</span>
                                 </td>
                             </tr>
                         </template>

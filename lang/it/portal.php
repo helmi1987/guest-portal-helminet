@@ -342,6 +342,7 @@ return [
             'invalid_configuration' => 'Configurazione non nello stato del router o non valida: :name',
             'too_many' => 'Al massimo :max voci.',
             'unknown_rule' => 'Regola non nello stato del router (interrogare di nuovo lo stato).',
+            'not_editable' => 'La regola contiene valori che l\'editor non può modificare in sicurezza (non modificabile).',
             'master_required' => 'Selezionare una configurazione master.',
             'invalid_band' => 'Banda non valida.',
             'failed' => 'Impossibile generare lo script',

@@ -47,16 +47,23 @@ trait MikrotikRos7Provisioning
                 if (! self::validRuleId($id)) {
                     continue;
                 }
+                $master = (string) ($r['master-configuration'] ?? '');
+                $slaves = self::listValue($r['slave-configurations'] ?? '');
+                $bands = self::listValue($r[$bandProp] ?? '');
                 $rules[] = [
                     'id' => $id,
-                    'band' => implode(',', self::listValue($r[$bandProp] ?? '')),
-                    'master' => (string) ($r['master-configuration'] ?? ''),
-                    'slaves' => self::listValue($r['slave-configurations'] ?? ''),
+                    'band' => implode(',', $bands),
+                    'master' => $master,
+                    'slaves' => $slaves,
                     'radio_mac' => ($mac = Site::normalizeMac((string) ($r['radio-mac'] ?? ''))) !== '00:00:00:00:00:00' ? $mac : null,
                     'identity' => (string) ($r['identity-regexp'] ?? ''),
                     'disabled' => in_array($r['disabled'] ?? null, ['true', 'yes', true], true),
                     'comment' => (string) ($r['comment'] ?? ''),
                     'own' => self::isCapRule($r),
+                    // Old values go into quoted strings and comments of the script: only plain names qualify
+                    'editable' => self::validConfigName($master)
+                        && count(array_filter($slaves, fn ($v) => ! self::validConfigName($v))) === 0
+                        && count(array_filter($bands, fn ($v) => preg_match('/^[A-Za-z0-9-]{1,24}\z/', $v) !== 1)) === 0,
                 ];
             }
             if ($rules === [] && $configurations === []) {
@@ -71,7 +78,7 @@ trait MikrotikRos7Provisioning
 
     public function provisioningScript(NasClient $nas, array $input): string
     {
-        $mode = (string) ($input['mode'] ?? '');
+        $mode = is_string($input['mode'] ?? null) ? $input['mode'] : '';
         $packages = $this->provisioningRules($nas);
         if (! isset($packages[$mode])) {
             throw ValidationException::withMessages(['mode' => __('portal.setup.provisioning.no_state')]);
@@ -104,7 +111,12 @@ trait MikrotikRos7Provisioning
 
                 continue;
             }
-            [$master] = $names([(string) ($edit['master'] ?? '')], "rules.{$id}.master", true) + [null];
+            if (! $rule['editable']) {
+                $errors["rules.{$id}"] = __('portal.setup.provisioning.not_editable');
+
+                continue;
+            }
+            [$master] = $names([is_string($edit['master'] ?? null) ? $edit['master'] : ''], "rules.{$id}.master", true) + [null];
             $slaves = $names($edit['slaves'] ?? [], "rules.{$id}.slaves", false);
             if ($master === null) {
                 $errors["rules.{$id}.master"] = __('portal.setup.provisioning.master_required');
@@ -122,13 +134,13 @@ trait MikrotikRos7Provisioning
             $added = [];
         }
         foreach ($added as $i => $rule) {
-            $band = (string) ($rule['band'] ?? '');
+            $band = is_string($rule['band'] ?? null) ? $rule['band'] : '';
             if (! isset(self::PROVISIONING_BANDS[$mode][$band])) {
                 $errors["new.{$i}.band"] = __('portal.setup.provisioning.invalid_band');
 
                 continue;
             }
-            [$master] = $names([(string) ($rule['master'] ?? '')], "new.{$i}.master", true) + [null];
+            [$master] = $names([is_string($rule['master'] ?? null) ? $rule['master'] : ''], "new.{$i}.master", true) + [null];
             $slaves = $names($rule['slaves'] ?? [], "new.{$i}.slaves", false);
             if ($master === null) {
                 $errors["new.{$i}.master"] = __('portal.setup.provisioning.master_required');
@@ -157,8 +169,8 @@ trait MikrotikRos7Provisioning
             $slaveSet = $slaves !== [] ? 'slave-configurations='.implode(',', $slaves)
                 : ($v1 ? 'slave-configurations=""' : '');
             $unset = $slaves === [] && ! $v1 ? "\n        {$p} unset {$id} slave-configurations" : '';
-            $out[] = "# Rule {$id}".($rule['band'] !== '' ? " ({$rule['band']})" : '').": master {$rule['master']} -> {$master}, slaves "
-                .(implode(',', $rule['slaves']) ?: '-').' -> '.(implode(',', $slaves) ?: '-');
+            $out[] = self::oneLine("# Rule {$id}".($rule['band'] !== '' ? " ({$rule['band']})" : '').": master {$rule['master']} -> {$master}, slaves "
+                .(implode(',', $rule['slaves']) ?: '-').' -> '.(implode(',', $slaves) ?: '-'));
             $out[] = ":if ([:len [{$p} find where .id={$id}]] = 0) do={ :put \"{$n}: provisioning rule {$id} not found, skipped\" } else={\n"
                 ."    :local gpList \"\"\n"
                 ."    :foreach gpSlave in=[{$p} get {$id} slave-configurations] do={ :if ([:len \$gpSlave] > 0) do={ :set gpList (\$gpList . \",\" . \$gpSlave) } }\n"
@@ -171,20 +183,22 @@ trait MikrotikRos7Provisioning
             $values = self::PROVISIONING_BANDS[$mode][$band];
             $prop = $pkg['band_prop'];
             $want = '{'.implode(';', array_map(fn ($v) => '"'.$v.'"', $values)).'}';
-            $out[] = "# New rule: band {$band}, master {$master}, slaves ".(implode(',', $slaves) ?: '-');
+            $out[] = self::oneLine("# New rule: band {$band}, master {$master}, slaves ".(implode(',', $slaves) ?: '-'));
             $out[] = "{\n"
                 ."    :local gpFound false\n"
+                ."    :local gpDisabled false\n"
                 ."    :foreach gpR in=[{$p} find where master-configuration=\"{$master}\"] do={\n"
                 ."        :local gpBands [{$p} get \$gpR {$prop}]\n"
                 .'        :local gpSame ([:len $gpBands] = '.count($values).")\n"
                 .($values !== [] ? "        :foreach gpWant in={$want} do={ :if ([:typeof [:find \$gpBands \$gpWant]] = \"nil\") do={ :set gpSame false } }\n" : '')
-                ."        :if (\$gpSame) do={ :set gpFound true }\n"
+                ."        :if (\$gpSame) do={ :if ([:tostr [{$p} get \$gpR disabled]] = \"true\") do={ :set gpDisabled true } else={ :set gpFound true } }\n"
                 ."    }\n"
                 ."    :if (\$gpFound) do={ :put \"{$n}: a provisioning rule with band {$band} and master {$master} exists, not added\" } else={\n"
+                ."    :if (\$gpDisabled) do={ :put \"{$n}: a provisioning rule with band {$band} and master {$master} exists but is disabled, not added (enable or edit it)\" } else={\n"
                 ."        {$p} add action=create-dynamic-enabled master-configuration={$master}"
                 .($slaves !== [] ? ' slave-configurations='.implode(',', $slaves) : '')
                 .($values !== [] ? " {$prop}=".implode(',', $values) : '')."\n"
-                ."    }\n"
+                ."    } }\n"
                 .'}';
         }
         if ($changes === [] && $new === []) {
@@ -243,6 +257,12 @@ trait MikrotikRos7Provisioning
     private static function validConfigName(string $name): bool
     {
         return preg_match('/^[A-Za-z0-9._-]{1,48}\z/', $name) === 1;
+    }
+
+    /** Text for a comment line of the script: no line breaks (a break would start a new command). */
+    private static function oneLine(string $text): string
+    {
+        return str_replace(["\r", "\n"], ' ', $text);
     }
 
     /** RouterOS item id as read by the state query ("*1A"). */

@@ -342,6 +342,7 @@ return [
             'invalid_configuration' => 'Konfiguration nicht im Router-Zustand oder ungültig: :name',
             'too_many' => 'Höchstens :max Einträge.',
             'unknown_rule' => 'Regel nicht im Router-Zustand (Zustand erneut abfragen).',
+            'not_editable' => 'Regel hat Werte, die der Editor nicht sicher ändern kann (nicht editierbar).',
             'master_required' => 'Master-Konfiguration wählen.',
             'invalid_band' => 'Ungültiges Band.',
             'failed' => 'Skript konnte nicht erzeugt werden',

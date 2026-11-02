@@ -342,6 +342,7 @@ return [
             'invalid_configuration' => 'Configuration not in the router state or invalid: :name',
             'too_many' => 'At most :max entries.',
             'unknown_rule' => 'Rule not in the router state (query the state again).',
+            'not_editable' => 'Rule has values the editor cannot change safely (not editable).',
             'master_required' => 'Select a master configuration.',
             'invalid_band' => 'Invalid band.',
             'failed' => 'Script could not be generated',

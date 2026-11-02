@@ -54,7 +54,7 @@ class ProvisioningEditorTest extends TestCase
         $this->assertSame(['capsman2'], array_keys($rules));
         $this->assertSame(['cfg-five', 'cfg-guest', 'cfg-iot', 'cfg-main'], $rules['capsman2']['configurations']);
         $this->assertSame(['id' => '*1', 'band' => '2ghz-n,2ghz-ax', 'master' => 'cfg-main', 'slaves' => ['cfg-iot'], 'radio_mac' => null,
-            'identity' => '', 'disabled' => false, 'comment' => '', 'own' => false], $rules['capsman2']['rules'][0]);
+            'identity' => '', 'disabled' => false, 'comment' => '', 'own' => false, 'editable' => true], $rules['capsman2']['rules'][0]);
         $this->assertTrue($rules['capsman2']['rules'][2]['own']);
     }
 
@@ -129,5 +129,65 @@ class ProvisioningEditorTest extends TestCase
         $html = $this->onZone('admin')->actingAs(User::factory()->admin()->create())->get("/admin/sites/{$this->site->id}/setup")->assertOk()->getContent();
         $this->assertStringContainsString('data-provisioning-editor="'.$this->nas->id.'"', $html);
         $this->assertStringContainsString('data-provisioning-package="capsman2"', $html);
+    }
+
+    public function test_rules_with_unsafe_router_values_are_not_editable(): void
+    {
+        $state = $this->nas->router_state;
+        $state['menus']['/interface wifi provisioning']['rows'] = [
+            ['.id' => '*1', 'master-configuration' => 'cfg-main"; /x', 'slave-configurations' => ''],
+            ['.id' => '*2', 'master-configuration' => 'cfg-main', 'slave-configurations' => "cfg-iot\n/system reset-configuration"],
+            ['.id' => '*3', 'master-configuration' => 'cfg-main', 'supported-bands' => "2ghz-n\r\n/x"],
+            ['.id' => '*4', 'master-configuration' => 'cfg-main', 'slave-configurations' => 'cfg-iot', 'supported-bands' => '5ghz-ax'],
+        ];
+        $this->nas->forceFill(['router_state' => $state])->save();
+        $rules = collect($this->site->driver()->provisioningRules($this->nas->fresh())['capsman2']['rules'])->keyBy('id');
+        $this->assertSame([false, false, false, true], [$rules['*1']['editable'], $rules['*2']['editable'], $rules['*3']['editable'], $rules['*4']['editable']]);
+        foreach (['*1', '*2', '*3'] as $id) {
+            try {
+                $this->script(['mode' => 'capsman2', 'rules' => [$id => ['master' => 'cfg-five', 'slaves' => []]]]);
+                $this->fail("accepted {$id}");
+            } catch (ValidationException $e) {
+                $this->assertArrayHasKey("rules.{$id}", $e->errors());
+            }
+        }
+        $s = $this->script(['mode' => 'capsman2', 'rules' => ['*4' => ['master' => 'cfg-five', 'slaves' => []]]]);
+        foreach (explode("\n", $s) as $line) {
+            if (str_starts_with($line, '#')) {
+                $this->assertStringNotContainsString("\r", $line);
+            }
+        }
+    }
+
+    public function test_new_rule_check_reports_a_disabled_rule_with_the_same_band_and_master(): void
+    {
+        $s = $this->script(['mode' => 'capsman2', 'new' => [['band' => '5ghz', 'master' => 'cfg-five', 'slaves' => []]]]);
+        $p = '/interface wifi provisioning';
+        $this->assertStringContainsString(":if ([:tostr [{$p} get \$gpR disabled]] = \"true\") do={ :set gpDisabled true } else={ :set gpFound true }", $s);
+        $this->assertStringContainsString('exists but is disabled, not added', $s);
+        $this->assertStringContainsString('and master cfg-five exists, not added', $s);
+        $this->assertSame(substr_count($s, '{'), substr_count($s, '}'));
+    }
+
+    public function test_array_input_is_a_422_not_a_500(): void
+    {
+        $url = "/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/provisioning";
+        $bad = [
+            ['mode' => ['capsman2']],
+            ['mode' => 'capsman2', 'rules' => ['*1' => ['master' => ['cfg-main']]]],
+            ['mode' => 'capsman2', 'rules' => ['*1' => ['master' => 'cfg-main', 'slaves' => [['x']]]]],
+            ['mode' => 'capsman2', 'rules' => ['*1' => 'cfg-main']],
+            ['mode' => 'capsman2', 'new' => [['band' => ['5ghz'], 'master' => 'cfg-main']]],
+            ['mode' => 'capsman2', 'new' => [['band' => '5ghz', 'master' => ['cfg-main']]]],
+            ['mode' => 'capsman2', 'new' => 'x'],
+            ['mode' => 'capsman2', 'rules' => 'x'],
+        ];
+        $admin = User::factory()->admin()->create();
+        foreach ($bad as $i => $body) {
+            $this->onZone('admin')->actingAs($admin)->postJson($url, $body)->assertStatus(422, "case {$i}");
+        }
+        // The driver itself is robust against the same input
+        $this->expectException(ValidationException::class);
+        $this->script(['mode' => ['capsman2']]);
     }
 }

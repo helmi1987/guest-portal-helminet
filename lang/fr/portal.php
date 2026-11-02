@@ -342,6 +342,7 @@ return [
             'invalid_configuration' => 'Configuration absente de l\'état du routeur ou invalide : :name',
             'too_many' => 'Au maximum :max entrées.',
             'unknown_rule' => 'Règle absente de l\'état du routeur (interrogez l\'état à nouveau).',
+            'not_editable' => 'La règle contient des valeurs que l\'éditeur ne peut pas modifier en sécurité (non modifiable).',
             'master_required' => 'Choisissez une configuration master.',
             'invalid_band' => 'Bande invalide.',
             'failed' => 'Le script n\'a pas pu être généré',

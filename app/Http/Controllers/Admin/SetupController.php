@@ -373,6 +373,21 @@ class SetupController extends Controller
         if (! $driver instanceof ProvisioningEditor) {
             abort(404);
         }
+        // Array input where a string is expected (or the reverse) is a validation error, not a 500
+        $request->validate([
+            'mode' => ['required', 'string', 'max:16'],
+            'rules' => ['nullable', 'array', 'max:512'],
+            'rules.*' => ['array'],
+            'rules.*.master' => ['nullable', 'string', 'max:64'],
+            'rules.*.slaves' => ['nullable', 'array', 'max:32'],
+            'rules.*.slaves.*' => ['nullable', 'string', 'max:64'],
+            'new' => ['nullable', 'array', 'max:32'],
+            'new.*' => ['array'],
+            'new.*.band' => ['nullable', 'string', 'max:16'],
+            'new.*.master' => ['nullable', 'string', 'max:64'],
+            'new.*.slaves' => ['nullable', 'array', 'max:32'],
+            'new.*.slaves.*' => ['nullable', 'string', 'max:64'],
+        ]);
         $script = $driver->provisioningScript($router, [
             'mode' => (string) $request->input('mode', ''),
             'rules' => (array) $request->input('rules', []),

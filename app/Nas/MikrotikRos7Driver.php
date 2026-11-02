@@ -1083,6 +1083,18 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 RSC,
             };
         }
+        // Own cap rules of a CAPsMAN package whose mode is no longer selected (while the other CAPsMAN package is):
+        // not removed here. The menu may not exist on this router (package not installed) and a command of a
+        // missing menu is not safe to emit, so only a hint is printed (the uninstall of a selected mode removes them)
+        $capsmanSelected = array_intersect($g['wifi_modes'], Site::CAPSMAN_MODES);
+        if ($capsmanSelected !== []) {
+            foreach (array_diff(Site::CAPSMAN_MODES, $capsmanSelected) as $mode) {
+                $parts[] = '# Not selected: '.self::wifiPath($mode).' CAPsMAN. Own provisioning rules there (comment key "'.self::NAME.":wifi:cap-<mac>\")\n"
+                    ."# of an earlier selection stay on the router: remove them by hand (menu exists only with its package) or\n"
+                    .'# select the mode again and run the uninstall.'."\n"
+                    .':put "'.self::NAME.': '.self::wifiPath($mode).' is not selected; own cap rules there (if any) were not removed"';
+            }
+        }
         $wifi = implode("\n", $parts).($guard !== '' ? "\n}" : '');
 
         $remove = [];
@@ -1220,7 +1232,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 ."    :if ([:len \$gpCfg] > 0) do={\n"
                 ."        :foreach gpR in=[{$p} find where master-configuration=\$gpCfg] do={\n"
                 ."            :local gpRm [:tostr [{$p} get \$gpR radio-mac]]\n"
-                ."            :if ([:len \$gpRule] = 0 && !([:tostr [{$p} get \$gpR comment]] ~ \"^{$own}\") && (\$gpRm = \"\" || \$gpRm = \"00:00:00:00:00:00\" || \$gpRm = \"{$mac}\")) do={ :set gpRule \$gpR }\n"
+                ."            :if ([:len \$gpRule] = 0 && [:tostr [{$p} get \$gpR disabled]] != \"true\" && !([:tostr [{$p} get \$gpR comment]] ~ \"^{$own}\") && (\$gpRm = \"\" || \$gpRm = \"00:00:00:00:00:00\" || \$gpRm = \"{$mac}\")) do={ :set gpRule \$gpR }\n"
                 ."        }\n"
                 ."    }\n"
                 ."    :if ([:len \$gpRule] = 0) do={\n"
