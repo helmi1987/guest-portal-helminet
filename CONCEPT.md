@@ -404,11 +404,10 @@ All login methods produce a **grant**; a code is a grant created in advance.
   limit. **(Assumption)** deactivation and expiry do not end running devices; "disconnect all devices"
   revokes the running grants of a code (Disconnect-Request). Admin + manager; audited
   `site_code.created/updated/deactivated/disconnect_all/printed` (never the code). Notice (A4/A6, light):
-  logo, site name, text DE/IT/FR/EN, QR 1 Wi-Fi join (site SSID), QR 2 sign-in =
-  `https://<first hotspot host>/login?dst=<portal URL>/portal?site=<slug>&code=<code>` (without hotspot
-  host: the portal URL); the portal prefills the code from `?code=` or from such a URL in `link-orig`
-  (prefill only, no auto-submit) **(to verify: RouterOS passes `dst` of a direct `/login` as
-  `link-orig`)**. This differs from the voucher QR decision above (vouchers unchanged). M7 hook:
+  logo, site name, text DE/IT/FR/EN, one QR: Wi-Fi join (site SSID); the portal prefills the code from
+  `?code=` or from a portal URL with `?code=` in `link-orig` (prefill only, no auto-submit). Decision 2026-11-02 (v0.20.3,
+  maintainer): the second QR (sign-in via `https://<hotspot host>/login?dst=<portal URL>?code=`) is
+  removed, it worked poorly or not at all in tests; the captive portal opens after joining. M7 hook:
   `isAllowedWhileOffline()` (true for site codes/their grants, false for normal codes) for the planned
   "HQ unreachable → SMS only" rule; no offline logic yet.
 - Brute force: rate limit per MAC and IP, global rate limit, lockout after N failures
@@ -874,7 +873,7 @@ login for the admin UI (§9), implemented v0.9.0; open: tested with a real Authe
 `email_verified`, groups mapping). Part E: MAC whitelist (§5, §9), v0.8.0; open: MAC authentication
 (User-Name format, `login-by=mac` before the certificate, reject handling) tested on real RouterOS. Open: first-start web setup, CertWarden pull, backups, voucher QR
 scan (iOS/Android) and Disconnect from the list tested on a real setup. Grants have no delete
-(revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8), open: notice sign-in QR via hotspot `/login?dst=` on real RouterOS; open: captive browsers with custom logos/CSS, file replication (M7).
+(revoke only). v0.10.0: branding (§9); v0.11.0: dark/light colour scheme; v0.12.0: site codes (§8); open: captive browsers with custom logos/CSS, file replication (M7).
 M7 implemented: parts A (change log, persistent HLC), B (federation data key, cast `federated`), C
 (apply engine with conflict rules), D (federation listener, mTLS pin, peer client), E (pairing, federation
 page), F (signed events, push/pull/relay, heartbeat, skew and protocol pause), G (apply hooks, remote

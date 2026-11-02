@@ -211,18 +211,16 @@ class SiteCodeTest extends TestCase
         $this->admin()->post("/admin/sites/{$this->site->id}/site-code/end-devices", ['site_code' => $foreign->id])->assertNotFound();
     }
 
-    public function test_notice_prints_both_qr_codes_in_a4_and_a6(): void
+    public function test_notice_prints_wifi_qr_in_a4_and_a6(): void
     {
         $siteCode = $this->siteCode(86400, validUntil: now()->addMonth());
 
         $response = $this->admin()->get("/admin/sites/{$this->site->id}/site-code/print")->assertOk()
             ->assertSee($siteCode->code)->assertSee('Guest WiFi')->assertSee('size: A4', false)
-            ->assertSee(__('portal.site_codes.notice.step_wifi', [], 'de'))->assertSee(__('portal.site_codes.notice.step_sign_in', [], 'it'))
+            ->assertSee(__('portal.site_codes.notice.step_wifi', [], 'de'))->assertSee(__('portal.site_codes.notice.step_wifi', [], 'it'))
             ->assertSee(__('portal.site_codes.notice.text', [], 'fr'))->assertSee(__('portal.site_codes.notice.text', [], 'en'))
             ->assertDontSee(__('portal.site_codes.no_ssid'));
-        $this->assertSame(2, substr_count($response->getContent(), '<svg xmlns'));
-        $this->assertSame('https://hotspot.example.com/login?dst='.urlencode('https://portal.example.com/portal?site=site-a&code='.$siteCode->code),
-            $response->viewData('signInUrl'));
+        $this->assertSame(1, substr_count($response->getContent(), '<svg xmlns'));
 
         $this->admin()->get("/admin/sites/{$this->site->id}/site-code/print?format=a6")->assertOk()->assertSee('size: A6', false);
         $this->assertSame(2, AuditLog::query()->where('action', 'site_code.printed')->count());

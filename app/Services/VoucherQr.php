@@ -90,20 +90,6 @@ class VoucherQr
         return trim((string) $site->setting('setup.ssid')) ?: null;
     }
 
-    /**
-     * Sign-in URL of a site notice (CONCEPT.md §8, site code): the router's hotspot login page with the
-     * portal URL incl. ?code= as dst, so the router redirect (MAC, login URL) reaches the portal and the
-     * code arrives in link-orig (prefill only). Without a hotspot host: the portal URL itself.
-     */
-    public static function signInUrl(Site $site, string $code): string
-    {
-        $portal = rtrim((string) ($site->setting('portal_url') ?: config('app.url')), '/')
-            .'/portal?'.http_build_query(['site' => $site->slug, 'code' => $code]);
-        $host = ((array) $site->setting('hotspot_hosts', []))[0] ?? null;
-
-        return $host ? 'https://'.$host.'/login?'.http_build_query(['dst' => $portal]) : $portal;
-    }
-
     /** Inline SVG markup of the Wi-Fi QR (cached per network for print sheets); password null: open. */
     public function wifiSvg(string $ssid, int $size = 160, ?string $password = null): string
     {

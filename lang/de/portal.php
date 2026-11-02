@@ -550,13 +550,11 @@ return [
         'notice_title' => 'Aushang',
         'no_ssid' => 'Für diesen Standort ist keine Gäste-SSID erfasst (Einrichtungsassistent): kein WLAN-QR-Code.',
         'wifi_unavailable' => 'Das WLAN-Passwort dieses Standorts ist auf dieser Instanz nicht verfügbar: kein WLAN-QR-Code.',
-        'no_hotspot_host' => 'Für diesen Standort ist kein Hotspot-Host erfasst: der Anmelde-QR-Code öffnet direkt das Portal.',
         'notice' => [
-            'step_wifi' => '1. Mit dem WLAN verbinden',
-            'step_sign_in' => '2. Anmelden',
+            'step_wifi' => 'Mit dem WLAN verbinden',
             'per_device' => 'Zugang pro Gerät: :duration',
             'valid_until' => 'Code gültig bis :date',
-            'text' => 'QR-Code 1 scannen, um dem Gäste-WLAN beizutreten, dann QR-Code 2 für die Anmeldung. Namen eingeben, Nutzungsbedingungen akzeptieren und den hier angezeigten Code verwenden.',
+            'text' => 'QR-Code scannen, um dem Gäste-WLAN beizutreten. Die Anmeldeseite öffnet sich; falls nicht, eine beliebige Webseite aufrufen. Namen eingeben, Nutzungsbedingungen akzeptieren und den hier angezeigten Code verwenden.',
         ],
     ],
     'guests' => [

@@ -98,7 +98,6 @@ class SiteCodeController extends Controller
         $format = $request->query('format') === 'a6' ? 'a6' : 'a4';
         Audit::log('site_code.printed', $siteCode, ['site' => $site->slug, 'format' => $format]);
         $ssid = VoucherQr::ssidForSite($site);
-        $signIn = VoucherQr::signInUrl($site, $siteCode->code);
 
         return view('admin.site-codes.print', [
             'site' => $site,
@@ -108,9 +107,6 @@ class SiteCodeController extends Controller
             'ssid' => $ssid,
             'wifiQr' => $ssid && ! $site->wifiPasswordUnavailable() ? $qr->wifiSvg($ssid, 240, $site->wifiPassword()) : null,
             'wifiUnavailable' => $ssid && $site->wifiPasswordUnavailable(),
-            'signInUrl' => $signIn,
-            'signInQr' => $qr->svg($signIn, 240),
-            'hasHotspotHost' => ((array) $site->setting('hotspot_hosts', [])) !== [],
         ]);
     }
 

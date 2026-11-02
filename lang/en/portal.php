@@ -550,13 +550,11 @@ return [
         'notice_title' => 'Notice',
         'no_ssid' => 'No guest SSID set for this site (setup assistant): no Wi-Fi QR code.',
         'wifi_unavailable' => 'The Wi-Fi password of this site is not available on this instance: no Wi-Fi QR code.',
-        'no_hotspot_host' => 'No hotspot host set for this site: the sign-in QR code opens the portal directly.',
         'notice' => [
-            'step_wifi' => '1. Connect to the Wi-Fi',
-            'step_sign_in' => '2. Sign in',
+            'step_wifi' => 'Connect to the Wi-Fi',
             'per_device' => 'Access per device: :duration',
             'valid_until' => 'code valid until :date',
-            'text' => 'Scan QR code 1 to join the guest Wi-Fi, then QR code 2 to open the login. Enter your name, accept the terms of use and the code shown here.',
+            'text' => 'Scan the QR code to join the guest Wi-Fi. The login page opens; if not, open any website. Enter your name, accept the terms of use and the code shown here.',
         ],
     ],
     'guests' => [

@@ -550,13 +550,11 @@ return [
         'notice_title' => 'Affiche',
         'no_ssid' => 'Aucun SSID invités défini pour ce site (assistant) : pas de code QR Wi-Fi.',
         'wifi_unavailable' => 'Le mot de passe Wi-Fi de ce site n\'est pas disponible sur cette instance : pas de code QR Wi-Fi.',
-        'no_hotspot_host' => 'Aucun hôte hotspot défini pour ce site : le code QR de connexion ouvre directement le portail.',
         'notice' => [
-            'step_wifi' => '1. Se connecter au Wi-Fi',
-            'step_sign_in' => '2. S\'identifier',
+            'step_wifi' => 'Se connecter au Wi-Fi',
             'per_device' => 'Accès par appareil : :duration',
             'valid_until' => 'code valable jusqu\'au :date',
-            'text' => 'Scannez le code QR 1 pour rejoindre le Wi-Fi invités, puis le code QR 2 pour la connexion. Saisissez votre nom, acceptez les conditions d\'utilisation et le code indiqué ici.',
+            'text' => 'Scannez le code QR pour rejoindre le Wi-Fi invités. La page de connexion s\'ouvre ; sinon, ouvrez n\'importe quel site web. Saisissez votre nom, acceptez les conditions d\'utilisation et le code indiqué ici.',
         ],
     ],
     'guests' => [
