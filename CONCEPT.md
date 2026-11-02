@@ -299,6 +299,16 @@ CoovaChilli) are future/community work.
    no captcha. Phone numbers are masked in logs and on the code page; provider errors are logged
    with the HTTP status only. Sending: queued job (encrypted payload, `QUEUE_CONNECTION=sync` not
    supported), first enabled SMS provider by name.
+   Decision 2026-11-02 (v0.19.2, SMS text for autofill): the text uses the domain-bound one-time code
+   format (WebKit origin-bound codes, WHATWG sms-one-time-codes, Chrome WebOTP) so iOS/Android offer the code
+   for the portal page: code first (`123456 is your guest Wi-Fi code (valid for 10 min).`), a blank line, last
+   line `@<host> #<code>` (`OtpService::text()`). Host = host of the guest request that triggered the send
+   (`Request::getHost()` of the start/resend request, the page the code is entered on; not APP_URL, since the
+   guest zone may be reached under other names); lower case, no scheme, no port; invalid host (not a DNS name)
+   or none: the last line is omitted. The guest page `/portal/sms` additionally calls WebOTP
+   (`navigator.credentials.get({otp: {transport: ['sms']}})`, feature-detected, aborted on leaving, errors
+   ignored) and fills the input; the page has no CSP, the script is inline. No length limit exists in the SMS
+   code; the text stays short (about 100 characters, one GSM-7 segment for typical hosts).
 3. Guest enters OTP; a grant is created with the configured SMS duration (setting, default 1 d),
    time running from login.
 4. Step 5 of A.

@@ -13,6 +13,7 @@ use App\Models\Setting;
 use App\Models\Site;
 use App\Models\SmsMessage;
 use App\Models\User;
+use App\Sms\OtpService;
 use App\Support\Redact;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
@@ -186,6 +187,38 @@ class SmsLoginTest extends TestCase
         $this->assertSame('cURL error for *** and ***', Redact::secrets(
             'cURL error for https://sms.example.com/send?token=t0ken and send?token=t0ken', $hook->secretValues()));
         $this->assertSame('+4179*****00', Redact::phone('+41790000000'));
+    }
+
+    public function test_sms_text_is_domain_bound_one_time_code(): void
+    {
+        $this->assertSame("123456 is your guest Wi-Fi code (valid for 10 min).\n\n@portal.example.com #123456",
+            OtpService::text('123456', 10, 'en', 'Portal.Example.com'));
+        $this->assertSame("123456 ist dein Code für das Gäste-WLAN (gültig 10 Min.).\n\n@portal.example.com #123456",
+            OtpService::text('123456', 10, 'de', 'portal.example.com'));
+        foreach (['fr', 'it'] as $locale) {
+            $this->assertStringStartsWith('123456 ', OtpService::text('123456', 10, $locale, 'portal.example.com'));
+        }
+        foreach ([null, '', 'bad host', 'a.b:8443', 'https://a.b', '[::1]'] as $host) {
+            $text = OtpService::text('123456', 10, 'en', $host);
+            $this->assertStringNotContainsString('@', $text);
+            $this->assertSame(1, substr_count($text, '123456'));
+        }
+    }
+
+    public function test_sent_sms_carries_request_host_line(): void
+    {
+        $this->clickatell();
+        Http::fake(['platform.clickatell.com/*' => Http::response(['messages' => [['apiMessageId' => 'm1', 'accepted' => true]]])]);
+
+        $this->enterPortal();
+        $this->onZone('guest')->post('http://portal.example.com:8081/portal/sms', [
+            'first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'phone' => self::PHONE,
+        ])->assertRedirect();
+        $request = Http::recorded()->last()[0];
+        $text = $request['content'] ?? $request['text'];
+        $code = $this->sentCode();
+        $this->assertStringStartsWith($code.' is your guest Wi-Fi code', $text);
+        $this->assertStringEndsWith("\n\n@portal.example.com #{$code}", $text);
     }
 
     private function clickatell(): Channel

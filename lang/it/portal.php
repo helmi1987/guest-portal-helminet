@@ -868,7 +868,7 @@ return [
         'copy_missing' => 'Quell\'istanza non ha una fonte per questo certificato.',
     ],
     'sms' => [
-        'text' => 'Il tuo codice Wi-Fi ospiti: :code (valido :minutes min).',
+        'text' => ':code è il tuo codice Wi-Fi ospiti (valido :minutes min).',
         'test' => 'SMS di prova dal portale ospiti.',
     ],
     'oidc' => [

@@ -30,4 +30,17 @@
             <a href="{{ route('guest.portal') }}" class="gp-link underline">{{ __('portal.guest.sms_change') }}</a>
         </div>
     </section>
+    <script>
+        // WebOTP: where supported, the browser fills the code from the SMS (`@host #code` line); silent otherwise.
+        (function () {
+            var input = document.querySelector('input[name="otp"]');
+            if (!input || !('OTPCredential' in window) || !navigator.credentials) { return; }
+            var abort = new AbortController();
+            var form = input.form;
+            if (form) { form.addEventListener('submit', function () { abort.abort(); }); }
+            navigator.credentials.get({otp: {transport: ['sms']}, signal: abort.signal}).then(function (otp) {
+                if (otp && otp.code) { input.value = otp.code; }
+            }).catch(function () {});
+        })();
+    </script>
 </x-layouts.guest>

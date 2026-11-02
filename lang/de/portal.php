@@ -868,7 +868,7 @@ return [
         'copy_missing' => 'Diese Instanz hat keine Quelle für dieses Zertifikat.',
     ],
     'sms' => [
-        'text' => 'Dein Code für das Gäste-WLAN: :code (gültig :minutes Min.).',
+        'text' => ':code ist dein Code für das Gäste-WLAN (gültig :minutes Min.).',
         'test' => 'Test-SMS vom Gästeportal.',
     ],
     'oidc' => [

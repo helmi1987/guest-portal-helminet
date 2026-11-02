@@ -868,7 +868,7 @@ return [
         'copy_missing' => 'That instance has no source for this certificate.',
     ],
     'sms' => [
-        'text' => 'Your guest Wi-Fi code: :code (valid for :minutes min).',
+        'text' => ':code is your guest Wi-Fi code (valid for :minutes min).',
         'test' => 'Test SMS from the guest portal.',
     ],
     'oidc' => [

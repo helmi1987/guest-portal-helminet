@@ -273,7 +273,7 @@ class PortalController extends Controller
             return $this->error('locked', 429);
         }
         // Over a cost cap nothing is stored; the guest is asked to try later.
-        $challenge = $otp->start($data, $terms, $site, $context->mac, $phone);
+        $challenge = $otp->start($data, $terms, $site, $context->mac, $phone, $request->getHost());
         if ($challenge === null) {
             return $this->error('sms_busy', 429);
         }
@@ -337,7 +337,7 @@ class PortalController extends Controller
             return redirect()->route('guest.sms');
         }
 
-        return match ($otp->resend($challenge)) {
+        return match ($otp->resend($challenge, $request->getHost())) {
             'sent' => redirect()->route('guest.sms')->with('status', __('portal.guest.sms_resent')),
             'closed' => redirect()->route('guest.sms'),
             'wait' => redirect()->route('guest.sms')->withErrors(['otp' => __('portal.guest.errors.sms_wait',

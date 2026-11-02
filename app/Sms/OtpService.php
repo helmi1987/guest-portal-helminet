@@ -62,9 +62,9 @@ class OtpService
      *
      * @param  array{first_name: string, last_name: string}  $name
      */
-    public function start(array $name, ?TermsVersion $terms, Site $site, string $mac, string $phoneE164): ?OtpChallenge
+    public function start(array $name, ?TermsVersion $terms, Site $site, string $mac, string $phoneE164, ?string $host = null): ?OtpChallenge
     {
-        return $this->underLock(fn () => DB::transaction(function () use ($name, $terms, $site, $mac, $phoneE164) {
+        return $this->underLock(fn () => DB::transaction(function () use ($name, $terms, $site, $mac, $phoneE164, $host) {
             if (($cap = $this->capReached($phoneE164, $mac, $site->id)) !== null) {
                 $this->logCap($cap, $site->id, $mac, $phoneE164);
 
@@ -91,7 +91,7 @@ class OtpService
                 'code_hash' => '',
                 'expires_at' => now(),
             ]);
-            $this->send($challenge, $guest->locale);
+            $this->send($challenge, $guest->locale, $host);
             Log::info('SMS code requested', ['challenge' => $challenge->id, 'site' => $site->slug, 'mac' => $mac,
                 'phone' => Redact::phone($phoneE164)]);
 
@@ -104,9 +104,9 @@ class OtpService
      * 'cap' (cap reached or lock busy). Runs under the send lock, which verify() holds as well, so a
      * code cannot be replaced while it is being checked.
      */
-    public function resend(OtpChallenge $challenge): string
+    public function resend(OtpChallenge $challenge, ?string $host = null): string
     {
-        return $this->underLock(fn () => DB::transaction(function () use ($challenge) {
+        return $this->underLock(fn () => DB::transaction(function () use ($challenge, $host) {
             $challenge->refresh();
             if (! $challenge->isOpen()) {
                 return 'closed';
@@ -123,7 +123,7 @@ class OtpService
 
                 return 'cap';
             }
-            $this->send($challenge, $challenge->guest?->locale ?? app()->getLocale());
+            $this->send($challenge, $challenge->guest?->locale ?? app()->getLocale(), $host);
 
             return 'sent';
         }), busy: 'cap');
@@ -166,7 +166,7 @@ class OtpService
     }
 
     /** New random code, stored hashed; the SMS is sent by the queue (payload encrypted). */
-    private function send(OtpChallenge $challenge, string $locale): void
+    private function send(OtpChallenge $challenge, string $locale, ?string $host): void
     {
         $code = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $minutes = config('portal.sms.ttl_minutes');
@@ -183,8 +183,25 @@ class OtpService
             'phone_e164' => $challenge->phone_e164,
             'status' => SmsMessage::QUEUED,
         ]);
-        $text = __('portal.sms.text', ['code' => $code, 'minutes' => $minutes], $locale);
+        $text = self::text($code, $minutes, $locale, $host);
         SendSms::dispatch($message->id, $text)->afterCommit();
+    }
+
+    /**
+     * SMS body in the domain-bound one-time code format (WebKit origin-bound codes, WHATWG
+     * sms-one-time-codes, Chrome WebOTP): code first, a blank line, then `@host #code` as last line so
+     * iOS/Android offer the code for the page on that host. Without a valid host the last line is omitted.
+     */
+    public static function text(string $code, int|string $minutes, string $locale, ?string $host): string
+    {
+        $text = __('portal.sms.text', ['code' => $code, 'minutes' => $minutes], $locale);
+        $host = strtolower(rtrim(trim((string) $host), '.'));
+        $label = '[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?';
+        if (strlen($host) > 253 || ! preg_match('/^'.$label.'(?:\.'.$label.')*$/', $host)) {
+            return $text;
+        }
+
+        return $text."\n\n@{$host} #{$code}";
     }
 
     /**
