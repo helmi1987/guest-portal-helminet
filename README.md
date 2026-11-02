@@ -20,11 +20,32 @@ federation so access grants are valid at every site.
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome).
 
-**Status:** early development (v0.14.0: router state query per router (REST or API-SSL, read-only) with CLI derived from it, optional guest Wi-Fi password, unique comment keys in RouterOS scripts, collapsible admin sections; v0.13.1: federation fixes (admin login during the restore resync, skip-resync, branding download limit); v0.13.0: M7 federation, one instance per site, see
-[docs/federation.md](docs/federation.md); v0.12.7: generated RouterOS scripts verified on a CHR (tests/routeros), never touch foreign objects, re-runnable firewall block, hotspot HTML directory setting; v0.12.6: Disconnect-Request with Framed-IP-Address only (RouterOS 7), assistant firewall rules moved before existing drop rules; v0.12.5: critical fix of the router certificate script (see below); v0.12.4: "Regenerate secret and token" also rotates the router download token; v0.12.3: router certificate script without certificate comments, portal name pinned as CNAME (no IPv6 leak), portal IP validation; v0.12.2: styled error pages, separate route throttle counters; v0.12.1: setup fixes (bridge, host names, router certificate script, CertWarden keys, uninstall); v0.12.0: site codes; v0.11.1: translated validation messages; v0.11.0: dark/light colour scheme; v0.10.0: branding; admin extras, M6 parts A-E). Code login, SMS one-time password
+**Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
+
+- v0.20: SMS text editable per locale, default SMS texts in the iOS-detectable `code: 123456` form
+  (0.20.1), new default logo and favicons (0.20.2), site code notice without the sign-in QR, A4/A6 on
+  one page (0.20.3).
+- v0.19: setup assistant with combinable Wi-Fi modes, guest SSID per CAP and a provisioning rule editor;
+  guided setup wizard (one step at a time, each with its own router check); dynamic hotspot entries
+  ignored (0.19.1); SMS code in the domain-bound one-time code format with WebOTP (0.19.2).
+- v0.18: admin toolbox with a Wi-Fi QR code print sheet.
+- v0.17: detection of unmanaged guest objects, `cfg-guest` removed from CAPsMAN rules on uninstall,
+  uninstall lines marked by router state.
+- v0.16: guest Wi-Fi on multiple masters (local, CAPsMAN v1 and v2).
+- v0.15: script lines coloured by router state, placeholder inputs, guarded Wi-Fi block (a terminal
+  paste with unfilled placeholders changes nothing).
+- v0.14: router state query per router (REST or API-SSL, read-only) with CLI derived from it, optional
+  guest Wi-Fi password, unique comment keys in RouterOS scripts, collapsible admin sections; router API
+  access and Wi-Fi password local to the instance unless shared (0.14.1).
+- v0.13: M7 federation, one instance per site, see [docs/federation.md](docs/federation.md).
+- v0.12: site codes; setup and router script fixes up to 0.12.7, including the critical fix of 0.12.5
+  (see the notice above) and generated RouterOS scripts verified on a CHR (tests/routeros).
+- v0.1-v0.11: milestones M1-M6, branding, dark/light colour scheme, translated validation messages.
+
+Features: code login, SMS one-time password
 (Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
-router certificate, setup assistant; admin extras (M6): users with roles admin/manager, TOTP two-factor
+router certificate, setup assistant and guided wizard; admin extras (M6): users with roles admin/manager, TOTP two-factor
 login, audit log, backups, certificate pull from CertWarden or a URL, test buttons, guests & sessions list,
 bulk codes with printable A4 voucher sheet (Wi-Fi join QR) and CSV export, MAC whitelist (trusted devices
 online without the portal via RouterOS MAC authentication), OIDC login for the admin UI (e.g.

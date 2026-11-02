@@ -885,6 +885,21 @@ v0.13.0, checked with three containers on one Docker host (pairing, relay, offli
 restore resync, branding files, hub takeover with re-pairing); v0.13.1: admin login during the restore
 resync, skip-resync not undone by heartbeats, branding download size limit without Content-Length. Open: test across real sites (WireGuard, WAN outages), Telegram forwarding with a real
 group.
+After M7 (v0.14.0-v0.20.3, no new milestone; decisions in §7.2, §8 and the §9 rows "Setup assistant" and
+"Toolbox"): read-only router state query per router (REST or API-SSL, access local to the instance) with
+commands derived from it and coloured by it (v0.14.0); optional guest Wi-Fi password, shared or local to
+the instance (v0.14.1); guarded Wi-Fi block with placeholder inputs (v0.15.0); guest Wi-Fi on several
+masters (v0.16.0); detection of unmanaged guest objects, `cfg-guest` removed from CAPsMAN rules on
+uninstall (v0.17.0); toolbox with the Wi-Fi QR sheet (v0.18.0); combinable Wi-Fi modes, guest SSID per CAP,
+provisioning rule editor and the guided setup wizard (v0.19.0); dynamic hotspot entries ignored (v0.19.1);
+SMS code in the domain-bound one-time code format, SMS text editable per locale (v0.19.2-v0.20.1); new
+default logo (v0.20.2); site code notice without the sign-in QR (v0.20.3). Generated scripts verified on a
+RouterOS 7.24.5 CHR (`tests/routeros`); open: Wi-Fi modes, per-CAP rules and the wizard on real routers,
+CHR run on RouterOS 7.25.
+M8 in progress (status 2026-11-02): anonymity and secrets scan of the tree and history done; install docs
+exist (docs/docker-host.md, docs/routeros-container.md, docs/federation.md); CONTRIBUTING.md and SECURITY.md
+added. Open: screenshots with dummy data, armv7 decision, first release tag (until then the docs pull
+`:edge`), image package and repository public, `v1.0.0`.
 
 | # | Content | Acceptance criteria |
 |---|---|---|
