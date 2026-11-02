@@ -57,7 +57,7 @@ One Alpine Linux based image (decided):
 | RADIUS | FreeRADIUS 3 + `rlm_rest` | Proven; all decision logic in Laravel via internal REST API. |
 | Supervisor | s6-overlay | Proper PID 1, signal handling, service dependencies, tiny, no Python. |
 | Queue / cache | Laravel `database` drivers | No Redis needed. |
-| Scheduler | `php artisan schedule:work` as s6 service | No cron daemon. |
+| Scheduler | `php artisan schedule:work` as s6 service | No cron daemon. Decision 2026-11-02: every scheduled command appends its stdout and stderr to the standard output of `schedule:run` (`/proc/<pid>/fd/1`, `App\Console\SchedulerOutput`; without `/proc` to `storage/logs/scheduler.log`), which `schedule:work` copies to the container log; Laravel's default `/dev/null` dropped their console and `Log::` lines (stderr channel). |
 | Database | SQLite (WAL) on volume `/data` | Zero ops. Optional MariaDB/MySQL via `DB_CONNECTION` env for larger installs. |
 
 - Time zone (decision 2026-10-29, v0.10.0): `app.timezone` stays UTC, so the database, expiry and
