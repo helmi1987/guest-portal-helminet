@@ -54,9 +54,9 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   `login.html` fetch, status per router and diagnostics; optional read-only router API to check the
   router state and prefill the inputs, docs/guest-network-setup.md §10c), or "Router configuration"
   (RouterOS script) and `login.html` download. "Guided wizard" (v0.19.0, site page and setup page):
-  the same blocks one step at a time (router API access, router certificate, RADIUS, router script,
-  container, guest network, Wi-Fi, firewall/DHCP option, hotspot/DNS/walled garden, `login.html`,
-  status), each with its inputs, commands and a "Check" of only that step's objects on the router;
+  the same blocks one step at a time (router API access, container (or "not used" for a Docker
+  host), guest network, Wi-Fi, firewall/DHCP option, hotspot/DNS/walled garden, router script with
+  certificate checklist and RADIUS diagnostics, `login.html`, status), each with its inputs, commands and a "Check" of only that step's objects on the router;
   "Next" once the step is complete, else "Skip"; progress is kept in the browser only.
 - `/data` holds the database, generated secrets (`.env`), certificates and backups.
   Certificates (PEM, full chain + key) go to `/data/certs`: `portal.crt` + `portal.key` for the guest

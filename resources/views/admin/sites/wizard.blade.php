@@ -12,7 +12,7 @@
     $net = fn ($name, $default = '') => old($name, $setup[$name] ?? ($derived[$name][0] ?? $default));
     $mark = fn ($name) => isset($derived[$name]) ? new \Illuminate\Support\HtmlString('<span class="gp-badge gp-badge-info ml-1 font-normal" data-derived="'.e($name).'" title="'
         .e(__('portal.router_api.derived_from.'.$derived[$name][1], ['router' => $derived[$name][2]])).'">'.e(__('portal.router_api.derived')).'</span>') : '';
-    $badges = ['verified' => 'gp-badge-ok', 'done' => 'gp-badge-ok', 'manual' => 'gp-badge-info', 'skipped' => 'gp-badge-warn', 'open' => 'gp-badge-neutral'];
+    $badges = ['verified' => 'gp-badge-ok', 'done' => 'gp-badge-ok', 'manual' => 'gp-badge-info', 'skipped' => 'gp-badge-warn', 'open' => 'gp-badge-neutral', 'unused' => 'gp-badge-info'];
     $labels = array_map(fn ($s) => __('portal.wizard.progress.'.$s), array_combine(array_keys($badges), array_keys($badges)));
     $cfg = [
         // Progress per site in the browser only (localStorage, decision 2026-11-02)
@@ -43,21 +43,27 @@
                 save() { try { window.localStorage.setItem(cfg.storeKey, JSON.stringify(this.progress)); } catch (e) { /* not persisted */ } },
                 status(step) {
                     if (cfg.ok[step]) return 'verified';
-                    var v = this.progress[step];
-                    return v === 'done' || v === 'manual' || v === 'skipped' ? v : 'open';
+                    var v = this.progress[this.stepKey(step)];
+                    return v === 'done' || v === 'manual' || v === 'skipped' || v === 'unused' ? v : 'open';
                 },
                 label(step) { return cfg.labels[this.status(step)]; },
                 badge(step) { return 'gp-badge ' + cfg.badges[this.status(step)]; },
+                // Keys are step-name based (never the position), so reordering the steps cannot mix up progress
+                stepKey(step) { return 'step:' + step; },
+                get unused() { return this.progress[this.stepKey(cfg.step)] === 'unused'; },
+                setUnused(on) { if (on) { this.progress[this.stepKey(cfg.step)] = 'unused'; } else if (this.unused) { delete this.progress[this.stepKey(cfg.step)]; } this.save(); },
                 manualKey(id) { return 'manual:' + cfg.step + ':' + id; },
                 isManual(id) { return this.progress[this.manualKey(id)] === true; },
                 setManual(id, on) { if (on) { this.progress[this.manualKey(id)] = true; } else { delete this.progress[this.manualKey(id)]; } this.save(); },
                 get canNext() {
                     var self = this;
+                    if (this.unused) return true;
                     return cfg.ready && cfg.apiOk && cfg.manual.every(function (id) { return self.isManual(id); });
                 },
                 leave(how) {
-                    if (how === 'next') { this.progress[cfg.step] = cfg.ok[cfg.step] ? 'done' : 'manual'; }
-                    else if (!cfg.ok[cfg.step]) { this.progress[cfg.step] = 'skipped'; }
+                    var k = this.stepKey(cfg.step);
+                    if (how === 'next') { if (!this.unused) { this.progress[k] = cfg.ok[cfg.step] ? 'done' : 'manual'; } }
+                    else if (!cfg.ok[cfg.step]) { this.progress[k] = 'skipped'; }
                     this.save();
                 },
             };
@@ -121,50 +127,15 @@
                     @endforelse
                     @break
 
-                @case('certificate')
-                    @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $commands['diagnostics']['verify'] ?? ''])
-                    @foreach ($routers as $router)
-                        <p class="mb-2 flex flex-wrap items-center gap-2 text-sm">
-                            <a href="{{ route('admin.sites.routers.config', [$site, $router]) }}" class="btn-light" data-router-script="{{ $router->id }}">{{ __('portal.wizard.router_script', ['name' => $router->name]) }}</a>
-                            <x-admin.step-status :ok="$router->cert_fetched_at !== null" :label="__('portal.setup.cert_fetched').': '.$when($router->cert_fetched_at)" />
-                        </p>
-                    @endforeach
-                    @break
-
-                @case('radius')
-                    <p class="mb-3 text-sm">{{ __('portal.wizard.radius_address') }}: <code>{{ $site->setting('radius_address') ?: '<INSTANCE_IP>' }}</code>
-                        <a href="{{ route('admin.sites.edit', $site) }}" class="underline">{{ __('portal.router_api.configure') }}</a></p>
-                    <div class="mb-4 overflow-x-auto">
-                        <table class="data-table">
-                            <thead><tr><th>{{ __('portal.sites.name') }}</th><th>{{ __('portal.sites.nas_ip') }}</th><th>{{ __('portal.setup.last_seen') }}</th></tr></thead>
-                            <tbody>
-                                @forelse ($routers as $router)
-                                    <tr><td>{{ $router->name }}</td><td>{{ $router->nas_ip }}</td>
-                                        <td><x-admin.step-status :ok="$router->last_seen_at !== null" :label="$when($router->last_seen_at)" /></td></tr>
-                                @empty
-                                    <tr><td colspan="3" class="text-slate-500">{{ __('portal.setup.no_routers') }}</td></tr>
-                                @endforelse
-                            </tbody>
-                        </table>
-                    </div>
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.diagnostics.title')" :code="$commands['diagnostics']['diagnostics']" :placeholders="$placeholders" />
-                    @break
-
-                @case('router')
-                    <p class="mb-3 text-sm text-amber-800">{{ __('portal.wizard.router_script_secret') }}</p>
-                    @forelse ($routers as $router)
-                        <p class="mb-2 flex flex-wrap items-center gap-2 text-sm">
-                            <a href="{{ route('admin.sites.routers.config', [$site, $router]) }}" class="btn-light" data-router-script="{{ $router->id }}">{{ __('portal.wizard.router_script', ['name' => $router->name]) }}</a>
-                            <x-admin.step-status :ok="$router->cert_fetched_at !== null" :label="__('portal.setup.cert_fetched').': '.$when($router->cert_fetched_at)" />
-                        </p>
-                    @empty
-                        <p class="text-sm text-slate-500">{{ __('portal.setup.no_routers') }}</p>
-                    @endforelse
-                    @break
-
                 @case('container')
                     <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.container.help') }}</p>
                     <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.container.docker') }}</p>
+                    {{-- "Not used" counts as done; kept in the browser like the other progress --}}
+                    <fieldset class="mb-4 text-sm" data-wizard-container-choice>
+                        <label class="mr-4"><input type="radio" name="container_choice" value="used" x-bind:checked="!unused" x-on:change="setUnused(false)" data-wizard-container-used> {{ __('portal.wizard.container_used') }}</label>
+                        <label><input type="radio" name="container_choice" value="unused" x-bind:checked="unused" x-on:change="setUnused(true)" data-wizard-container-unused> {{ __('portal.wizard.container_unused') }}</label>
+                    </fieldset>
+                    <div x-show="!unused" data-wizard-container-body>
                     <form method="POST" action="{{ route('admin.sites.setup.container', $site) }}" class="mb-4 grid gap-3 md:grid-cols-3" data-wizard-form="container">
                         @csrf
                         <input type="hidden" name="wizard_step" value="{{ $n }}">
@@ -187,6 +158,7 @@
                         <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.'.$block)" :code="$commands['container'][$block]" :placeholders="$placeholders" :lines="$lineStatus($commands['container'][$block])" />
                     @endforeach
                     <p class="text-sm text-slate-600">{{ __('portal.setup.container.registry') }}</p>
+                    </div>
                     @break
 
                 @case('network')
@@ -235,6 +207,35 @@
                     <p class="text-sm text-amber-800">{{ __('portal.setup.hotspot.captive_hosts') }}</p>
                     @break
 
+                @case('router')
+                    <p class="mb-3 text-sm text-amber-800">{{ __('portal.wizard.router_script_secret') }}</p>
+                    @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $commands['diagnostics']['verify'] ?? ''])
+                    @forelse ($routers as $router)
+                        <p class="mb-2 flex flex-wrap items-center gap-2 text-sm">
+                            <a href="{{ route('admin.sites.routers.config', [$site, $router]) }}" class="btn-light" data-router-script="{{ $router->id }}">{{ __('portal.wizard.router_script', ['name' => $router->name]) }}</a>
+                            <x-admin.step-status :ok="$router->cert_fetched_at !== null" :label="__('portal.setup.cert_fetched').': '.$when($router->cert_fetched_at)" />
+                        </p>
+                    @empty
+                        <p class="text-sm text-slate-500">{{ __('portal.setup.no_routers') }}</p>
+                    @endforelse
+                    <p class="mb-3 mt-4 text-sm">{{ __('portal.wizard.radius_address') }}: <code>{{ $site->setting('radius_address') ?: '<INSTANCE_IP>' }}</code>
+                        <a href="{{ route('admin.sites.edit', $site) }}" class="underline">{{ __('portal.router_api.configure') }}</a></p>
+                    <div class="mb-4 overflow-x-auto">
+                        <table class="data-table">
+                            <thead><tr><th>{{ __('portal.sites.name') }}</th><th>{{ __('portal.sites.nas_ip') }}</th><th>{{ __('portal.setup.last_seen') }}</th></tr></thead>
+                            <tbody>
+                                @forelse ($routers as $router)
+                                    <tr><td>{{ $router->name }}</td><td>{{ $router->nas_ip }}</td>
+                                        <td><x-admin.step-status :ok="$router->last_seen_at !== null" :label="$when($router->last_seen_at)" /></td></tr>
+                                @empty
+                                    <tr><td colspan="3" class="text-slate-500">{{ __('portal.setup.no_routers') }}</td></tr>
+                                @endforelse
+                            </tbody>
+                        </table>
+                    </div>
+                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.diagnostics.title')" :code="$commands['diagnostics']['diagnostics']" :placeholders="$placeholders" />
+                    @break
+
                 @case('login')
                     @foreach ($routers as $router)
                         <x-admin.code :disabled="$cliDisabled" :title="$router->name.' ('.$router->nas_ip.')'" :code="$fetch[$router->id]" :placeholders="$placeholders" :lines="$lineStatus($fetch[$router->id])" />
@@ -276,7 +277,7 @@
 
             {{-- Check: state query per router (read-only API), shown for this step's objects only --}}
             @if ($step['hasScope'])
-                <div class="mt-6 border-t border-slate-200 pt-4" data-wizard-check>
+                <div class="mt-6 border-t border-slate-200 pt-4" data-wizard-check @if ($key === 'container') x-show="!unused" @endif>
                     <h3 class="mb-1 font-semibold">{{ __('portal.wizard.check_title') }}</h3>
                     <p class="mb-3 text-sm text-slate-600">{{ __('portal.wizard.check_help', ['minutes' => $maxAge]) }}</p>
                     @forelse ($routers as $router)

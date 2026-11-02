@@ -19,7 +19,7 @@ use Illuminate\View\View;
  * "wizard_step"); no script logic of its own. A step is "verified" when every router with API access has
  * a fresh state in which every object of the step's scope is present (or a guarded equal entry of others
  * is used); routers without API access are confirmed by hand in the browser. Progress (done, skipped,
- * manual) is kept in the browser only (localStorage), nothing is stored on the server.
+ * manual, container not used) is kept in the browser only (localStorage), nothing is stored on the server.
  */
 class WizardController extends Controller
 {
@@ -35,14 +35,13 @@ class WizardController extends Controller
      */
     public const STEPS = [
         'access' => ['scope' => ['api' => null]],
-        'certificate' => ['scope' => ['cert' => null]],
-        'radius' => ['scope' => ['radius' => null]],
-        'router' => ['scope' => ['radius' => null, 'walled' => null, 'cert' => null]],
         'container' => ['scope' => ['container' => null], 'optional' => true],
         'network' => ['scope' => ['net' => ['vlan', 'gateway', 'pool', 'dhcp-server', 'dhcp-network']], 'info' => ['net' => ['bridge-vlan']]],
         'wifi' => ['scope' => ['wifi' => null]],
         'firewall' => ['scope' => ['fw' => null, 'net' => ['option-114']]],
         'hotspot' => ['scope' => ['dns' => null, 'hotspot' => null, 'walled' => null]],
+        // Router script: absorbs the former certificate and RADIUS steps (certificate checklist, RADIUS diagnostics)
+        'router' => ['scope' => ['radius' => null, 'walled' => null, 'cert' => null]],
         'login' => ['scope' => []],
         'status' => ['scope' => []],
     ];
@@ -162,7 +161,7 @@ class WizardController extends Controller
             && CertificateInfo::fromFile(CertificateSources::paths('router')['cert']) !== null;
 
         return [
-            'certificate' => $certs,
+            'router' => $certs,
             'network' => $networkSaved,
             'wifi' => $networkSaved,
             'firewall' => $networkSaved,

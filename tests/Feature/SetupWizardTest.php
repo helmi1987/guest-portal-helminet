@@ -121,6 +121,42 @@ class SetupWizardTest extends TestCase
         $this->assertStringNotContainsString('/system script remove', $page);
     }
 
+    public function test_step_order_and_router_script_step_contents(): void
+    {
+        $this->assertSame(['access', 'container', 'network', 'wifi', 'firewall', 'hotspot', 'router', 'login', 'status'], array_keys(WizardController::STEPS));
+        $this->assertSame(['radius', 'walled', 'cert'], array_keys(WizardController::STEPS['router']['scope']));
+
+        // Router script step absorbs the certificate checklist and the RADIUS diagnostics, without the old "run again" hint
+        $page = $this->admin()->get($this->url(7))->assertOk()->getContent();
+        $this->assertStringContainsString('data-wizard-step="router"', $page);
+        $this->assertStringContainsString('data-router-script="'.$this->nas->id.'"', $page);
+        $this->assertStringContainsString(e(__('portal.setup.diagnostics.title')), $page);
+        $this->assertStringContainsString(e(__('portal.wizard.radius_address')), $page);
+        $this->assertStringContainsString('id="cert-checklist"', $page);
+        $this->assertStringNotContainsString('run it again', strtolower(__('portal.wizard.router_script_secret')));
+        foreach (['de', 'en', 'fr', 'it'] as $lang) {
+            $wizard = trans('portal.wizard', [], $lang);
+            $this->assertArrayNotHasKey('certificate', $wizard['steps']);
+            $this->assertArrayNotHasKey('radius', $wizard['steps']);
+            foreach (array_keys(WizardController::STEPS) as $key) {
+                $this->assertArrayHasKey($key, $wizard['steps'], "{$lang} {$key}");
+            }
+            $this->assertArrayHasKey('unused', $wizard['progress']);
+            $this->assertNotSame('portal.wizard.container_unused', __('portal.wizard.container_unused', [], $lang));
+        }
+    }
+
+    public function test_container_step_offers_not_used_option_stored_by_step_name(): void
+    {
+        $page = $this->admin()->get($this->url($this->step('container')))->assertOk()->getContent();
+        $this->assertStringContainsString('data-wizard-container-unused', $page);
+        $this->assertStringContainsString(e(__('portal.wizard.container_unused')), $page);
+        $this->assertStringContainsString('data-wizard-form="container"', $page);
+        // Progress keys are step-name based ("step:container"), not positions
+        $this->assertStringContainsString("'step:' + step", $page);
+        $this->assertStringNotContainsString('progress[step]', $page);
+    }
+
     public function test_steps_show_their_blocks_and_save_back_to_the_wizard(): void
     {
         $network = $this->step('network');
@@ -195,10 +231,10 @@ class SetupWizardTest extends TestCase
         $this->assertDoesNotMatchRegularExpression('/data-wizard-next x-show="canNext"[^>]*style="display: none"/', $page);
         $this->assertStringContainsString('data-step-status="network">'.e(__('portal.wizard.progress.verified')).'<', $page);
 
-        // RADIUS step: only the RADIUS block, missing on this router: Next disabled
-        $page = $this->admin()->get($this->url($this->step('radius')))->getContent();
+        // Router script step: radius, walled garden and certificate blocks only; RADIUS client missing here: Next disabled
+        $page = $this->admin()->get($this->url($this->step('router')))->getContent();
         preg_match_all('/data-state-block="([a-z]+)"/', $page, $blocks);
-        $this->assertSame(['radius'], $blocks[1]);
+        $this->assertEqualsCanonicalizing(['radius', 'walled', 'cert'], array_unique($blocks[1]));
         $this->assertStringContainsString('data-state-item="guest-portal:radius:server" data-status="missing"', $page);
         $this->assertStringContainsString('data-wizard-router-ok="no"', $page);
         $this->assertMatchesRegularExpression('/data-wizard-next x-show="canNext"[^>]*style="display: none"/', $page);

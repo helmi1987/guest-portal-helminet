@@ -22,8 +22,11 @@ Guided wizard (v0.19.0): the site page and the setup assistant link a step-by-st
 blocks. Each step shows its inputs and commands and a "Check" that queries the router (read-only API,
 §10c) and shows only that step's objects; "Next" is enabled when every router with API access shows
 them as present, routers without API access are confirmed by hand ("Done manually"), any step can be
-skipped. The router script (RADIUS secret, certificate token) is only linked, never shown in the wizard;
-its hotspot part needs the guest network, so run it again after the steps "Guest network" and "Hotspot".
+skipped. Order: router API access, RouterOS container (or "Not used (Docker host)", which counts as done),
+guest network, Wi-Fi, firewall and option 114, hotspot/DNS/walled garden, router script (with certificate
+checklist and RADIUS diagnostics; its check covers RADIUS, walled garden and certificate), `login.html`, status.
+The router script (RADIUS secret, certificate token) is only linked, never shown in the wizard; it comes after
+the guest network steps because its hotspot part needs them.
 Removal: setup assistant, "Remove everything again".
 
 > Back up first on every router: `/system backup save name=pre-guest` and `/export file=pre-guest`.
