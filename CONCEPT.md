@@ -305,7 +305,10 @@ CoovaChilli) are future/community work.
    line `@<host> #<code>` (`OtpService::text()`). Host = host of the guest request that triggered the send
    (`Request::getHost()` of the start/resend request, the page the code is entered on; not APP_URL, since the
    guest zone may be reached under other names); lower case, no scheme, no port; invalid host (not a DNS name)
-   or none: the last line is omitted. The guest page `/portal/sms` additionally calls WebOTP
+   or none: the last line is omitted. Decision 2026-11-02 (v0.21.0, security review): the request host is used
+   only when it is one of the portal's own names (APP_URL host, `PORTAL_HOSTNAME`, host of the site's portal
+   URL, the site's hotspot host names), otherwise the line is omitted, so a forged Host header cannot put a
+   foreign domain into an SMS. The guest page `/portal/sms` additionally calls WebOTP
    (`navigator.credentials.get({otp: {transport: ['sms']}})`, feature-detected, aborted on leaving, errors
    ignored) and fills the input; the page has no CSP, the script is inline. No length limit exists in the SMS
    code; the text stays short (about 100 characters, one GSM-7 segment for typical hosts).

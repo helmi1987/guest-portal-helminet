@@ -249,6 +249,7 @@ class SmsLoginTest extends TestCase
 
     public function test_sent_sms_carries_request_host_line(): void
     {
+        config(['portal.hostname' => 'portal.example.com']);
         $this->clickatell();
         Http::fake(['platform.clickatell.com/*' => Http::response(['messages' => [['apiMessageId' => 'm1', 'accepted' => true]]])]);
 
@@ -261,6 +262,43 @@ class SmsLoginTest extends TestCase
         $code = $this->sentCode();
         $this->assertStringStartsWith('Your code: '.$code."\n", $text);
         $this->assertStringEndsWith("\n\n@portal.example.com #{$code}", $text);
+    }
+
+    public function test_sms_host_line_only_for_the_portals_own_host_names(): void
+    {
+        config(['app.url' => 'https://app.example.com', 'portal.hostname' => null, 'portal.sms.max_sends' => 10,
+            'portal.sms.caps' => array_map(fn () => 100, config('portal.sms.caps'))]);
+        Site::sole()->update(['settings' => ['hotspot_hosts' => ['hotspot.example.com'], 'portal_url' => 'https://login.example.com/']]);
+        $this->clickatell();
+        Http::fake(['platform.clickatell.com/*' => Http::response(['messages' => [['apiMessageId' => 'm1', 'accepted' => true]]])]);
+        $text = function () {
+            $request = Http::recorded()->last()[0];
+
+            return $request['content'] ?? $request['text'];
+        };
+
+        // A forged Host header: the code in the iOS-detectable form, no host line at all.
+        $this->enterPortal();
+        $this->onZone('guest')->withHeader('Accept-Language', 'en')->post('http://paypal-login.example.net/portal/sms', [
+            'first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'phone' => self::PHONE,
+        ])->assertRedirect();
+        $code = $this->sentCode();
+        $this->assertStringStartsWith('Your code: '.$code, $text());
+        $this->assertStringNotContainsString('@', $text());
+        $this->assertStringNotContainsString('paypal-login', $text());
+
+        // The resend from a foreign host neither.
+        $this->travel(2)->minutes();
+        $this->onZone('guest')->withHeader('Accept-Language', 'en')->post('http://paypal-login.example.net/portal/sms/resend')->assertRedirect();
+        $this->assertStringNotContainsString('@', $text());
+
+        // Allowed: APP_URL host, the site's portal URL and hotspot host names (case and trailing dot ignored).
+        foreach (['app.example.com', 'LOGIN.example.com', 'hotspot.example.com.'] as $host) {
+            $this->travel(2)->minutes();
+            $this->onZone('guest')->withHeader('Accept-Language', 'en')->post("https://$host/portal/sms/resend")->assertRedirect();
+            $code = $this->sentCode();
+            $this->assertStringEndsWith("\n\n@".strtolower(rtrim($host, '.'))." #$code", $text(), $host);
+        }
     }
 
     private function clickatell(): Channel
