@@ -430,7 +430,8 @@ All login methods produce a **grant**; a code is a grant created in advance.
 - 2FA (TOTP) strongly recommended, enforceable by setting (implemented M6: enrolment in the own
   profile with QR code, RFC 6238 ±1 step, each step accepted once, 8 hashed single-use recovery codes,
   disable with password + code; login asks for the code after the password (5 failures: start over
-  with the password; per-IP limit), no "remember me"; password or 2FA changes and deletion end the
+  with the password; per-IP limit; since v0.21.0 also 10 failures per user in 15 minutes across IPs and
+  restarts), no "remember me"; password or 2FA changes and deletion end the
   user's other sessions and rotate the remember token; failed-login audit rows capped per hour; setting
   `require_2fa` applies to all admin UI users (both roles) and sends users without 2FA to their profile;
   `artisan portal:admin --reset-2fa <email>` and the user page reset it).
