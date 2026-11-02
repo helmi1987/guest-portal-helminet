@@ -16,7 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Wi-Fi invités',
-        'limited_mode' => 'Mode limité : la liaison avec le siège est interrompue. Nouvelles connexions uniquement par SMS (ou avec le code du site).',
+        'limited_mode' => 'Mode limité : la liaison avec le hub est interrompue. Nouvelles connexions uniquement par SMS (ou avec le code du site).',
         'heading' => 'Bienvenue sur le Wi-Fi invités',
         'intro' => 'Connectez-vous ici pour accéder à Internet.',
         'code_intro' => 'Saisissez votre nom et le code d\'accès à 6 chiffres.',
@@ -971,7 +971,7 @@ return [
         'admin_url' => 'URL admin',
         'admin_url_help' => 'Port admin de cette instance tel qu\'atteint par les approbateurs (liens dans les notifications pour les invités qui attendent ici).',
         'settings' => 'Réglages de la fédération',
-        'hub_instance' => 'Instance hub (siège)',
+        'hub_instance' => 'Instance hub',
         'hub_help' => 'Se connecte à toutes les instances et relaie entre elles. Normalement la première instance.',
         'offline_sms_only' => 'Hub injoignable : nouvelles connexions uniquement par SMS ou code de site',
         'offline_sms_only_help' => 'S\'applique sur les autres instances quand le hub n\'a pas répondu depuis 2 minutes. Les appareils connectés restent en ligne. Jamais sur le hub.',

@@ -23,7 +23,7 @@
             <input name="bridge" value="{{ $net('bridge') }}" placeholder="bridge1" required class="field">
             <span class="text-xs text-slate-500">{{ __('portal.setup.network.bridge_help') }}</span></label>
         <label class="label">{{ __('portal.setup.network.interface') }}{{ $mark('interface') }}
-            <input name="interface" value="{{ $net('interface') }}" placeholder="vlan30-guest" required class="field"></label>
+            <input name="interface" value="{{ $net('interface') }}" placeholder="vlan-guest" required class="field"></label>
         <label class="label">{{ __('portal.setup.network.subnet') }}{{ $mark('subnet') }}
             <input name="subnet" value="{{ $net('subnet') }}" placeholder="10.30.0.0/24" required class="field"></label>
         <label class="label">{{ __('portal.setup.network.gateway') }}{{ $mark('gateway') }}

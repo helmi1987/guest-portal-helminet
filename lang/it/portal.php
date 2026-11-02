@@ -16,7 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Wi-Fi ospiti',
-        'limited_mode' => 'Modalità limitata: il collegamento con la sede centrale è interrotto. Nuovi accessi solo via SMS (o con il codice sede).',
+        'limited_mode' => 'Modalità limitata: il collegamento con l\'hub è interrotto. Nuovi accessi solo via SMS (o con il codice sede).',
         'heading' => 'Benvenuti nel Wi-Fi ospiti',
         'intro' => 'Accedi qui per navigare in Internet.',
         'code_intro' => 'Inserisci il tuo nome e il codice di accesso a 6 cifre.',
@@ -971,7 +971,7 @@ return [
         'admin_url' => 'URL admin',
         'admin_url_help' => 'Porta admin di questa istanza come raggiunta da chi approva (link nelle notifiche per gli ospiti in attesa qui).',
         'settings' => 'Impostazioni di federazione',
-        'hub_instance' => 'Istanza hub (sede centrale)',
+        'hub_instance' => 'Istanza hub',
         'hub_help' => 'Si collega a tutte le istanze e inoltra tra di esse. Di solito la prima istanza.',
         'offline_sms_only' => 'Hub non raggiungibile: nuovi accessi solo via SMS o codice sede',
         'offline_sms_only_help' => 'Vale sulle altre istanze quando l\'hub non risponde da 2 minuti. I dispositivi connessi restano online. Mai sull\'hub.',

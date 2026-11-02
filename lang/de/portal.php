@@ -16,7 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Gäste-WLAN',
-        'limited_mode' => 'Eingeschränkter Betrieb: Die Verbindung zur Zentrale ist unterbrochen. Neue Anmeldungen nur per SMS (oder mit dem Standort-Code).',
+        'limited_mode' => 'Eingeschränkter Betrieb: Die Verbindung zum Hub ist unterbrochen. Neue Anmeldungen nur per SMS (oder mit dem Standort-Code).',
         'heading' => 'Willkommen im Gäste-WLAN',
         'intro' => 'Melde dich hier an, um ins Internet zu gelangen.',
         'code_intro' => 'Gib deinen Namen und den 6-stelligen Zugangscode ein.',
@@ -971,7 +971,7 @@ return [
         'admin_url' => 'Admin-URL',
         'admin_url_help' => 'Admin-Port dieser Instanz, wie ihn Freigebende erreichen (Links in Benachrichtigungen für Gäste, die hier warten).',
         'settings' => 'Föderations-Einstellungen',
-        'hub_instance' => 'Hub-Instanz (Zentrale)',
+        'hub_instance' => 'Hub-Instanz',
         'hub_help' => 'Verbindet sich mit allen Instanzen und leitet zwischen ihnen weiter. Normalerweise die erste Instanz.',
         'offline_sms_only' => 'Hub nicht erreichbar: neue Logins nur per SMS oder Standort-Code',
         'offline_sms_only_help' => 'Gilt auf den übrigen Instanzen, wenn der Hub 2 Minuten nicht geantwortet hat. Angemeldete Geräte bleiben online. Gilt nie auf dem Hub.',

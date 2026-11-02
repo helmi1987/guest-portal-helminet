@@ -130,7 +130,7 @@
                 <input name="bridge" value="{{ $net('bridge') }}" placeholder="bridge1" required class="field">
                 <span class="text-xs text-slate-500">{{ __('portal.setup.network.bridge_help') }}</span></label>
             <label class="label">{{ __('portal.setup.network.interface') }}{{ $mark('interface') }}
-                <input name="interface" value="{{ $net('interface') }}" placeholder="vlan30-guest" required class="field"></label>
+                <input name="interface" value="{{ $net('interface') }}" placeholder="vlan-guest" required class="field"></label>
             <label class="label">{{ __('portal.setup.network.ssid') }}{{ $mark('ssid') }}
                 <input name="ssid" value="{{ $net('ssid') }}" placeholder="Guest-WiFi" required class="field"></label>
             {{-- Never rendered back in clear: empty keeps the stored password, the checkbox removes it --}}

@@ -40,7 +40,7 @@ class SetupAssistantTest extends TestCase
         $this->onZone('guest')->get("/admin/sites/{$this->site->id}/setup")->assertNotFound();
 
         $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", [
-            'vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+            'vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
             'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman1',
         ])->assertRedirect();
         $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup/container", [
@@ -49,10 +49,10 @@ class SetupAssistantTest extends TestCase
         ])->assertRedirect();
 
         $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
-            ->assertSee('/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30', false)
+            ->assertSee('/interface vlan add name=vlan-guest interface=bridge1 vlan-id=30', false)
             ->assertSee('/caps-man datapath add name=dp-guest bridge=bridge1 vlan-id=30', false)
             ->assertSee('ssid="Guest-WiFi"')
-            ->assertSee('/ip address add interface=vlan30-guest address=10.30.0.1/24', false)
+            ->assertSee('/ip address add interface=vlan-guest address=10.30.0.1/24', false)
             ->assertSee('/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250', false)
             ->assertSee('value="\'https://portal.example.com/captive/site-a\'"')
             ->assertDontSee('add name=hotspot-a.guest.example.com', false)
@@ -69,14 +69,14 @@ class SetupAssistantTest extends TestCase
 
         $script = $this->site->fresh()->driver()->configScript($this->site->fresh(), $this->nas);
         $this->assertStringContainsString('hotspot-address=10.30.0.1', $script);
-        $this->assertStringContainsString('interface=vlan30-guest address-pool=guest-pool profile=guest-portal', $script);
+        $this->assertStringContainsString('interface=vlan-guest address-pool=guest-pool profile=guest-portal', $script);
     }
 
     public function test_values_are_validated_and_sanitized_against_script_injection(): void
     {
         $admin = User::factory()->admin()->create();
         $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", [
-            'vlan_id' => 30, 'bridge' => 'bridge1; /system reset-configuration', 'interface' => 'vlan30',
+            'vlan_id' => 30, 'bridge' => 'bridge1; /system reset-configuration', 'interface' => 'vlan-guest',
             'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250',
             'ssid' => 'Guest"; /system reset-configuration; "', 'wifi_mode' => 'capsman2',
         ])->assertSessionHasErrors(['bridge', 'ssid']);
@@ -84,7 +84,7 @@ class SetupAssistantTest extends TestCase
 
         // Values bypassing validation (e.g. replicated from elsewhere) are stripped on output.
         $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => [
-            'vlan_id' => 'x30 disabled=yes', 'bridge' => 'br1 [/system reset-configuration]', 'interface' => 'vlan30"$x',
+            'vlan_id' => 'x30 disabled=yes', 'bridge' => 'br1 [/system reset-configuration]', 'interface' => 'vlan-guest"$x',
             'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1 ;:put', 'pool' => '10.30.0.10-10.30.0.250',
             'ssid' => 'Guest"; :execute {/system reset-configuration}; "', 'wifi_mode' => 'local',
         ]])]);
@@ -96,7 +96,7 @@ class SetupAssistantTest extends TestCase
         $this->assertStringNotContainsString('$(x)', $all);
         $this->assertStringContainsString('ssid="Guest :execute /system reset-configuration"', $all);
         $this->assertStringContainsString('<GUEST_VLAN_ID>', $all);
-        $this->assertStringContainsString('interface=vlan30x', $all);
+        $this->assertStringContainsString('interface=vlan-guestx', $all);
         $this->assertStringContainsString('bridge=br1/systemreset-configuration', $all);
 
         $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
@@ -166,7 +166,7 @@ class SetupAssistantTest extends TestCase
     public function test_network_inputs_must_be_valid_ipv4_inside_the_subnet(): void
     {
         $admin = User::factory()->admin()->create();
-        $valid = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+        $valid = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
             'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2'];
         $post = fn (array $data) => $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", $data);
 
@@ -273,7 +273,7 @@ class SetupAssistantTest extends TestCase
     {
         $admin = User::factory()->admin()->create();
         $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['vlan_id' => 30, 'bridge' => 'bridge1',
-            'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250',
+            'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250',
             'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2']])]);
 
         $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
@@ -324,9 +324,9 @@ class SetupAssistantTest extends TestCase
         foreach (['/interface wifi configuration remove [find where name=cfg-guest && (comment="guest-portal:wifi:cfg-guest" || comment="guest-portal" || comment~"^guest-portal: ")]',
             '/ip dhcp-server remove [find where name=guest-dhcp && (comment="guest-portal:net:dhcp-server" || comment="guest-portal" || comment~"^guest-portal: ")]',
             '/ip pool remove [find where name=guest-pool && (comment="guest-portal:net:pool" || comment="guest-portal" || comment~"^guest-portal: ")]',
-            '/interface vlan remove [find where name=vlan30-guest && (comment="guest-portal:net:vlan" || comment="guest-portal" || comment~"^guest-portal: ")]',
+            '/interface vlan remove [find where name=vlan-guest && (comment="guest-portal:net:vlan" || comment="guest-portal" || comment~"^guest-portal: ")]',
             '/interface list remove [find where name=GUEST && (comment="guest-portal:fw:list-guest" || comment="guest-portal" || comment~"^guest-portal: ")]',
-            '/ip address remove [find where interface=vlan30-guest && (comment="guest-portal:net:gateway" || comment="guest-portal" || comment~"^guest-portal: ")]'] as $line) {
+            '/ip address remove [find where interface=vlan-guest && (comment="guest-portal:net:gateway" || comment="guest-portal" || comment~"^guest-portal: ")]'] as $line) {
             $this->assertStringContainsString($line, $u['uninstall_network']);
         }
         // Every remove of the optional blocks is limited to objects with the assistant's comment.
@@ -345,7 +345,7 @@ class SetupAssistantTest extends TestCase
     public function test_blocks_never_touch_foreign_objects_and_are_re_runnable(): void
     {
         $this->site->update(['settings' => array_merge($this->site->settings, ['setup' => ['vlan_id' => 30, 'bridge' => 'bridge1',
-            'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250',
+            'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250',
             'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2']])]);
         $site = $this->site->fresh();
         $c = $site->driver()->setupCommands($site, []);
@@ -361,8 +361,8 @@ class SetupAssistantTest extends TestCase
         $this->assertStringContainsString('/ip dhcp-server option set [find where name="captive-portal" && (comment="guest-portal:net:option-114" || comment="guest-portal" || comment~"^guest-portal: ")] code=114', $c['network']['captive_option']);
         $this->assertStringContainsString('[find where address="10.30.0.0/24" && (comment="guest-portal:net:dhcp-network" || comment="guest-portal" || comment~"^guest-portal: ")] dhcp-option=captive-portal', $c['network']['captive_option']);
         // Network objects: added, or updated by id when they are ours (re-runnable, legacy comment replaced)
-        foreach (['/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"',
-            '/interface vlan set [find where name=vlan30-guest && (comment="guest-portal:net:vlan" || comment="guest-portal" || comment~"^guest-portal: ")] interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"',
+        foreach (['/interface vlan add name=vlan-guest interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"',
+            '/interface vlan set [find where name=vlan-guest && (comment="guest-portal:net:vlan" || comment="guest-portal" || comment~"^guest-portal: ")] interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"',
             ':if ([:len [/ip pool find where name=guest-pool && (comment="guest-portal:net:pool" || comment="guest-portal" || comment~"^guest-portal: ")]] = 0) do={',
             '/ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250 comment="guest-portal:net:pool"',
             '/ip pool set [find where name=guest-pool && (comment="guest-portal:net:pool" || comment="guest-portal" || comment~"^guest-portal: ")] ranges=10.30.0.10-10.30.0.250 comment="guest-portal:net:pool"',
@@ -383,7 +383,7 @@ class SetupAssistantTest extends TestCase
     public function test_hotspot_html_directory_is_set_on_the_profile_and_used_by_the_fetch(): void
     {
         $admin = User::factory()->admin()->create();
-        $form = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+        $form = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
             'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2'];
         $this->onZone('admin')->actingAs($admin)->post("/admin/sites/{$this->site->id}/setup", $form + ['html_directory' => '../etc'])
             ->assertSessionHasErrors('html_directory');
@@ -457,7 +457,7 @@ class SetupAssistantTest extends TestCase
     public function test_generated_script_locals_never_shadow_find_where_properties(): void
     {
         $this->site->update(['settings' => array_merge($this->site->settings ?? [], ['setup' => [
-            'vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+            'vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
             'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2',
         ]])]);
         $site = $this->site->fresh();

@@ -16,7 +16,7 @@ return [
     ],
     'guest' => [
         'title' => 'Guest Wi-Fi',
-        'limited_mode' => 'Limited mode: the connection to the head office is interrupted. New logins only by SMS (or with the site code).',
+        'limited_mode' => 'Limited mode: the connection to the hub is interrupted. New logins only by SMS (or with the site code).',
         'heading' => 'Welcome to the guest Wi-Fi',
         'intro' => 'Log in here to get internet access.',
         'code_intro' => 'Enter your name and the 6-digit access code.',
@@ -971,7 +971,7 @@ return [
         'admin_url' => 'Admin URL',
         'admin_url_help' => 'Admin port of this instance as reached by approvers (links in notifications for guests waiting here).',
         'settings' => 'Federation settings',
-        'hub_instance' => 'Hub instance (HQ)',
+        'hub_instance' => 'Hub instance',
         'hub_help' => 'Connects to all instances and relays between them. Normally the first instance.',
         'offline_sms_only' => 'Hub unreachable: new logins only by SMS or site code',
         'offline_sms_only_help' => 'Applies on the other instances when the hub has not answered for 2 minutes. Logged-in devices keep working. Never applies on the hub.',

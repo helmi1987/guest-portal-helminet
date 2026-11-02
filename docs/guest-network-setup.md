@@ -37,7 +37,7 @@ Removal: setup assistant, "Remove everything again".
 Fill one row per site before you start. Keep this table out of the public repository once it holds
 real values; the RADIUS secret especially is a password.
 
-| Value | HQ (site A) | Site B | Notes |
+| Value | Site A (central instance) | Site B | Notes |
 |---|---|---|---|
 | Site name / slug | `<SITE_A_SLUG>` | `<SITE_B_SLUG>` | As configured in the admin UI |
 | Guest VLAN id | 30 | 30 | May be equal on all sites; subnets must differ |
@@ -65,7 +65,7 @@ Central instance values (once):
 
 ```
  Guest phone --Wi-Fi (SSID, VLAN 30)--> CAP --trunk--> Router (bridge, VLAN 30 interface)
-                                                         |  hotspot on vlan30, DHCP, DNS
+                                                         |  hotspot on vlan-guest, DHCP, DNS
                                                          |  RADIUS 1812/1813 --> portal instance
                                                          |  <-- Disconnect 3799 -- portal instance
                                         guest HTTPS 443 --> portal instance (walled garden)
@@ -104,7 +104,7 @@ The commands below show a full setup from scratch (new bridge with filtering).
 /interface bridge vlan add bridge=bridge1 tagged=bridge1,<TRUNK_PORT_TO_CAP> vlan-ids=30 comment="guest-portal:net:bridge-vlan"
 
 # 2.4 L3 interface for the guest VLAN on the bridge
-/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"
+/interface vlan add name=vlan-guest interface=bridge1 vlan-id=30 comment="guest-portal:net:vlan"
 
 # 2.5 Enable filtering (use Safe Mode)
 /interface bridge set bridge1 vlan-filtering=yes
@@ -267,9 +267,9 @@ can remove its configuration.
 ## 4. Per site: addressing, DHCP and DNS
 
 ```
-/ip address add address=10.30.0.1/24 interface=vlan30-guest comment="guest-portal:net:gateway"
+/ip address add address=10.30.0.1/24 interface=vlan-guest comment="guest-portal:net:gateway"
 /ip pool add name=guest-pool ranges=10.30.0.10-10.30.0.250 comment="guest-portal:net:pool"
-/ip dhcp-server add name=guest-dhcp interface=vlan30-guest address-pool=guest-pool \
+/ip dhcp-server add name=guest-dhcp interface=vlan-guest address-pool=guest-pool \
     lease-time=30m disabled=no comment="guest-portal:net:dhcp-server"
 /ip dhcp-server network add address=10.30.0.0/24 gateway=10.30.0.1 dns-server=10.30.0.1 comment="guest-portal:net:dhcp-network"
 ```
@@ -299,7 +299,7 @@ Phone: connects, gets 10.30.0.x, gateway and DNS 10.30.0.1.
 ### 5.1 Interface lists
 ```
 /interface list add name=GUEST comment="guest-portal:fw:list-guest"
-/interface list member add list=GUEST interface=vlan30-guest comment="guest-portal:fw:list-member"
+/interface list member add list=GUEST interface=vlan-guest comment="guest-portal:fw:list-member"
 # Assuming you already have WAN/LAN lists; otherwise create them and add members
 /interface list print
 ```
@@ -450,7 +450,7 @@ AAAA for it.
 - **Manual (recommended, reproducible):** paste the script generated in **Admin -> Sites -> (site) -> RouterOS script**. It creates the RADIUS client, `/radius
   incoming`, hotspot profile and hotspot server `guest-portal` (`use-radius=yes`, `login-by=https,mac`; `mac` for the MAC whitelist), walled garden and the certificate
   script/scheduler (6.1). Fill its `<PLACEHOLDERS>` from the worksheet: `<HOTSPOT_GATEWAY_IP>` = 10.30.0.1,
-  `<GUEST_INTERFACE>` = `vlan30-guest`, `<GUEST_POOL>` = `guest-pool`.
+  `<GUEST_INTERFACE>` = `vlan-guest`, `<GUEST_POOL>` = `guest-pool`.
   Hotspot and profile use the name `guest-portal`, all other entries a comment key `guest-portal:<block>:<object>`
   (e.g. `guest-portal:radius:server`; older versions: comment `guest-portal`); the script removes them first, so it can be re-run (re-running
   recreates the hotspot and logs out connected guests). Do not rename the profile: the certificate script sets
@@ -507,7 +507,7 @@ popup). Expected: redirect to the portal page, then login, then internet.
 
 ## 7. Central instance and inter-site connectivity
 
-The portal instance sits in one central network (HQ). Sites reach it through the existing
+The portal instance sits in one central network (e.g. at site A). Sites reach it through the existing
 site-to-site VPN/routing.
 
 ### 7.1 Why RADIUS must keep the real router IP
@@ -665,7 +665,7 @@ openssl s_client -connect portal.example.com:443 -servername portal.example.com 
 | Symptom | Likely cause | Check / fix |
 |---|---|---|
 | Phone gets no IP | VLAN 30 missing on a hop, `vlan-filtering` without tagged entry, DHCP server on wrong interface | `/interface bridge vlan print`, `/ip dhcp-server print`, check tagged on trunk and CAP bridge |
-| Phone gets IP but no captive popup | Hotspot not on `vlan30-guest`, DNS not via router, firewall input drop blocks hotspot ports | `/ip hotspot print`, `/ip hotspot host print`; test a plain `http://` address; check dynamic hotspot rules |
+| Phone gets IP but no captive popup | Hotspot not on `vlan-guest`, DNS not via router, firewall input drop blocks hotspot ports | `/ip hotspot print`, `/ip hotspot host print`; test a plain `http://` address; check dynamic hotspot rules |
 | Redirect goes to router default page | Custom `login.html` not uploaded / wrong `html-directory` | `/file print`, `/ip hotspot profile print`; re-upload |
 | Certificate warning on hotspot name | Wrong/expired certificate, name not in certificate, profile `dns-name` mismatch, certificate not imported with key | `/certificate print`, `dns-name` must match `*.guest.example.com` |
 | Router certificate not updated | Download denied: wrong token (re-paste script after regenerating), request not from the router IP (NAT, `src-address`), portal certificate not trusted (`check-certificate=yes`), files missing on the instance | `/log print where message~"guest-portal"`, instance log "Router certificate download denied", `/system script run guest-portal-cert` |
@@ -694,7 +694,7 @@ Findings from a first real setup; the setup assistant shows the same checklist.
    /interface bridge print where name=<BRIDGE>             # vlan-filtering yes/no
    /interface bridge vlan print where bridge=<BRIDGE>      # only with vlan-filtering=yes: VLAN 30 tagged on bridge + trunk
    ```
-   Move the VLAN interface: `/interface vlan set [find where name=vlan30-guest] interface=<LAN_BRIDGE>`.
+   Move the VLAN interface: `/interface vlan set [find where name=vlan-guest] interface=<LAN_BRIDGE>`.
 2. **Portal name resolves to the router.** The hotspot host name was set equal to the portal host name,
    so the static DNS entry pointed the portal name at the router. Use two names (e.g.
    `hotspot-a.guest.example.com` for the router, `portal.example.com` for the portal); the admin UI now

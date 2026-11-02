@@ -184,7 +184,7 @@ class SiteRulesTest extends TestCase
     public function test_limited_mode_allows_only_sms_site_codes_and_bound_devices(): void
     {
         $terms = TermsVersion::publish('en', 'Be nice.');
-        $hub = Instance::create(['name' => 'HQ', 'federation_url' => 'https://10.0.0.9:9443']);
+        $hub = Instance::create(['name' => 'Hub', 'federation_url' => 'https://10.0.0.9:9443']);
         Setting::put(Topology::HUB_SETTING, $hub->id); // never heartbeated: unreachable
         $this->assertTrue(app(Topology::class)->limitedMode());
 

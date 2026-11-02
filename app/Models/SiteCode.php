@@ -86,7 +86,7 @@ class SiteCode extends Model
         return $this->max_devices !== null && $this->runningGrants()->count() >= $this->max_devices;
     }
 
-    /** Hook for the federation "HQ unreachable -> SMS login only" rule (M7): site codes stay allowed. */
+    /** Hook for the federation "hub unreachable -> SMS login only" rule (M7): site codes stay allowed. */
     public function isAllowedWhileOffline(): bool
     {
         return true;

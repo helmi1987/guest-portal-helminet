@@ -10,7 +10,7 @@ host; not yet tested across real sites and WAN links.
 
 ## 1. How it works
 
-- **Star topology.** The first instance is the **hub** (e.g. at the headquarters, "HQ"). Every other
+- **Star topology.** The first instance is the **hub** (e.g. at the main site). Every other
   instance ("site A", "site B") is paired with the hub only; the hub relays the changes of each instance
   to the others. Hub down: the other instances keep working with the last known state but do not sync
   with each other until it is back.
@@ -40,7 +40,7 @@ host; not yet tested across real sites and WAN links.
 
 Example values used below (replace them):
 
-| | HQ (hub) | Site A | Site B |
+| | Hub | Site A | Site B |
 |---|---|---|---|
 | WireGuard address | 10.8.0.1 | 10.8.0.2 | 10.8.0.3 |
 | Federation URL | `https://10.8.0.1:9443` | `https://10.8.0.2:9443` | `https://10.8.0.3:9443` |
@@ -53,13 +53,13 @@ Any VPN works as long as the hub reaches each instance's federation port and eac
 hub's. Sites do not need a tunnel to each other. Example for Linux hosts (`wg-quick`); on RouterOS use
 `/interface wireguard` with the same addresses and allowed IPs.
 
-HQ (`/etc/wireguard/wg-fed.conf`):
+Hub (`/etc/wireguard/wg-fed.conf`):
 
 ```ini
 [Interface]
 Address = 10.8.0.1/24
 ListenPort = 51820
-PrivateKey = <HQ_PRIVATE_KEY>
+PrivateKey = <HUB_PRIVATE_KEY>
 
 [Peer]          # site A
 PublicKey = <A_PUBLIC_KEY>
@@ -77,9 +77,9 @@ Site A (site B alike with 10.8.0.3):
 Address = 10.8.0.2/24
 PrivateKey = <A_PRIVATE_KEY>
 
-[Peer]          # HQ
-PublicKey = <HQ_PUBLIC_KEY>
-Endpoint = <HQ_PUBLIC_ADDRESS>:51820
+[Peer]          # hub
+PublicKey = <HUB_PUBLIC_KEY>
+Endpoint = <HUB_PUBLIC_ADDRESS>:51820
 AllowedIPs = 10.8.0.1/32
 PersistentKeepalive = 25
 ```
@@ -99,7 +99,7 @@ generates it (see [guest-network-setup.md](guest-network-setup.md) 8.1):
 /ip dns static add name=portal.example.com type=CNAME cname=guest-portal-v4.internal comment=guest-portal
 ```
 
-`<LOCAL_PORTAL_IP>` differs per site (10.0.0.10 at HQ, 10.30.0.10 at site A, ...). The router's RADIUS
+`<LOCAL_PORTAL_IP>` differs per site (10.0.0.10 at the hub, 10.30.0.10 at site A, ...). The router's RADIUS
 client points to the local instance too (site page → routers → router script).
 
 ## 5. Firewall
@@ -114,12 +114,12 @@ client points to the local instance too (site page → routers → router script
 Never expose 9443 to guests or the internet: without a pinned client certificate the port answers only
 pairing requests that need a one-time join token, but there is no reason to offer it.
 
-## 6. Setting up HQ, site A and site B
+## 6. Setting up the hub, site A and site B
 
-### 6.1 HQ (hub)
+### 6.1 Hub
 
 1. Install as a normal instance ([docker-host.md](docker-host.md) or
-   [routeros-container.md](routeros-container.md)), set `PORTAL_INSTANCE_NAME` (e.g. `HQ`) and
+   [routeros-container.md](routeros-container.md)), set `PORTAL_INSTANCE_NAME` (e.g. `Hub`) and
    `PORTAL_FEDERATION_URL`, publish 9443 on the WireGuard address.
 2. Create the first admin (`artisan portal:admin`), configure sites, routers, channels and settings as
    usual.
@@ -133,7 +133,7 @@ A site joins as a **new, empty** instance; its data comes from the federation.
 
 1. Install the container at the site with its own data folder, `PORTAL_INSTANCE_NAME` (e.g. `Site A`) and
    `PORTAL_FEDERATION_URL`, 9443 on its WireGuard address.
-2. On HQ: Federation → **Create join token** (valid 15 minutes, single use). The page shows the token,
+2. On the hub: Federation → **Create join token** (valid 15 minutes, single use). The page shows the token,
    the hub's federation URL and certificate pin (`sha256//...`) and a ready command.
 3. On site A either
    - create a local bootstrap admin (`artisan portal:admin`), sign in, open **Join a federation** and enter
@@ -141,14 +141,14 @@ A site joins as a **new, empty** instance; its data comes from the federation.
    - run `artisan portal:federation:join https://10.8.0.1:9443 <token> 'sha256//...' --name="Site A"
      --federation-url=https://10.8.0.2:9443 --admin-url=https://10.8.0.2:8443`.
 
-   Compare the pin with the one shown on HQ: it is what authenticates the hub. After joining, the
+   Compare the pin with the one shown on the hub: it is what authenticates the hub. After joining, the
    bootstrap admin is deleted; sign in with an account of the hub.
 4. On site A: site page of the site served here → **home instance** = Site A (or "Take over this site"
    for a site moved from another instance), routers as usual; the router script points to this instance.
    Certificates page: the certificate source of this instance (each instance pulls with its own record).
-5. Repeat for site B. Federation page on HQ: both instances with last contact, lag and clock skew.
+5. Repeat for site B. Federation page on the hub: both instances with last contact, lag and clock skew.
 
-Check: create a code on site B, it appears on site A within about 30 seconds (relayed by HQ).
+Check: create a code on site B, it appears on site A within about 30 seconds (relayed by the hub).
 
 ## 7. Operation
 
@@ -180,7 +180,7 @@ the built-in default is shown. Files not available yet are retried every 5 minut
 1. On the instance that becomes the new hub (e.g. site A): Federation → **Make this instance the hub**,
    confirm with the instance name. The old hub is removed, the data key is rotated and the page lists the
    secrets the old hub knew (renew them, see 9.3).
-2. On HQ (new): create a join token. On every other instance: Federation → **Re-pair with a new hub**
+2. On the new hub: create a join token. On every other instance: Federation → **Re-pair with a new hub**
    (new hub URL, token, pin). Data stays; replication continues.
 3. If the old hub comes back, it notices that it was replaced, stops replicating and shows a warning.
    Re-pair it with the new hub as a normal instance (it keeps its data and sends what it wrote meanwhile).

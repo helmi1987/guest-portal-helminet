@@ -409,7 +409,7 @@ All login methods produce a **grant**; a code is a grant created in advance.
   maintainer): the second QR (sign-in via `https://<hotspot host>/login?dst=<portal URL>?code=`) is
   removed, it worked poorly or not at all in tests; the captive portal opens after joining. M7 hook:
   `isAllowedWhileOffline()` (true for site codes/their grants, false for normal codes) for the planned
-  "HQ unreachable → SMS only" rule; no offline logic yet.
+  "hub unreachable → SMS only" rule; no offline logic yet.
 - Brute force: rate limit per MAC and IP, global rate limit, lockout after N failures
   (configurable, e.g. 5 per 15 min per MAC), OTP 10 min / 3 tries. Trivial codes excluded.
   Route throttles (decision 2026-10-29, v0.12.2): every `throttle:` middleware has its own key prefix,
@@ -510,7 +510,7 @@ implemented, released as v0.13.0 (§14). Setup and operation: docs/federation.md
   when WAN or other instances are down. A single instance serving several sites stays supported
   (federation of one).
 - Typical topology: one instance (container) per site, connected by WireGuard as a **star**: the
-  hub instance (HQ, the first instance) is paired with every site; sites talk via the hub, which
+  hub instance (the first instance) is paired with every site; sites talk via the hub, which
   relays events. Hub down: the sites do not sync with each other (accepted). Each router resolves
   the portal host name by static DNS to its local instance; the same wildcard certificate everywhere.
 - **Multi-master**: every instance's admin UI shows and edits the federated state; writes are

@@ -20,7 +20,7 @@ class SetupWizardTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const NETWORK = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+    private const NETWORK = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
         'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_modes' => ['capsman2']];
 
     private Site $site;
@@ -87,10 +87,10 @@ class SetupWizardTest extends TestCase
         return [
             '/system resource' => [['version' => '7.24.5', 'board-name' => 'CHR']],
             '/interface bridge' => [['name' => 'bridge1', 'comment' => 'defconf']],
-            '/interface vlan' => [['name' => 'vlan30-guest', 'interface' => 'bridge1', 'vlan-id' => '30', 'comment' => $k('net', 'vlan')]],
-            '/ip address' => [['address' => '10.30.0.1/24', 'interface' => 'vlan30-guest', 'comment' => $k('net', 'gateway')]],
+            '/interface vlan' => [['name' => 'vlan-guest', 'interface' => 'bridge1', 'vlan-id' => '30', 'comment' => $k('net', 'vlan')]],
+            '/ip address' => [['address' => '10.30.0.1/24', 'interface' => 'vlan-guest', 'comment' => $k('net', 'gateway')]],
             '/ip pool' => [['name' => 'guest-pool', 'ranges' => '10.30.0.10-10.30.0.250', 'comment' => $k('net', 'pool')]],
-            '/ip dhcp-server' => [['name' => 'guest-dhcp', 'interface' => 'vlan30-guest', 'address-pool' => 'guest-pool', 'lease-time' => '30m', 'disabled' => 'false', 'comment' => $k('net', 'dhcp-server')]],
+            '/ip dhcp-server' => [['name' => 'guest-dhcp', 'interface' => 'vlan-guest', 'address-pool' => 'guest-pool', 'lease-time' => '30m', 'disabled' => 'false', 'comment' => $k('net', 'dhcp-server')]],
             '/ip dhcp-server network' => [['address' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'dns-server' => '10.30.0.1', 'comment' => $k('net', 'dhcp-network')]],
             '/interface bridge vlan' => [],
             '/radius' => [],
@@ -162,10 +162,10 @@ class SetupWizardTest extends TestCase
         $network = $this->step('network');
         $this->admin()->from($this->url($network))->post("/admin/sites/{$this->site->id}/setup", self::NETWORK + ['wizard_step' => $network])
             ->assertRedirect($this->url($network).'#wizard-step')->assertSessionHasNoErrors();
-        $this->assertSame('vlan30-guest', $this->site->fresh()->setting('setup')['interface']);
+        $this->assertSame('vlan-guest', $this->site->fresh()->setting('setup')['interface']);
 
         $page = $this->admin()->get($this->url($network))->assertOk()->getContent();
-        $this->assertStringContainsString('/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30', $page);
+        $this->assertStringContainsString('/interface vlan add name=vlan-guest interface=bridge1 vlan-id=30', $page);
         $this->assertStringContainsString('data-wizard-form="network"', $page);
         $this->assertStringNotContainsString('guest-portal:fw:in-dhcp', $page);
 

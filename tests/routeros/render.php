@@ -66,7 +66,7 @@ foreach ($wifiModes as $i => $mode) {
         'portal_address' => $portalIp,
         'portal_url' => $portalUrl,
         'setup' => [
-            'vlan_id' => 30, 'bridge' => 'bridge', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+            'vlan_id' => 30, 'bridge' => 'bridge', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
             'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi',
             'wifi_modes' => $mode === 'multi' ? Site::WIFI_MODES : [$mode],
             // Mode "local" also covers the flash folder variant (a plain directory on the CHR).

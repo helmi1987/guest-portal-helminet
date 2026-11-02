@@ -28,7 +28,7 @@ class RouterStateTest extends TestCase
 {
     use RefreshDatabase;
 
-    private const NETWORK = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan30-guest', 'subnet' => '10.30.0.0/24',
+    private const NETWORK = ['vlan_id' => 30, 'bridge' => 'bridge1', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
         'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi', 'wifi_mode' => 'capsman2'];
 
     private const PIN = 'sha256//AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=';
@@ -75,8 +75,8 @@ class RouterStateTest extends TestCase
         return [
             '/system resource' => [['version' => '7.24.5', 'board-name' => 'CHR']],
             '/interface bridge' => [['name' => 'bridge1', 'comment' => 'defconf']],
-            '/interface vlan' => [['name' => 'vlan30-guest', 'interface' => 'bridge1', 'vlan-id' => '30', 'comment' => $k('net', 'vlan')]],
-            '/ip address' => [['address' => '10.30.0.1/24', 'interface' => 'vlan30-guest', 'comment' => $k('net', 'gateway')]],
+            '/interface vlan' => [['name' => 'vlan-guest', 'interface' => 'bridge1', 'vlan-id' => '30', 'comment' => $k('net', 'vlan')]],
+            '/ip address' => [['address' => '10.30.0.1/24', 'interface' => 'vlan-guest', 'comment' => $k('net', 'gateway')]],
             // Legacy comment of scripts before the keys
             '/ip pool' => [['name' => 'guest-pool', 'ranges' => '10.30.0.10-10.30.0.250', 'comment' => 'guest-portal']],
             // Different interface than the assistant input
@@ -270,7 +270,7 @@ class RouterStateTest extends TestCase
         $this->assertSame('differs', $status('hotspot:profile'));
         $this->assertSame('present', $status('guest-portal:wifi:cfg-guest'));
         $this->assertSame('unknown', $status('guest-portal:container:veth'));
-        $this->assertStringContainsString('<code>vlan30-guest</code>', $page);
+        $this->assertStringContainsString('<code>vlan-guest</code>', $page);
 
         // Stale after max_age_minutes; "Refresh" re-queries
         $this->travel(16)->minutes();
@@ -291,7 +291,7 @@ class RouterStateTest extends TestCase
         $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
 
         $page = $this->page();
-        foreach (['vlan_id' => '30', 'interface' => 'vlan30-guest', 'bridge' => 'bridge1', 'gateway' => '10.30.0.1', 'subnet' => '10.30.0.0/24',
+        foreach (['vlan_id' => '30', 'interface' => 'vlan-guest', 'bridge' => 'bridge1', 'gateway' => '10.30.0.1', 'subnet' => '10.30.0.0/24',
             'ssid' => 'Guest-WiFi'] as $field => $value) {
             $this->assertMatchesRegularExpression('/name="'.$field.'"[^>]*value="'.preg_quote($value, '/').'"/', $page, $field);
             $this->assertStringContainsString('data-derived="'.$field.'"', $page);
@@ -367,7 +367,7 @@ class RouterStateTest extends TestCase
         $page = $this->page();
         // Own objects of router B win over assumptions of router A
         $this->assertMatchesRegularExpression('/name="bridge"[^>]*value="bridge1"/', $page);
-        $this->assertMatchesRegularExpression('/name="interface"[^>]*value="vlan30-guest"/', $page);
+        $this->assertMatchesRegularExpression('/name="interface"[^>]*value="vlan-guest"/', $page);
         $this->assertMatchesRegularExpression('/name="wifi_modes\[\]" value="capsman2" x-model="wifiModes"\s+checked/', $page);
         $this->assertStringContainsString(e(trans('portal.router_api.derived_from.own', ['router' => 'Router B'])), $page);
         // A field only router A provides comes from router A
@@ -541,7 +541,7 @@ class RouterStateTest extends TestCase
             return array_values(array_unique(array_merge(...$hits ?: [[]])));
         };
         // present = ok, also the add/else/closing lines of the add-or-update group
-        $this->assertSame(['ok'], $state('/interface vlan add name=vlan30-guest interface=bridge1 vlan-id=30'));
+        $this->assertSame(['ok'], $state('/interface vlan add name=vlan-guest interface=bridge1 vlan-id=30'));
         $this->assertSame(['update'], $state('/ip pool add name=guest-pool'));
         $this->assertSame(['update'], $state('/ip dhcp-server add name=guest-dhcp'));
         $this->assertSame(['missing'], $state('address=172.16.0.0/12'));
@@ -553,7 +553,7 @@ class RouterStateTest extends TestCase
         $this->assertSame(['ok'], $state('/user group add name=guest-portal-ro'));
         // Comment lines stay neutral; the uninstall marks the existing own VLAN as "will be removed"
         $this->assertSame([], array_filter(array_keys($lines), fn ($text) => str_starts_with(ltrim($text), '#')));
-        $this->assertSame(['remove'], $state('remove [find where name=vlan30-guest'));
+        $this->assertSame(['remove'], $state('remove [find where name=vlan-guest'));
 
         // Stale state: no colours (the commands are greyed out)
         $this->travel(16)->minutes();
@@ -575,7 +575,7 @@ class RouterStateTest extends TestCase
             '/ip hotspot walled-garden',
             'remove [find where (comment="guest-portal:walled:portal-host" || comment="guest-portal")]',
             'add dst-host=p action=allow comment="guest-portal:walled:portal-host"',
-            '/ip hotspot add name=guest-portal interface=vlan30',
+            '/ip hotspot add name=guest-portal interface=vlan-guest',
             '/ip dns static',
             'remove [find where (comment="guest-portal:dns:a" || comment="guest-portal:dns:b")]',
             'add name=a comment="guest-portal:dns:a"',
@@ -602,7 +602,7 @@ class RouterStateTest extends TestCase
             '/ip hotspot profile remove [find where name="guest-portal"]',
             '/radius remove [find where (comment="guest-portal:radius:server" || comment="guest-portal")]',
             '/ip dhcp-server remove [find where name=guest-dhcp && (comment="guest-portal:net:dhcp-server" || comment="guest-portal")]',
-            '/interface vlan remove [find where name=vlan30-guest && (comment="guest-portal:net:vlan" || comment="guest-portal")]',
+            '/interface vlan remove [find where name=vlan-guest && (comment="guest-portal:net:vlan" || comment="guest-portal")]',
             '/certificate remove [find where name="guest-portal"]',
             ':foreach gpNet in=[/ip dhcp-server network find where (comment="guest-portal:net:dhcp-network")] do={',
             '    /ip dhcp-server network set $gpNet dhcp-option=""',
@@ -636,7 +636,7 @@ class RouterStateTest extends TestCase
         $menus = ['/interface wifi datapath' => [['name' => 'dp-guest', 'bridge' => 'bridge1', 'vlan-id' => '30']],
             '/interface wifi security' => [['name' => 'sec-guest', 'comment' => '']],
             '/interface wifi configuration' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi']],
-            '/interface vlan' => [['name' => 'vlan30-guest', 'interface' => 'bridge1', 'vlan-id' => '30']],
+            '/interface vlan' => [['name' => 'vlan-guest', 'interface' => 'bridge1', 'vlan-id' => '30']],
             '/ip pool' => [['name' => 'guest-pool', 'ranges' => '10.30.0.10-10.30.0.250', 'comment' => 'my pool']],
             '/system script' => [['name' => 'guest-portal-cert']],
             // Two GUEST-like rows without comment: guarded list = foreign; two veth rows = ambiguous
@@ -667,13 +667,13 @@ class RouterStateTest extends TestCase
         $this->assertStringContainsString('gp-badge gp-badge-unmanaged', $page);
         $this->assertStringContainsString('data-adopt-commands="'.$this->nas->id.'"', $page);
         $this->assertStringContainsString(e('/interface wifi datapath set [find where name="dp-guest" && !comment] comment="guest-portal:wifi:dp-guest"'), $page);
-        $this->assertStringContainsString(e('/interface vlan set [find where name="vlan30-guest" && !comment] comment="guest-portal:net:vlan"'), $page);
+        $this->assertStringContainsString(e('/interface vlan set [find where name="vlan-guest" && !comment] comment="guest-portal:net:vlan"'), $page);
         $this->assertStringContainsString(e(__('portal.router_api.adopt_ambiguous')), $page);
         // The add lines of the blocks are marked (the add fails until adopted), with the legend entry
         $lines = $this->lineStates($page);
         $hit = fn (string $needle) => array_values(array_unique(array_merge(...array_values(array_filter($lines, fn ($t) => str_contains($t, $needle), ARRAY_FILTER_USE_KEY)) ?: [[]])));
         $this->assertSame(['unmanaged'], $hit('/interface wifi datapath add name=dp-guest'));
-        $this->assertSame(['unmanaged'], $hit('/interface vlan add name=vlan30-guest'));
+        $this->assertSame(['unmanaged'], $hit('/interface vlan add name=vlan-guest'));
         $this->assertStringContainsString('<span class="gp-badge gp-badge-unmanaged">'.e(__('portal.setup.script.line_status.unmanaged')).'</span>', $page);
         // The scripts themselves never adopt: no set on a row with an empty comment
         $commands = $site->driver()->setupCommands($site, []);
