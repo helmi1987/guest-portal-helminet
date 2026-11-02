@@ -12,7 +12,7 @@ checks the router by its **source IP**, so that IP must arrive unchanged.
 | Mode | Portal IP | Notes |
 |---|---|---|
 | **A: own LAN IP (macvlan/ipvlan, recommended)** | dedicated LAN IP, e.g. `192.168.1.50` | No port conflict with services on the host (e.g. a NAS web UI on 443). Source IPs are preserved. Disconnects leave with the container IP. |
-| B: bridge + published ports | the host IP | Ports 443/8443 must be free on the host. Docker keeps the source IP for published ports (iptables DNAT, **to verify** on your host). Disconnects leave with the server IP (masquerade). |
+| B: bridge + published ports | the host IP | Ports 443/8443 must be free on the host. Requests from other machines keep their source IP on published ports (default bridge network, iptables DNAT; requests from the Docker host itself arrive with the address of the bridge gateway). Disconnects leave with the server IP (masquerade). |
 
 In both modes the IP the routers use in `/radius address=...` and the IP the portal sends
 Disconnects from must be the same one (the setup assistant / router script uses it).
@@ -50,7 +50,7 @@ services:
     # --- Mode B: bridge + published ports (remove "networks:" above and below) ---
     # ports:
     #   - "443:443"
-    #   - "8443:8443"
+    #   - "10.0.0.5:8443:8443"                # admin UI on an admin/VPN address of the host only
     #   - "1812:1812/udp"
     #   - "1813:1813/udp"
     volumes:
@@ -60,6 +60,7 @@ services:
       PORTAL_HOSTNAME: portal.example.com
       TZ: Europe/Zurich                       # display time zone (admin UI, notifications, backup names); data stays UTC
       # TRUSTED_PROXIES: 192.168.1.10       # only if the admin UI is published through a reverse proxy
+                                              # (affects the admin UI's client IP only)
 
 networks:
   lan:
@@ -73,6 +74,13 @@ check with `docker network ls`). Elsewhere create it once:
 ```bash
 docker network create -d macvlan --subnet=192.168.1.0/24 --gateway=192.168.1.1 -o parent=eth0 br0
 ```
+
+Mode B: do not publish the admin port 8443 on all host interfaces. Bind it to an admin or VPN
+address of the host (`10.0.0.5:8443:8443`), or to `127.0.0.1:8443:8443` when only a reverse proxy
+on the host publishes the admin UI.
+
+`TRUSTED_PROXIES` (reverse proxy in front of the admin UI) only changes which client IP the admin
+UI sees; the routers' source-IP check (router certificate and `login.html` downloads) stays on.
 
 Then `docker compose up -d` (Unraid: "Compose Up"). First start fills the data folder (`.env` with
 generated secrets, SQLite database, self-signed certificate).
@@ -119,6 +127,10 @@ custom CSS of the guest pages: admin UI → Settings → Appearance, see [brandi
 ## 8. Update
 
 `docker compose pull && docker compose up -d` in the stack folder (Unraid: "Update Stack"). Data stays in `/data`.
+
+Logs: `docker logs guest-portal`. All services log with UTC timestamps (`TZ` only sets the time
+zone shown in the admin UI, notifications and backup names). Successful scheduler runs are not
+logged, failed scheduled tasks are.
 
 ## 9. Backups
 
