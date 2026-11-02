@@ -9,6 +9,7 @@ use App\Federation\EventCodec;
 use App\Federation\Outbox;
 use App\Federation\Pairing;
 use App\Federation\Topology;
+use App\Models\AuditLog;
 use App\Models\Grant;
 use App\Models\Instance;
 use App\Models\NasClient;
@@ -248,6 +249,117 @@ class AuthorityTest extends TestCase
                 'offline_sms_only' => '1'])->assertSessionHasErrors('hub');
             $this->assertSame($hubId, app(Topology::class)->hubId());
         });
+    }
+
+    public function test_only_the_hub_creates_or_promotes_admins(): void
+    {
+        $idB = $this->idOf('b');
+        // b creates an admin and a manager and promotes an existing manager; the grant after them still applies.
+        $manager = $this->on('hub', fn () => User::factory()->create(['email' => 'manager@example.com']));
+        $this->syncRound();
+        [$admin, $other, $grant] = $this->on('b', fn () => [
+            User::factory()->admin()->create(['email' => 'rogue@example.com']),
+            User::factory()->create(['email' => 'helper@example.com']),
+            Grant::create(['type' => GrantType::Code, 'code' => '444444', 'duration_s' => 60, 'expiry_mode' => ExpiryMode::FirstLogin]),
+        ]);
+        $this->on('b', fn () => User::find($manager->id)->update(['role' => 'admin']));
+        $this->syncRound();
+
+        foreach (['hub', 'a'] as $name) {
+            $this->assertNull($this->rowOn($name, 'users', $admin->id), $name);
+            $this->assertSame('manager', $this->rowOn($name, 'users', $manager->id)['role'], $name);
+            $this->assertNotNull($this->rowOn($name, 'users', $other->id), $name);
+            $this->assertNotNull($this->rowOn($name, 'grants', $grant->id), $name);
+            $refused = $this->on($name, fn () => AuditLog::where('action', 'federation.event_refused')->where('subject_id', $admin->id)->sole());
+            $this->assertSame($idB, $refused->data['origin']);
+            $this->assertSame('users', $refused->data['table']);
+        }
+        $this->assertSame(0, $this->on('hub', fn () => DB::table('peer_cursors')->whereNotNull('paused_at')->count()));
+
+        // The same from the hub is applied everywhere.
+        $hubAdmin = $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'second-admin@example.com']));
+        $this->on('hub', fn () => User::find($manager->id)->update(['role' => 'admin']));
+        $this->syncRound();
+        foreach (['a', 'b'] as $name) {
+            $this->assertSame('admin', $this->rowOn($name, 'users', $hubAdmin->id)['role'], $name);
+            $this->assertSame('admin', $this->rowOn($name, 'users', $manager->id)['role'], $name);
+        }
+        // Other changes of an existing admin by a site still replicate.
+        $this->on('b', fn () => User::find($hubAdmin->id)->update(['name' => 'Renamed']));
+        $this->syncRound();
+        $this->assertSame('Renamed', $this->rowOn('a', 'users', $hubAdmin->id)['name']);
+    }
+
+    public function test_a_deleted_admin_is_restored_only_by_the_hub(): void
+    {
+        $admin = $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'old-admin@example.com']));
+        $this->on('hub', fn () => User::factory()->admin()->create());
+        $this->syncRound();
+        $this->on('hub', fn () => User::find($admin->id)->delete());
+        $this->syncRound();
+        $this->assertNotNull($this->rowOn('a', 'users', $admin->id)['deleted_at']);
+
+        $this->forgeOnB('users', $admin->id, ['deleted_at' => null]);
+        $this->assertNotNull($this->rowOn('hub', 'users', $admin->id)['deleted_at']);
+        $this->assertNotNull($this->rowOn('a', 'users', $admin->id)['deleted_at']);
+    }
+
+    public function test_security_settings_change_only_by_the_hub(): void
+    {
+        $this->on('hub', fn () => Setting::put('require_2fa', true));
+        $this->syncRound();
+        $this->assertTrue($this->on('a', fn () => Setting::get('require_2fa')));
+
+        $this->forgeOnB('settings', Setting::idFor('require_2fa'), ['value' => json_encode(false)]);
+        $this->on('b', function () {
+            Setting::put('oidc', ['enabled' => true, 'issuer' => 'https://idp.attacker.example.com']);
+            Setting::put('sms_duration_s', 7200);
+        });
+        $this->syncRound();
+        foreach (['hub', 'a'] as $name) {
+            $this->assertTrue($this->on($name, fn () => Setting::get('require_2fa')), $name);
+            $this->assertNull($this->on($name, fn () => Setting::get('oidc')), $name);
+            // Settings outside the list keep replicating from every instance.
+            $this->assertSame(7200, $this->on($name, fn () => Setting::get('sms_duration_s')), $name);
+            $this->assertSame(2, $this->on($name, fn () => AuditLog::where('action', 'federation.event_refused')->count()), $name);
+        }
+
+        // The hub's change is applied everywhere, b included.
+        $this->on('hub', fn () => Setting::put('oidc', ['enabled' => true, 'issuer' => 'https://idp.example.com']));
+        $this->syncRound();
+        foreach (['a', 'b'] as $name) {
+            $this->assertSame('https://idp.example.com', $this->on($name, fn () => Setting::get('oidc')['issuer']), $name);
+        }
+    }
+
+    public function test_hotspot_hosts_of_a_site_change_only_by_the_hub_or_its_home_instance(): void
+    {
+        $idA = $this->idOf('a');
+        $site = $this->on('a', fn () => Site::create(['slug' => 'sa', 'name' => 'Site A', 'driver' => 'mikrotik_ros7',
+            'home_instance_id' => $idA, 'settings' => ['hotspot_hosts' => ['hotspot-a.example.com']]]));
+        $this->syncRound();
+        $this->assertStringContainsString('hotspot-a.example.com', $this->rowOn('hub', 'sites', $site->id)['settings']);
+
+        // A rename by b (neither hub nor home) applies; pointing the hand-off to its own host is dropped.
+        $this->on('b', fn () => Site::find($site->id)->update(['name' => 'Renamed by b']));
+        $this->syncRound();
+        $this->assertSame('Renamed by b', $this->rowOn('a', 'sites', $site->id)['name']);
+        $this->on('b', fn () => Site::find($site->id)->update(['settings' => ['hotspot_hosts' => ['attacker.example.com']]]));
+        $this->syncRound();
+        foreach (['hub', 'a'] as $name) {
+            $this->assertSame(['hotspot-a.example.com'], $this->on($name, fn () => Site::find($site->id)->setting('hotspot_hosts')), $name);
+            $this->assertTrue($this->on($name, fn () => AuditLog::where('action', 'federation.event_refused')->where('subject_id', $site->id)->exists()));
+        }
+
+        // The home instance and the hub may.
+        $this->on('a', fn () => Site::find($site->id)->update(['settings' => ['hotspot_hosts' => ['login-a.example.com']]]));
+        $this->syncRound();
+        $this->assertSame(['login-a.example.com'], $this->on('hub', fn () => Site::find($site->id)->setting('hotspot_hosts')));
+        $this->on('hub', fn () => Site::find($site->id)->update(['settings' => ['hotspot_hosts' => ['hub-set.example.com'],
+            'portal_url' => 'https://portal.example.com']]));
+        $this->syncRound();
+        $this->assertSame('https://portal.example.com', $this->on('a', fn () => Site::find($site->id)->setting('portal_url')));
+        $this->assertSame(['hub-set.example.com'], $this->on('b', fn () => Site::find($site->id)->setting('hotspot_hosts')));
     }
 
     public function test_a_stuck_origin_does_not_starve_the_push_of_other_origins(): void

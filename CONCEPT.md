@@ -750,6 +750,13 @@ implemented, released as v0.13.0 (§14). Setup and operation: docs/federation.md
   hub (the UI allows it only there). Disallowed fields keep the local value, a disallowed registration or
   hub change is dropped (logged). An event with a missing or invalid signature is dropped and the peer
   that sent it is paused (not the origin, so a peer cannot block another origin).
+- Security authority (decision 2026-11-02): a remote event that creates, promotes or restores an admin,
+  changes a setting of `Federation::SECURITY_SETTINGS` (2FA policy, OIDC, admin URL, Telegram owner,
+  offline rule, hub) or the hotspot host names/portal URL of a site is applied only from the hub (site
+  values also from the site's home instance); otherwise it is dropped, the rest of the batch continues,
+  and it is logged and audited (`federation.event_refused`, origin and record). Such changes made on
+  another instance stay local to it, channels stay multi-master (§10.1, every instance sends with them),
+  and re-pairing with a new hub takes over its security settings like the hub setting.
 - Known limits (parts J, K): a compromised direct peer can claim own events of this instance beyond its
   sequence and so start the restore resync, which blocks replicated writes here until it delivers validly
   signed events or the admin lifts the block (`portal:federation:repair skip-resync --force`); it cannot

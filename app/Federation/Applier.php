@@ -2,6 +2,7 @@
 
 namespace App\Federation;
 
+use App\Enums\Role;
 use App\Models\AuditLog;
 use App\Models\Setting;
 use App\Support\DeterministicId;
@@ -11,6 +12,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use RuntimeException;
 use Throwable;
 
@@ -249,8 +251,9 @@ class Applier
 
     /**
      * Membership state from the hub at re-pairing (CONCEPT.md §10.2), trusted because an admin here
-     * confirmed the hub by its certificate pin: instance rows and the hub setting, raw, last writer
-     * wins, without the authority rules (which dropped the new hub's changes before).
+     * confirmed the hub by its certificate pin: instance rows, the hub setting and the security
+     * settings, raw, last writer wins, without the authority rules (which dropped the new hub's
+     * changes before).
      *
      * @param  list<array<string, mixed>>  $rows
      */
@@ -355,6 +358,7 @@ class Applier
             }
         }
         $before = null;
+        $incomingWins = true;
         if ($local === null) {
             if (! $snapshot && $this->beyondHorizon($event['version'])) {
                 return 'dropped'; // purged here: no resurrection
@@ -371,6 +375,12 @@ class Applier
             if ($table === 'grants') {
                 $row = self::mergeGrant($local, $incoming, $incomingWins ? array_merge($local, $incoming) : $local);
             }
+        }
+
+        if ($incomingWins && ! $this->own && ($reason = $this->securityViolation($table, $event['origin'], $row, $local)) !== null) {
+            $this->refused($event, $reason);
+
+            return 'dropped';
         }
 
         if (! $this->parentsExist($table, $row)) {
@@ -431,6 +441,72 @@ class Applier
         }
 
         return $incoming;
+    }
+
+    /**
+     * Security authority (CONCEPT.md §10.6, decision 2026-11-02): only the hub creates or promotes
+     * admins and changes the settings that control login or trust (Federation::SECURITY_SETTINGS);
+     * hotspot host names and portal URL of a site change only by the hub or the site's home instance.
+     * Without a configured hub (single instance, tests) every origin may, like the hub setting rule.
+     *
+     * @param  array<string, mixed>  $row  resulting row state
+     * @param  array<string, mixed>|null  $local  current row here
+     * @return string|null reason to drop the event, null: allowed
+     */
+    private function securityViolation(string $table, string $origin, array $row, ?array $local): ?string
+    {
+        if (! in_array($table, ['users', 'settings', 'sites'], true)) {
+            return null;
+        }
+        $hub = Setting::get(Topology::HUB_SETTING);
+        if (! is_string($hub) || $hub === '' || $origin === $hub) {
+            return null;
+        }
+
+        if ($table === 'users') {
+            $activeAdmin = fn (?array $r) => $r !== null && ($r['role'] ?? null) === Role::Admin->value && ($r['deleted_at'] ?? null) === null;
+
+            return $activeAdmin($row) && ! $activeAdmin($local) ? 'admin created, promoted or restored by a non-hub instance' : null;
+        }
+
+        if ($table === 'settings') {
+            $key = (string) ($row['key'] ?? '');
+            // The hub setting has its own rule (authorized(), takeover).
+            if ($key === Topology::HUB_SETTING || ! in_array($key, Federation::SECURITY_SETTINGS, true)) {
+                return null;
+            }
+            $same = $local !== null && ($local['value'] ?? null) === ($row['value'] ?? null)
+                && ($local['deleted_at'] ?? null) === ($row['deleted_at'] ?? null);
+
+            return $same ? null : "security setting $key changed by a non-hub instance";
+        }
+
+        $siteSettings = fn (?array $r) => array_intersect_key((array) json_decode((string) ($r['settings'] ?? ''), true),
+            array_flip(Federation::SECURITY_SITE_SETTINGS));
+        if ($siteSettings($row) == $siteSettings($local)) {
+            return null;
+        }
+        // The home instance configures its own site (setup wizard, site page); a new site may name its creator.
+        $home = $local !== null ? ($local['home_instance_id'] ?? null) : ($row['home_instance_id'] ?? null);
+
+        return $home === $origin ? null : 'hotspot host names or portal URL of a site changed by an instance that is neither hub nor home instance';
+    }
+
+    /** A whole event refused by the security authority: logged and audited, the batch continues. */
+    private function refused(array $event, string $reason): void
+    {
+        $this->rejected($event['table'], $event['record_id'], $event['origin'], $reason);
+        if (Resync::required()) {
+            return; // no replicated write while the restore resync runs (the log line above stays)
+        }
+        $id = DeterministicId::for("federation.refused:{$event['origin']}:{$event['seq']}");
+        if (AuditLog::withTrashed()->whereKey($id)->exists()) {
+            return;
+        }
+        (new AuditLog(['actor' => 'federation', 'action' => 'federation.event_refused',
+            'subject_type' => Str::singular($event['table']), 'subject_id' => $event['record_id'],
+            'data' => ['origin' => $event['origin'], 'seq' => $event['seq'], 'table' => $event['table'], 'reason' => $reason]]))
+            ->forceFill(['id' => $id])->save();
     }
 
     private function rejected(string $table, string $id, string $origin, string $reason): void
