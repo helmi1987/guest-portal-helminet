@@ -599,7 +599,7 @@ implemented, released as v0.13.0 (§14). Setup and operation: docs/federation.md
 - **Change log** (implemented part A): `federation_events` (origin, seq, table, record_id, version,
   payload = full row, proto, sig), unique (origin, seq). Every write of a replicated row records an event
   in the same DB transaction (model events saved = create/update/restore, deleted = tombstone; a force
-  delete is a local purge without event; a save without changes writes nothing). Query-builder writes of replicated tables are not allowed
+  delete is a local purge without event; a save without changes writes nothing; decision 2026-11-02: neither does a save that changes only local columns (`Federation::LOCAL_COLUMNS`), so no new version can win last-write-wins against a remote edit not yet received; its `updated_at` still moves locally). Query-builder writes of replicated tables are not allowed
   without recording the row (`Outbox::record()`); a test guard fails on such writes. Foreign events are
   stored as well (relay, catch-up). `peer_cursors` (origin, last_seq, pause state); ack state per peer
   follows with the transport.
