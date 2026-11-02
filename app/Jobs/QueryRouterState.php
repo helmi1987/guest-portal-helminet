@@ -4,7 +4,9 @@ namespace App\Jobs;
 
 use App\Models\NasClient;
 use App\Nas\RouterOs\RouterStateQuery;
-use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Contracts\Bus\Dispatcher;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Cache;
@@ -12,9 +14,12 @@ use Illuminate\Support\Facades\Cache;
 /**
  * State query of one router for "Refresh" of the setup assistant (CONCEPT.md §9). Runs on the
  * low-priority queue "router-state" (the worker takes jobs of "default" first), one job per router so
- * other jobs wait at most one router query. The marker shown on the page is removed when it ends.
+ * other jobs wait at most one router query. Unique until processed: while the query of a router is queued
+ * or running, a further "Refresh" adds no job (the running one delivers the state). The "queued" marker
+ * shown on the page is set only together with a new job and removed when that job ends, so it never
+ * outlives the last pending job.
  */
-class QueryRouterState implements ShouldBeUniqueUntilProcessing, ShouldQueue
+class QueryRouterState implements ShouldBeUnique, ShouldQueue
 {
     use Queueable;
 
@@ -54,11 +59,27 @@ class QueryRouterState implements ShouldBeUniqueUntilProcessing, ShouldQueue
         return is_string($at) ? $at : null;
     }
 
-    /** Mark the router as queued (keeps an existing marker) and queue its query. */
+    /**
+     * Queue the query of the router and mark it as queued; nothing while a query of it is queued or running
+     * (unique lock, released by the queue worker when the job has been processed or has failed).
+     */
     public static function request(NasClient $nas): void
     {
-        Cache::add(self::markerKey((string) $nas->id), now()->toIso8601String(), self::MARKER_TTL);
-        self::dispatch((string) $nas->id);
+        $job = new self((string) $nas->id);
+        $lock = new UniqueLock(Cache::store());
+        if (! $lock->acquire($job)) {
+            return;
+        }
+        Cache::put(self::markerKey($job->nasId), now()->toIso8601String(), self::MARKER_TTL);
+        try {
+            // Lock taken above: dispatch without PendingDispatch, which would try to take it again
+            app(Dispatcher::class)->dispatch($job);
+        } catch (\Throwable $e) {
+            Cache::forget(self::markerKey($job->nasId));
+            $lock->release($job);
+
+            throw $e;
+        }
     }
 
     public function handle(RouterStateQuery $query): void
