@@ -38,20 +38,22 @@
     @if ($group === 'wifi')
         <label class="label">{{ __('portal.setup.network.ssid') }}{{ $mark('ssid') }}
             <input name="ssid" value="{{ $net('ssid') }}" placeholder="Guest-WiFi" required class="field"></label>
-        {{-- Never rendered back in clear: empty keeps the stored password, the checkbox removes it --}}
-        <label class="label md:col-span-3">{{ __('portal.setup.network.wifi_password') }}
-            <input name="wifi_password" type="password" autocomplete="new-password" minlength="8" maxlength="63" class="field"
-                @if ($wifiPasswordSet) placeholder="••••••••" @endif>
-            <span class="text-xs text-slate-500">{{ $wifiPasswordSet ? __('portal.setup.network.wifi_password_stored').' ' : '' }}{{ __('portal.setup.network.wifi_password_help') }}</span>
+        {{-- Never rendered back in clear: empty keeps the stored password, the checkbox removes it. Every control has
+             its own label (a label around all of them gave the checkboxes no name of their own). --}}
+        <div class="label md:col-span-3" data-wifi-password-group>
+            <label class="flex flex-col gap-1">{{ __('portal.setup.network.wifi_password') }}
+                <input name="wifi_password" type="password" autocomplete="new-password" minlength="8" maxlength="63" class="field" aria-describedby="wifi-password-help"
+                    @if ($wifiPasswordSet) placeholder="••••••••" @endif></label>
+            <span id="wifi-password-help" class="text-xs text-slate-500">{{ $wifiPasswordSet ? __('portal.setup.network.wifi_password_stored').' ' : '' }}{{ __('portal.setup.network.wifi_password_help') }}</span>
             @if ($wifiPasswordSet)
-                <span class="text-xs"><input type="checkbox" name="wifi_password_clear" value="1"> {{ __('portal.setup.network.wifi_password_clear') }}</span>
+                <label class="text-xs"><input type="checkbox" name="wifi_password_clear" value="1"> {{ __('portal.setup.network.wifi_password_clear') }}</label>
             @endif
-            <span class="text-xs"><input type="checkbox" name="wifi_password_shared" value="1" @checked($wifiPasswordShared)> {{ __('portal.setup.network.wifi_password_shared') }}</span>
-            <span class="text-xs text-slate-500">{{ __('portal.setup.network.wifi_password_shared_help') }}</span>
+            <label class="text-xs"><input type="checkbox" name="wifi_password_shared" value="1" aria-describedby="wifi-password-shared-help" @checked($wifiPasswordShared)> {{ __('portal.setup.network.wifi_password_shared') }}</label>
+            <span id="wifi-password-shared-help" class="text-xs text-slate-500">{{ __('portal.setup.network.wifi_password_shared_help') }}</span>
             @if ($wifiPasswordUnavailable)
                 <span class="text-xs text-amber-800">{{ __('portal.setup.network.wifi_password_unavailable') }}</span>
             @endif
-        </label>
+        </div>
         @include('admin.sites.partials.wifi-modes', ['selectedModes' => $selectedModes])
     @else
         <input type="hidden" name="ssid" value="{{ $net('ssid') }}">
