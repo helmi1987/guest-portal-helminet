@@ -35,9 +35,9 @@ use the global branding. The admin UI always uses the global branding.
 
 ### Built-in default
 
-Without an upload the portal shows a built-in logo (shield with Wi-Fi arcs, inline SVG in
+Without an upload the portal shows a built-in logo (rounded tile with knocked-out Wi-Fi symbol, inline SVG in
 `currentColor`) that follows the accent colour (`--gp-accent`), and the favicons
-`/favicon.svg`, `/favicon.png` (32 px) and `/favicon.ico`. The settings page says "Default logo in use".
+`/favicon.svg`, `/favicon.png` (32 px) and `/favicon.ico` (16/32/48 px; dark tile `#0f172a`, white symbol). The settings page says "Default logo in use".
 
 - Override it: upload a logo (globally or per site).
 - Hide it (or any logo): custom CSS `.gp-logo { display: none; }`.
