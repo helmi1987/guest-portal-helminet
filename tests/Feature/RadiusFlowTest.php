@@ -243,7 +243,7 @@ class RadiusFlowTest extends TestCase
         ]));
 
         return $this->onZone('guest')->post('/portal/code', [
-            'first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'code' => $code,
+            'first_name' => 'Test', 'last_name' => 'Guest', 'email' => 'guest@example.com', 'terms' => '1', 'code' => $code,
             'terms_version' => TermsVersion::current(app()->getLocale())?->id,
         ]);
     }

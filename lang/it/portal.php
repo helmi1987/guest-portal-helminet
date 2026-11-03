@@ -21,7 +21,7 @@ return [
         'intro' => 'Accedi qui per navigare in Internet.',
         'intros' => [
             'chooser' => 'Scegli come vuoi accedere.',
-            'code' => 'Inserisci il tuo nome e il codice di accesso a 6 cifre.',
+            'code' => 'Inserisci il tuo nome, il tuo indirizzo e-mail e il codice di accesso a 6 cifre.',
             'account' => 'Accedi con il nome utente e la password del tuo account utente (p. es. il tuo account aziendale). Nome e indirizzo e-mail vengono ripresi da lì.',
             'sms' => 'Inserisci il tuo nome e il tuo numero di cellulare. Ti invieremo un codice via SMS.',
             'approval' => 'Inserisci il tuo nome. All\'host verrà chiesto di approvare il tuo accesso.',
@@ -44,6 +44,7 @@ return [
         'social_name_intro' => ':provider non ha trasmesso il tuo nome completo. Completalo.',
         'first_name' => 'Nome',
         'last_name' => 'Cognome',
+        'email' => 'Indirizzo e-mail',
         'code' => 'Codice di accesso',
         'terms' => 'Ho letto e accetto le condizioni d\'uso del Wi-Fi ospiti.',
         'terms_show' => 'Condizioni d\'uso',
@@ -141,7 +142,7 @@ return [
             La rete Wi-Fi per ospiti è una rete accessibile al pubblico, nella quale terzi possono intercettare il traffico dati. Cripti le Sue connessioni (ad esempio con HTTPS o una VPN). Il gestore non risponde di danni, perdite di dati o costi derivanti dall'uso, salvo quanto previsto dal diritto imperativo.
 
             5. Dati
-            Per il funzionamento, la prevenzione degli abusi e l'adempimento degli obblighi di legge, il portale memorizza nome e cognome, l'indirizzo del dispositivo (MAC), l'indirizzo IP, l'ora e la durata dell'accesso, il volume di dati, la versione accettata delle presenti condizioni e, per l'accesso tramite SMS, il numero di telefono. Per l'accesso con l'account di un fornitore esterno vengono memorizzati anche il fornitore, l'identificativo dell'account e l'indirizzo e-mail. I dati sono conservati per il periodo stabilito dal gestore (di norma un anno) e vengono trasmessi solo se la legge lo richiede.
+            Per il funzionamento, la prevenzione degli abusi e l'adempimento degli obblighi di legge, il portale memorizza nome e cognome, l'indirizzo del dispositivo (MAC), l'indirizzo IP, l'ora e la durata dell'accesso, il volume di dati, la versione accettata delle presenti condizioni, per l'accesso con codice di accesso l'indirizzo e-mail e, per l'accesso tramite SMS, il numero di telefono. Per l'accesso con l'account di un fornitore esterno vengono memorizzati anche il fornitore, l'identificativo dell'account e l'indirizzo e-mail. I dati sono conservati per il periodo stabilito dal gestore (di norma un anno) e vengono trasmessi solo se la legge lo richiede.
 
             6. Fine e blocco dell'accesso
             Il gestore può terminare, bloccare o limitare l'accesso in qualsiasi momento e senza indicarne i motivi, in particolare in caso di abuso.
@@ -180,7 +181,7 @@ return [
         'groups' => [
             'general' => 'Generale',
             'methods' => 'Modalità di accesso',
-            'code' => 'Codice di accesso e nome',
+            'code' => 'Codice di accesso, nome e indirizzo e-mail',
             'account' => 'Account utente',
             'sms' => 'SMS',
             'approval' => 'Approvazione dell\'ospitante',
@@ -252,6 +253,7 @@ return [
             'connect' => 'Pulsante «Connetti»',
             'first_name' => 'Campo nome',
             'last_name' => 'Campo cognome',
+            'email' => 'Campo indirizzo e-mail',
             'phone' => 'Campo numero di cellulare',
             'otp' => 'Campo codice SMS',
             'sms_request' => 'Pulsante «Invia codice SMS»',
@@ -764,7 +766,7 @@ return [
             'step_wifi' => 'Connettiti al Wi-Fi',
             'per_device' => 'Accesso per dispositivo: :duration',
             'valid_until' => 'codice valido fino al :date',
-            'text' => 'Scansiona il codice QR per collegarti al Wi-Fi ospiti. La pagina di accesso si apre; altrimenti apri un sito web qualsiasi. Inserisci il tuo nome, accetta le condizioni d\'uso e il codice indicato qui.',
+            'text' => 'Scansiona il codice QR per collegarti al Wi-Fi ospiti. La pagina di accesso si apre; altrimenti apri un sito web qualsiasi. Inserisci il tuo nome e il tuo indirizzo e-mail, accetta le condizioni d\'uso e il codice indicato qui.',
         ],
     ],
     'guests' => [

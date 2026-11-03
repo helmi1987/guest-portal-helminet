@@ -43,7 +43,7 @@ class GuestPortalTest extends TestCase
         // A new version published meanwhile must be accepted first.
         $this->onZone('admin')->actingAs($admin)->post('/admin/terms/de', ['body' => 'Neue Regel.']);
         $this->submit($code, $v1->id)->assertSessionHasErrors('terms');
-        $this->onZone('guest')->post('/portal/code', ['first_name' => 'A', 'last_name' => '', 'terms' => '1', 'code' => $code])
+        $this->onZone('guest')->post('/portal/code', ['first_name' => 'A', 'last_name' => '', 'email' => 'a@example.com', 'terms' => '1', 'code' => $code])
             ->assertSessionHasErrors('last_name');
 
         $v2 = TermsVersion::latestFor('de');
@@ -105,7 +105,8 @@ class GuestPortalTest extends TestCase
     private function submit(string $code, ?string $termsVersion)
     {
         return $this->onZone('guest')->withHeader('Accept-Language', 'de')->post('/portal/code', [
-            'first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'code' => $code, 'terms_version' => $termsVersion,
+            'first_name' => 'Test', 'last_name' => 'Guest', 'email' => 'guest@example.com', 'terms' => '1', 'code' => $code,
+            'terms_version' => $termsVersion,
         ]);
     }
 }

@@ -274,6 +274,11 @@ UniFi: see [docs/unifi-feasibility.md](docs/unifi-feasibility.md) (study 2026-11
   method page has its own form and links back to the chooser; the access-ended and router-failed notices
   appear on the first page only. None available: error page. The server refuses a disabled method (403).
 - Required for all methods: first name, last name, acceptance of current terms version.
+  Decision 2026-11-03 (v0.24.1, email on the code login): the code page (normal codes and the site code) also
+  requires an email address (`email:rfc`, max. 191 = column length; no DNS check, the guest has no internet yet),
+  trimmed, lower-cased and stored in `guests.email`; the guest list shows it like the social login email (masked
+  for managers); the data paragraph of the default terms names it. SMS and approval stay name only: the operator
+  asked for the code login only.
   Decision 2026-11-03 (v0.22.0, default terms): every language has a formal default text in the lang
   files (`portal.terms.default`, neutral "operator of this guest Wi-Fi", 8 paragraphs incl. stored data).
   While nothing at all is published, guests see it marked "default text" and accept it with version
@@ -295,7 +300,7 @@ UniFi: see [docs/unifi-feasibility.md](docs/unifi-feasibility.md) (study 2026-11
 ### 7.2 Sequences
 
 **A. Code (6 digits, admin/manager-issued)**
-1. Guest enters name, accepts terms (current version of the guest's locale, fallback default locale;
+1. Guest enters name and email address, accepts terms (current version of the guest's locale, fallback default locale;
    the submitted version must still be current), enters code. The acceptance records guest, terms
    version, grant, site, MAC and time. Without any published terms the default text of the lang files
    is shown and accepted (version null, §7.1).
@@ -919,7 +924,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json); local not replicated: wifi_password_local (`encrypted`, APP_KEY) |
 | `nas_clients` R | id (ULID), legacy_id, site_id, name, nas_ip (unique per serving instance), nas_identifier, radius_secret (`federated`), coa_port, cert_token (`federated`); local status not replicated: last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at, router_state, router_state_at, router_state_error; local router API access not replicated: api_host, api_type, api_port, api_user/api_password (`LocalEncrypted`, APP_KEY), api_pin |
 | `certificate_sources` R | id (from instance + target), instance_id, target (portal/router), type, url, name, ca_pem, api_key (`federated`) |
-| `guests` R | id, first_name, last_name, phone_e164 (nullable), locale, social_provider, social_subject, email (nullable; social login, v0.22.0) |
+| `guests` R | id, first_name, last_name, phone_e164 (nullable), locale, social_provider, social_subject, email (nullable; social login, v0.22.0; code login, v0.24.1) |
 | `grants` R | id, type (code/sms/approval/site_code/social/account), site_code_id, code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
 | `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |
 | `grant_site` R | grant_id, site_id (none = all sites) |

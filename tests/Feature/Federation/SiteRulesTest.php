@@ -196,7 +196,7 @@ class SiteRulesTest extends TestCase
             'link-login-only' => 'https://hotspot.example.com/login']))->assertOk()->assertSee(__('portal.guest.limited_mode'))
             ->assertDontSee(__('portal.guest.approval_request'));
         $submit = fn (string $c) => $this->onZone('guest')->post('/portal/code', ['first_name' => 'Lia', 'last_name' => 'Limited',
-            'terms' => '1', 'code' => $c, 'terms_version' => $terms->id]);
+            'email' => 'lia@example.com', 'terms' => '1', 'code' => $c, 'terms_version' => $terms->id]);
 
         $submit($code->code)->assertSessionHasErrors(['code' => __('portal.guest.errors.limited_mode')]);
         $this->assertNull($code->fresh()->first_login_at);

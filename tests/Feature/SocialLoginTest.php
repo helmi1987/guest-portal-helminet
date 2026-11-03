@@ -99,7 +99,7 @@ class SocialLoginTest extends TestCase
         $this->enter()->assertOk()->assertSee('gp-step-portal-social', false);
 
         $form = ['first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'terms_version' => $this->terms->id];
-        $this->guest()->post('/portal/code', $form + ['code' => '123456'])->assertForbidden()
+        $this->guest()->post('/portal/code', $form + ['email' => 'guest@example.com', 'code' => '123456'])->assertForbidden()
             ->assertSee(__('portal.guest.error_pages.method_disabled.title'));
         // SMS and approval are switched on but lack an SMS provider / notification channel
         $this->guest()->post('/portal/sms', $form + ['phone' => '+41790000000'])->assertForbidden();

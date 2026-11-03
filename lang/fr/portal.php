@@ -21,7 +21,7 @@ return [
         'intro' => 'Connectez-vous ici pour accéder à Internet.',
         'intros' => [
             'chooser' => 'Choisissez comment vous connecter.',
-            'code' => 'Saisissez votre nom et le code d\'accès à 6 chiffres.',
+            'code' => 'Saisissez votre nom, votre adresse e-mail et le code d\'accès à 6 chiffres.',
             'account' => 'Connectez-vous avec le nom d\'utilisateur et le mot de passe de votre compte utilisateur (p. ex. votre compte d\'entreprise). Votre nom et votre adresse e-mail en sont repris.',
             'sms' => 'Saisissez votre nom et votre numéro de mobile. Nous vous enverrons un code par SMS.',
             'approval' => 'Saisissez votre nom. Votre hôte sera invité à approuver votre accès.',
@@ -44,6 +44,7 @@ return [
         'social_name_intro' => ':provider n\'a pas transmis votre nom complet. Veuillez le compléter.',
         'first_name' => 'Prénom',
         'last_name' => 'Nom',
+        'email' => 'Adresse e-mail',
         'code' => 'Code d\'accès',
         'terms' => 'J\'ai lu et j\'accepte les conditions d\'utilisation du Wi-Fi invités.',
         'terms_show' => 'Conditions d\'utilisation',
@@ -141,7 +142,7 @@ return [
             Le Wi-Fi invités est un réseau accessible au public, sur lequel des tiers peuvent intercepter le trafic. Chiffrez vos connexions (par exemple avec HTTPS ou un VPN). L'exploitant décline toute responsabilité pour les dommages, pertes de données ou frais résultant de l'utilisation, sous réserve des dispositions impératives du droit.
 
             5. Données
-            Pour l'exploitation, la prévention des abus et le respect des obligations légales, le portail enregistre le prénom et le nom, l'adresse de l'appareil (MAC), l'adresse IP, l'heure et la durée de la connexion, le volume de données, la version acceptée des présentes conditions et, pour la connexion par SMS, le numéro de téléphone. Pour la connexion avec le compte d'un fournisseur externe, le fournisseur, l'identifiant du compte et l'adresse e-mail sont également enregistrés. Les données sont conservées pendant la durée fixée par l'exploitant (un an par défaut) et ne sont transmises que si la loi l'exige.
+            Pour l'exploitation, la prévention des abus et le respect des obligations légales, le portail enregistre le prénom et le nom, l'adresse de l'appareil (MAC), l'adresse IP, l'heure et la durée de la connexion, le volume de données, la version acceptée des présentes conditions, pour la connexion avec un code d'accès l'adresse e-mail et, pour la connexion par SMS, le numéro de téléphone. Pour la connexion avec le compte d'un fournisseur externe, le fournisseur, l'identifiant du compte et l'adresse e-mail sont également enregistrés. Les données sont conservées pendant la durée fixée par l'exploitant (un an par défaut) et ne sont transmises que si la loi l'exige.
 
             6. Fin et blocage de l'accès
             L'exploitant peut mettre fin à l'accès, le bloquer ou le limiter à tout moment et sans indication de motifs, notamment en cas d'abus.
@@ -180,7 +181,7 @@ return [
         'groups' => [
             'general' => 'Général',
             'methods' => 'Modes de connexion',
-            'code' => 'Code d\'accès et nom',
+            'code' => 'Code d\'accès, nom et adresse e-mail',
             'account' => 'Compte utilisateur',
             'sms' => 'SMS',
             'approval' => 'Autorisation par l\'hôte',
@@ -252,6 +253,7 @@ return [
             'connect' => 'Bouton « Se connecter »',
             'first_name' => 'Champ prénom',
             'last_name' => 'Champ nom',
+            'email' => 'Champ adresse e-mail',
             'phone' => 'Champ numéro de mobile',
             'otp' => 'Champ code SMS',
             'sms_request' => 'Bouton « Envoyer le code SMS »',
@@ -764,7 +766,7 @@ return [
             'step_wifi' => 'Se connecter au Wi-Fi',
             'per_device' => 'Accès par appareil : :duration',
             'valid_until' => 'code valable jusqu\'au :date',
-            'text' => 'Scannez le code QR pour rejoindre le Wi-Fi invités. La page de connexion s\'ouvre ; sinon, ouvrez n\'importe quel site web. Saisissez votre nom, acceptez les conditions d\'utilisation et le code indiqué ici.',
+            'text' => 'Scannez le code QR pour rejoindre le Wi-Fi invités. La page de connexion s\'ouvre ; sinon, ouvrez n\'importe quel site web. Saisissez votre nom et votre adresse e-mail, acceptez les conditions d\'utilisation et le code indiqué ici.',
         ],
     ],
     'guests' => [

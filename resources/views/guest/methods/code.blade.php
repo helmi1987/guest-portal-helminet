@@ -3,6 +3,12 @@
     @csrf
     {{ $guestPreview?->fields('status') }}
     @include('guest.partials.name-fields')
+    {{-- Email address: code login only (decision 2026-11-03, v0.24.1); SMS and approval keep name only. --}}
+    <label class="gp-label gp-email-field label">
+        <span>{{ __('portal.guest.email') }}</span>
+        <input type="email" name="email" value="{{ old('email') }}" required maxlength="191" autocomplete="email" inputmode="email"
+               class="gp-input field text-base">
+    </label>
     <label class="gp-label label">
         <span>{{ __('portal.guest.code') }}</span>
         <input name="code" value="{{ old('code', $prefillCode ?? null) }}" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" required autocomplete="one-time-code"

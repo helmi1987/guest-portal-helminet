@@ -245,9 +245,9 @@ class SiteCodeTest extends TestCase
             'link-orig' => 'https://portal.example.com/portal?site=site-a&code='.$siteCode->code]))
             ->assertOk()->assertSee('value="'.$siteCode->code.'"', false);
 
-        // Prefilled code alone is not a login: name and terms are still required.
+        // Prefilled code alone is not a login: name, email address and terms are still required.
         $this->onZone('guest')->post('/portal/code', ['code' => $siteCode->code])
-            ->assertSessionHasErrors(['first_name', 'last_name', 'terms']);
+            ->assertSessionHasErrors(['first_name', 'last_name', 'email', 'terms']);
         $this->assertSame(0, Grant::query()->count());
 
         // Other link-orig URLs are ignored.
@@ -284,7 +284,7 @@ class SiteCodeTest extends TestCase
         ]));
 
         return $this->onZone('guest')->post('/portal/code', [
-            'first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'code' => $code,
+            'first_name' => 'Test', 'last_name' => 'Guest', 'email' => 'guest@example.com', 'terms' => '1', 'code' => $code,
             'terms_version' => TermsVersion::current(app()->getLocale())?->id,
         ]);
     }

@@ -86,7 +86,7 @@ final class GuestPreview
             $key === 'heading' => ['chooser', ...$forms, 'notices', 'landing'],
             $key === 'intro' => ['landing'],
             $key === 'other_methods', str_starts_with($key, 'terms') => $forms,
-            $key === 'code' => ['code'],
+            $key === 'code', $key === 'email' => ['code'],
             $key === 'connect' => ['code', 'account', 'sms_otp', 'sms_resent'],
             str_starts_with($key, 'account_') => ['account'],
             in_array($key, ['first_name', 'last_name'], true) => ['code', 'sms', 'approval', 'social_name'],

@@ -30,7 +30,7 @@ final class GuestTexts
         'methods' => ['guest.intro', 'guest.intros.chooser', 'guest.choose.code', 'guest.intros.code', 'guest.choose.account',
             'guest.intros.account', 'guest.choose.sms',
             'guest.intros.sms', 'guest.choose.approval', 'guest.intros.approval', 'guest.choose.social', 'guest.intros.social'],
-        'code' => ['guest.code', 'guest.connect', 'guest.first_name', 'guest.last_name'],
+        'code' => ['guest.code', 'guest.connect', 'guest.first_name', 'guest.last_name', 'guest.email'],
         'account' => ['guest.account_username', 'guest.account_password', 'guest.account_hint'],
         'sms' => ['guest.phone', 'guest.otp', 'guest.sms_request', 'guest.sms_title', 'guest.sms_sent', 'guest.sms_resend',
             'guest.sms_resent', 'guest.sms_change'],

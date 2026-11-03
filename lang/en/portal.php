@@ -21,7 +21,7 @@ return [
         'intro' => 'Log in here to get internet access.',
         'intros' => [
             'chooser' => 'Choose how you want to sign in.',
-            'code' => 'Enter your name and the 6-digit access code.',
+            'code' => 'Enter your name, your email address and the 6-digit access code.',
             'account' => 'Sign in with the user name and password of your user account (e.g. your company account). Your name and email address are taken from it.',
             'sms' => 'Enter your name and your mobile number. We will send you a code by SMS.',
             'approval' => 'Enter your name. The host will be asked to approve your access.',
@@ -44,6 +44,7 @@ return [
         'social_name_intro' => ':provider did not provide your full name. Please complete it.',
         'first_name' => 'First name',
         'last_name' => 'Last name',
+        'email' => 'Email address',
         'code' => 'Access code',
         'terms' => 'I have read and accept the terms of use of the guest Wi-Fi.',
         'terms_show' => 'Terms of use',
@@ -141,7 +142,7 @@ return [
             The guest Wi-Fi is a publicly accessible network in which third parties may intercept the traffic. Encrypt your connections (for example with HTTPS or a VPN). The operator is not liable for damage, data loss or costs caused by the use, except where mandatory law provides otherwise.
 
             5. Data
-            For operation, abuse prevention and legal obligations, the portal stores first and last name, the device address (MAC), the IP address, time and duration of the login, the traffic volume, the accepted version of these terms and, for SMS login, the phone number. For login with an account of an external provider, the provider, the account identifier and the e-mail address are stored as well. The data is kept for the retention period set by the operator (one year by default) and is only passed on where the law requires it.
+            For operation, abuse prevention and legal obligations, the portal stores first and last name, the device address (MAC), the IP address, time and duration of the login, the traffic volume, the accepted version of these terms, for access code login the e-mail address and, for SMS login, the phone number. For login with an account of an external provider, the provider, the account identifier and the e-mail address are stored as well. The data is kept for the retention period set by the operator (one year by default) and is only passed on where the law requires it.
 
             6. Ending and blocking
             The operator may end, block or limit access at any time without giving reasons, in particular in case of misuse.
@@ -180,7 +181,7 @@ return [
         'groups' => [
             'general' => 'General',
             'methods' => 'Login methods',
-            'code' => 'Access code and name',
+            'code' => 'Access code, name and email address',
             'account' => 'User account',
             'sms' => 'SMS',
             'approval' => 'Approval by the host',
@@ -252,6 +253,7 @@ return [
             'connect' => 'Button "Connect"',
             'first_name' => 'Field first name',
             'last_name' => 'Field last name',
+            'email' => 'Field email address',
             'phone' => 'Field mobile number',
             'otp' => 'Field SMS code',
             'sms_request' => 'Button "Send SMS code"',
@@ -764,7 +766,7 @@ return [
             'step_wifi' => 'Connect to the Wi-Fi',
             'per_device' => 'Access per device: :duration',
             'valid_until' => 'code valid until :date',
-            'text' => 'Scan the QR code to join the guest Wi-Fi. The login page opens; if not, open any website. Enter your name, accept the terms of use and the code shown here.',
+            'text' => 'Scan the QR code to join the guest Wi-Fi. The login page opens; if not, open any website. Enter your name and email address, accept the terms of use and the code shown here.',
         ],
     ],
     'guests' => [

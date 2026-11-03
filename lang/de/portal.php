@@ -21,7 +21,7 @@ return [
         'intro' => 'Melde dich hier an, um ins Internet zu gelangen.',
         'intros' => [
             'chooser' => 'Wähle, wie du dich anmelden möchtest.',
-            'code' => 'Gib deinen Namen und den 6-stelligen Zugangscode ein.',
+            'code' => 'Gib deinen Namen, deine E-Mail-Adresse und den 6-stelligen Zugangscode ein.',
             'account' => 'Melde dich mit Benutzername und Passwort deines Benutzerkontos an (z. B. deines Firmenkontos). Name und E-Mail-Adresse werden daraus übernommen.',
             'sms' => 'Gib deinen Namen und deine Handynummer ein. Wir senden dir einen Code per SMS.',
             'approval' => 'Gib deinen Namen ein. Der Gastgeber wird um Freigabe deines Zugangs gebeten.',
@@ -44,6 +44,7 @@ return [
         'social_name_intro' => ':provider hat deinen vollständigen Namen nicht übermittelt. Bitte ergänze ihn.',
         'first_name' => 'Vorname',
         'last_name' => 'Nachname',
+        'email' => 'E-Mail-Adresse',
         'code' => 'Zugangscode',
         'terms' => 'Ich habe die Nutzungsbedingungen des Gäste-WLANs gelesen und akzeptiere sie.',
         'terms_show' => 'Nutzungsbedingungen',
@@ -141,7 +142,7 @@ return [
             Das Gäste-WLAN ist ein öffentlich zugängliches Netz, in dem Dritte den Datenverkehr mitlesen können. Verschlüsseln Sie Ihre Verbindungen (zum Beispiel mit HTTPS oder einem VPN). Der Betreiber haftet nicht für Schäden, Datenverluste oder Kosten, die durch die Nutzung entstehen, soweit das zwingende Recht nichts anderes vorsieht.
 
             5. Daten
-            Für den Betrieb, zur Verhinderung von Missbrauch und zur Erfüllung gesetzlicher Pflichten speichert das Portal Vor- und Nachnamen, die Geräteadresse (MAC), die IP-Adresse, Zeitpunkt und Dauer der Anmeldung, das Datenvolumen, die akzeptierte Version dieser Bedingungen sowie bei der Anmeldung per SMS die Telefonnummer. Bei der Anmeldung mit dem Konto eines externen Anbieters werden zusätzlich der Anbieter, die Kontokennung und die E-Mail-Adresse gespeichert. Die Daten werden während der vom Betreiber festgelegten Aufbewahrungsfrist (standardmässig ein Jahr) aufbewahrt und nur weitergegeben, wenn das Gesetz es verlangt.
+            Für den Betrieb, zur Verhinderung von Missbrauch und zur Erfüllung gesetzlicher Pflichten speichert das Portal Vor- und Nachnamen, die Geräteadresse (MAC), die IP-Adresse, Zeitpunkt und Dauer der Anmeldung, das Datenvolumen, die akzeptierte Version dieser Bedingungen, bei der Anmeldung mit Zugangscode die E-Mail-Adresse sowie bei der Anmeldung per SMS die Telefonnummer. Bei der Anmeldung mit dem Konto eines externen Anbieters werden zusätzlich der Anbieter, die Kontokennung und die E-Mail-Adresse gespeichert. Die Daten werden während der vom Betreiber festgelegten Aufbewahrungsfrist (standardmässig ein Jahr) aufbewahrt und nur weitergegeben, wenn das Gesetz es verlangt.
 
             6. Beenden und Sperren
             Der Betreiber kann den Zugang jederzeit und ohne Angabe von Gründen beenden, sperren oder einschränken, insbesondere bei Missbrauch.
@@ -180,7 +181,7 @@ return [
         'groups' => [
             'general' => 'Allgemein',
             'methods' => 'Anmeldearten',
-            'code' => 'Zugangscode und Name',
+            'code' => 'Zugangscode, Name und E-Mail-Adresse',
             'account' => 'Benutzerkonto',
             'sms' => 'SMS',
             'approval' => 'Freigabe durch den Gastgeber',
@@ -252,6 +253,7 @@ return [
             'connect' => 'Schaltfläche «Verbinden»',
             'first_name' => 'Feld Vorname',
             'last_name' => 'Feld Nachname',
+            'email' => 'Feld E-Mail-Adresse',
             'phone' => 'Feld Handynummer',
             'otp' => 'Feld SMS-Code',
             'sms_request' => 'Schaltfläche «SMS-Code senden»',
@@ -764,7 +766,7 @@ return [
             'step_wifi' => 'Mit dem WLAN verbinden',
             'per_device' => 'Zugang pro Gerät: :duration',
             'valid_until' => 'Code gültig bis :date',
-            'text' => 'QR-Code scannen, um dem Gäste-WLAN beizutreten. Die Anmeldeseite öffnet sich; falls nicht, eine beliebige Webseite aufrufen. Namen eingeben, Nutzungsbedingungen akzeptieren und den hier angezeigten Code verwenden.',
+            'text' => 'QR-Code scannen, um dem Gäste-WLAN beizutreten. Die Anmeldeseite öffnet sich; falls nicht, eine beliebige Webseite aufrufen. Namen und E-Mail-Adresse eingeben, Nutzungsbedingungen akzeptieren und den hier angezeigten Code verwenden.',
         ],
     ],
     'guests' => [

@@ -161,6 +161,7 @@ and the HTML structure around them are **not** stable; do not target them.
 | `gp-remaining` | Remaining time line on the status page |
 | `gp-form` | Login form |
 | `gp-name-fields` | First/last name row |
+| `gp-email-field` | Email address label on the code login page (wraps a `gp-input`) |
 | `gp-label` | Field label (wraps the input) |
 | `gp-input` | Text input |
 | `gp-code-input` | Access code / SMS code input (also `gp-input`) |

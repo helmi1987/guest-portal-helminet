@@ -16,7 +16,7 @@ class ValidationMessagesTest extends TestCase
     use RefreshDatabase;
 
     private const FORMS = [
-        '/portal/code' => ['first_name', 'last_name', 'terms', 'code'],
+        '/portal/code' => ['first_name', 'last_name', 'email', 'terms', 'code'],
         '/portal/approval' => ['first_name', 'last_name', 'terms'],
         '/portal/sms' => ['first_name', 'last_name', 'terms', 'phone'],
     ];

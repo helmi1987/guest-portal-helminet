@@ -195,7 +195,8 @@ class TermsTest extends TestCase
     private function submit(string $code, ?string $termsVersion)
     {
         return $this->onZone('guest')->withHeader('Accept-Language', 'de')->post('/portal/code', [
-            'first_name' => 'Test', 'last_name' => 'Guest', 'terms' => '1', 'code' => $code, 'terms_version' => $termsVersion,
+            'first_name' => 'Test', 'last_name' => 'Guest', 'email' => 'guest@example.com', 'terms' => '1', 'code' => $code,
+            'terms_version' => $termsVersion,
         ]);
     }
 }
