@@ -43,6 +43,22 @@ final class GuestPreview
         return [...self::SCREENS, ...array_map(fn (string $kind) => 'error-'.$kind, GuestTexts::ERROR_KINDS)];
     }
 
+    /**
+     * Screens grouped for the toolbox page (sign-in, status, errors); together exactly screens().
+     *
+     * @return array<string, list<string>>
+     */
+    public static function screenGroups(): array
+    {
+        $status = ['waiting', 'status', 'landing'];
+
+        return [
+            'signin' => array_values(array_diff(self::SCREENS, $status)),
+            'status' => $status,
+            'errors' => array_map(fn (string $kind) => 'error-'.$kind, GuestTexts::ERROR_KINDS),
+        ];
+    }
+
     /** Label of a screen for the admin UI. */
     public static function screenLabel(string $screen): string
     {

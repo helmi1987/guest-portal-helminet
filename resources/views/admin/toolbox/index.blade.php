@@ -7,5 +7,9 @@
             <a href="{{ route('admin.toolbox.wifi-qr') }}" class="text-lg font-semibold underline">{{ __('portal.toolbox.wifi_qr.title') }}</a>
             <p class="mt-1 text-sm text-slate-600">{{ __('portal.toolbox.wifi_qr.help') }}</p>
         </li>
+        <li class="card">
+            <a href="{{ route('admin.toolbox.portal') }}" class="text-lg font-semibold underline">{{ __('portal.toolbox.portal.title') }}</a>
+            <p class="mt-1 text-sm text-slate-600">{{ __('portal.toolbox.portal.help') }}</p>
+        </li>
     </ul>
 </x-layouts.admin>

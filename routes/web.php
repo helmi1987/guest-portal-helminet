@@ -173,6 +173,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 // Toolbox: standalone helpers, nothing stored (Wi-Fi QR print view is no-store).
                 Route::prefix('/toolbox')->name('toolbox.')->group(function () {
                     Route::get('/', [ToolboxController::class, 'index'])->name('index');
+                    // Guest portal as guests see it: frames the guest texts preview (/admin/texts/preview).
+                    Route::get('/portal', [ToolboxController::class, 'portal'])->name('portal');
                     Route::get('/wifi-qr', [ToolboxController::class, 'wifiQrForm'])->name('wifi-qr');
                     Route::post('/wifi-qr', [ToolboxController::class, 'wifiQrPrint'])->name('wifi-qr.print')
                         ->middleware('throttle:30,1,toolbox-wifi-qr');

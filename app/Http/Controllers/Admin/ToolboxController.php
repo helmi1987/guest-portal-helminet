@@ -3,7 +3,9 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Branding\BrandingSettings;
+use App\Guest\GuestPreview;
 use App\Http\Controllers\Controller;
+use App\Models\Site;
 use App\Services\VoucherQr;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -15,12 +17,30 @@ use Illuminate\View\View;
  * Admin toolbox (CONCEPT.md §9, admin only): standalone helpers, independent of sites and settings.
  * Wi-Fi QR code: prints a join QR for any SSID/password. Nothing is stored, logged or audited; the
  * password field is never flashed as old input (`wifi_password` in dontFlash, bootstrap/app.php).
+ * Guest portal: frames the guest texts preview (App\Guest\GuestPreview) with language, site, screen and
+ * device selectors; the preview renders, this page only chooses what it shows.
  */
 class ToolboxController extends Controller
 {
     public function index(): View
     {
         return view('admin.toolbox.index');
+    }
+
+    /** Guest portal as guests see it: the guest texts preview in an iframe (phone or desktop width). */
+    public function portal(Request $request): View
+    {
+        $sites = Site::query()->orderBy('name')->get(['id', 'name']);
+        $locale = $request->query('locale');
+        $screen = $request->query('screen');
+
+        return view('admin.toolbox.portal', [
+            'locale' => in_array($locale, config('portal.locales'), true) ? $locale : app()->getLocale(),
+            'sites' => $sites,
+            'site' => $sites->firstWhere('id', $request->query('site')) ?? $sites->first(),
+            'screen' => in_array($screen, GuestPreview::screens(), true) ? $screen : 'chooser',
+            'device' => $request->query('device') === 'desktop' ? 'desktop' : 'phone',
+        ]);
     }
 
     public function wifiQrForm(): View
