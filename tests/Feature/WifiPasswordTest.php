@@ -52,6 +52,30 @@ class WifiPasswordTest extends TestCase
         return json_decode(DB::table('sites')->where('id', $this->site->id)->value('settings'), true)['setup'] ?? [];
     }
 
+    public function test_password_field_and_checkboxes_each_have_their_own_label(): void
+    {
+        $this->save(['wifi_password' => 'Guest pass 123'])->assertSessionHasNoErrors();
+        $admin = User::factory()->admin()->create();
+        foreach (["/admin/sites/{$this->site->id}/setup", "/admin/sites/{$this->site->id}/wizard?step=4"] as $url) {
+            $html = $this->onZone('admin')->actingAs($admin)->get($url)->assertOk()->getContent();
+            $doc = new \DOMDocument;
+            @$doc->loadHTML($html);
+            $xpath = new \DOMXPath($doc);
+            $group = $xpath->query('//*[@data-wifi-password-group]');
+            $this->assertSame(1, $group->length, $url);
+            $this->assertSame('div', $group->item(0)->nodeName, $url);
+            foreach (['wifi_password', 'wifi_password_clear', 'wifi_password_shared'] as $name) {
+                $input = $xpath->query('.//input[@name="'.$name.'"]', $group->item(0));
+                $this->assertSame(1, $input->length, "{$url} {$name}");
+                $label = $input->item(0)->parentNode;
+                $this->assertSame('label', $label->nodeName, "{$url} {$name}");
+                // The label names only this control
+                $this->assertSame(1, $xpath->query('.//input', $label)->length, "{$url} {$name}");
+            }
+            $this->assertSame('wifi-password-help', $xpath->query('.//input[@name="wifi_password"]', $group->item(0))->item(0)->getAttribute('aria-describedby'));
+        }
+    }
+
     public function test_password_is_validated_stored_encrypted_and_never_audited(): void
     {
         foreach (['short12', str_repeat('a', 64), "umlaut\u{e4}pass", "tab\tpassword"] as $bad) {

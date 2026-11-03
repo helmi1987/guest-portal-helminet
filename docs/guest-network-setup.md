@@ -249,6 +249,14 @@ the site uses):
 the Wi-Fi block then has one part per mode and creates `dp-guest`, `sec-guest` and `cfg-guest` once per
 package (`/caps-man` and `/interface wifi`; CAPsMAN of the wifi package and a local radio share them).
 
+Switching modes (for example from CAPsMAN to a local radio): the Wi-Fi block of the new selection does not
+remove what the earlier one created, so `cfg-guest` stays in your provisioning rules (and the own per-CAP
+rules stay) and the CAPs keep broadcasting the guest SSID. Query the router state after saving the new
+modes: the assistant lists these objects as "left over" and shows, per router, a clean-up block (step
+"Guest network", in the wizard "Guest Wi-Fi"). It takes `cfg-guest` out of the rules of the deselected
+CAPsMAN package and removes only objects with the assistant's comment keys; run it once, then query the
+state again. By hand, the same commands are in the network uninstall of the old mode.
+
 ### 3.5 Guest SSID only on some CAPs, provisioning rules
 
 Setup assistant, step "Guest network" (wizard: "Guest Wi-Fi"), per CAPsMAN mode (optional): tick the CAP radios (radio-mac, from the router

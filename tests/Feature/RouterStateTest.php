@@ -11,9 +11,13 @@ use App\Nas\MikrotikRos7Driver;
 use App\Nas\RouterOs\ApiConnector;
 use App\Nas\RouterOs\Menus;
 use App\Nas\RouterOs\RouterOsException;
+use Illuminate\Bus\UniqueLock;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
+use Illuminate\Contracts\Queue\ShouldBeUniqueUntilProcessing;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Blade;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
@@ -420,6 +424,36 @@ class RouterStateTest extends TestCase
             $response = $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state");
         }
         $response->assertStatus(429);
+    }
+
+    public function test_queued_marker_lives_exactly_as_long_as_a_pending_query(): void
+    {
+        $this->configureApi();
+        Queue::fake();
+        $this->assertContains(ShouldBeUnique::class, class_implements(QueryRouterState::class));
+        $this->assertNotContains(ShouldBeUniqueUntilProcessing::class, class_implements(QueryRouterState::class));
+        $id = (string) $this->nas->id;
+
+        // Second refresh while the first query is queued (or running): no second job, the marker stays
+        QueryRouterState::request($this->nas);
+        $marker = QueryRouterState::queuedAt($id);
+        $this->assertNotNull($marker);
+        $this->travel(5)->seconds();
+        QueryRouterState::request($this->nas);
+        Queue::assertPushed(QueryRouterState::class, 1);
+        $this->assertSame($marker, QueryRouterState::queuedAt($id));
+
+        // The worker processes the job: marker removed, then the unique lock released (CallQueuedHandler)
+        $job = Queue::pushed(QueryRouterState::class)->first();
+        $this->fakeRest($this->routerMenus());
+        app()->call([$job, 'handle']);
+        $this->assertNull(QueryRouterState::queuedAt($id));
+        (new UniqueLock(Cache::store()))->release($job);
+
+        // No job pending, no marker; the next refresh queues a new job with a new marker
+        QueryRouterState::request($this->nas);
+        Queue::assertPushed(QueryRouterState::class, 2);
+        $this->assertNotNull(QueryRouterState::queuedAt($id));
     }
 
     public function test_errors_are_shown_localized_per_router(): void

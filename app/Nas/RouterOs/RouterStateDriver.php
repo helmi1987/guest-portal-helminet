@@ -19,10 +19,22 @@ interface RouterStateDriver
 
     /**
      * Expected objects of the site compared with a stored state, by block: [block => [key => [path,
-     * name, status (present|foreign|missing|differs|legacy|unmanaged|unknown), diff => [property => [expected, actual]],
+     * name, status (present|foreign|missing|differs|legacy|unmanaged|leftover|unknown), diff => [property => [expected, actual]],
      * adopt (only with unmanaged: one-time command that sets the comment key, null when ambiguous)]]].
      */
     public function compareState(Site $site, array $state): array;
+
+    /**
+     * One-time clean-up commands for objects of an earlier selection found in a stored state (e.g. Wi-Fi objects of
+     * a mode no longer selected, reported with status "leftover" by compareState()), null when there are none.
+     */
+    public function leftoverCommands(Site $site, array $state): ?string;
+
+    /**
+     * Why the RouterOS container cannot run on the router of a stored state: "package" (container package
+     * missing), "device_mode" (device mode does not allow containers) or null (fine or unknown).
+     */
+    public function containerProblem(array $state): ?string;
 
     /**
      * Setup assistant inputs derivable from the state: [field => [value, source]] (source: short

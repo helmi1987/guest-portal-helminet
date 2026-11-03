@@ -2,15 +2,16 @@
      commands. Used by the setup page and the wizard. Needs: $block, $items (compareState() block). --}}
 @php
     // Solid badges (WCAG AA in both schemes); legacy/differs = will be updated by the next run,
-    // unmanaged = name taken by an object without comment (adopt command once, decision 2026-11-01)
+    // unmanaged = name taken by an object without comment (adopt command once, decision 2026-11-01),
+    // leftover = own Wi-Fi object of a mode no longer selected (clean-up block, decision 2026-11-02)
     $statusClass = ['present' => 'gp-badge gp-badge-ok', 'foreign' => 'gp-badge gp-badge-ok', 'legacy' => 'gp-badge gp-badge-warn', 'differs' => 'gp-badge gp-badge-warn',
-        'missing' => 'gp-badge gp-badge-error', 'unmanaged' => 'gp-badge gp-badge-unmanaged', 'unknown' => 'gp-badge gp-badge-neutral'];
+        'missing' => 'gp-badge gp-badge-error', 'unmanaged' => 'gp-badge gp-badge-unmanaged', 'leftover' => 'gp-badge gp-badge-error', 'unknown' => 'gp-badge gp-badge-neutral'];
 @endphp
 @php($counts = collect($items)->countBy('status'))
 <details class="rounded border border-slate-300 p-2 text-sm" data-state-block="{{ $block }}">
     <summary class="cursor-pointer">
         <span class="font-medium">{{ __('portal.router_api.blocks.'.$block) }}</span>
-        @foreach (['present', 'foreign', 'legacy', 'differs', 'missing', 'unmanaged', 'unknown'] as $status)
+        @foreach (['present', 'foreign', 'legacy', 'differs', 'missing', 'unmanaged', 'leftover', 'unknown'] as $status)
             @if ($counts->get($status))
                 <span class="{{ $statusClass[$status] }}">{{ $counts->get($status) }} {{ __('portal.router_api.status.'.$status) }}</span>
             @endif

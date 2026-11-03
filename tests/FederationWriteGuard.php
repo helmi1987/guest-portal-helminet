@@ -11,7 +11,9 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Test-only guard (SQLite): triggers log every insert/update of a replicated table; afterwards every
  * written (table, id, version) must have an outbox or applied event, and an update that changes
- * any column must also change the version. Catches query-builder writes that bypass the outbox.
+ * any replicated column must also change the version. Catches query-builder writes that bypass the
+ * outbox. A save of local columns only (Federation::LOCAL_COLUMNS) moves updated_at without a new
+ * version (App\Models\Concerns\Replicated), so updated_at alone is no violation.
  */
 final class FederationWriteGuard
 {
@@ -24,7 +26,7 @@ final class FederationWriteGuard
             DB::unprepared("CREATE TRIGGER _fedguard_{$table}_ins AFTER INSERT ON \"{$table}\" BEGIN "
                 ."INSERT INTO _federation_writes VALUES ('{$table}', NEW.id, NEW.version, 'insert'); END");
             $changed = collect(Schema::getColumnListing($table))
-                ->reject(fn ($c) => $c === 'version' || in_array($c, Federation::localColumns($table), true))
+                ->reject(fn ($c) => in_array($c, ['version', 'updated_at'], true) || in_array($c, Federation::localColumns($table), true))
                 ->map(fn ($c) => "NEW.\"$c\" IS NOT OLD.\"$c\"")->implode(' OR ');
             DB::unprepared("CREATE TRIGGER _fedguard_{$table}_upd AFTER UPDATE ON \"{$table}\" BEGIN "
                 ."INSERT INTO _federation_writes VALUES ('{$table}', NEW.id, NEW.version, "

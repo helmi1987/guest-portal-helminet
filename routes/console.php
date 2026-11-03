@@ -1,5 +1,6 @@
 <?php
 
+use App\Console\SchedulerOutput;
 use Illuminate\Support\Facades\Schedule;
 
 // Run by the scheduler service (artisan schedule:work).
@@ -9,3 +10,6 @@ Schedule::command('portal:backup')->dailyAt('02:45')->withoutOverlapping();
 Schedule::command('portal:cert-pull')->cron('23 */6 * * *')->withoutOverlapping();
 // Federation (CONCEPT.md §10.2): no-op without other instances.
 Schedule::command('portal:federation:sync')->everyThirtySeconds()->withoutOverlapping(5);
+
+// Output and log lines of every scheduled command into the scheduler's output (container log), not /dev/null.
+SchedulerOutput::apply(Schedule::getFacadeRoot());

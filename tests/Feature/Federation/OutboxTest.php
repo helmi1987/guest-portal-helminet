@@ -98,6 +98,23 @@ class OutboxTest extends TestCase
         $this->assertCount(1, $this->events('sites', $site->id));
     }
 
+    public function test_saving_only_local_columns_records_no_event_and_keeps_the_version(): void
+    {
+        $site = Site::create(['slug' => 'site-a', 'name' => 'Site A', 'driver' => 'mikrotik_ros7']);
+        $version = $site->version;
+        $count = count($this->events('sites', $site->id));
+
+        // Local columns only (Federation::LOCAL_COLUMNS): no new version, no event
+        $site->forceFill(['wifi_masters_local' => ['local' => ['wifi1']], 'wifi_caps_local' => ['capsman2' => []]])->save();
+        $this->assertSame($version, $site->fresh()->version);
+        $this->assertCount($count, $this->events('sites', $site->id));
+
+        // A replicated column changed together with a local one: one event, new version
+        $site->forceFill(['name' => 'Site B', 'wifi_password_local' => null])->save();
+        $this->assertNotSame($version, $site->fresh()->version);
+        $this->assertCount($count + 1, $this->events('sites', $site->id));
+    }
+
     public function test_increment_on_a_replicated_model_records_an_event(): void
     {
         $grant = $this->grant();

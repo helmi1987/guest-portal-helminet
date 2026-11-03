@@ -65,6 +65,8 @@ trait MikrotikRos7RouterState
         '/radius' => ['address', 'service', 'comment'],
         '/system script' => ['name', 'comment'],
         '/system scheduler' => ['name', 'interval', 'comment'],
+        // Container step hint (decision 2026-11-02): device mode allows containers (the menu exists without the package too)
+        '/system device-mode' => ['container'],
         '/container mounts' => ['list', 'src', 'dst', 'comment'],
         '/container envs' => ['list', 'key', 'comment'],
         '/user group' => ['name', 'policy', 'comment'],
@@ -232,6 +234,10 @@ trait MikrotikRos7RouterState
             $out['hotspot'][$path === '/ip hotspot' ? 'hotspot:server' : 'hotspot:profile'] = ['path' => $path, 'name' => self::NAME]
                 + $this->compareObject($menus[$path] ?? null, null, ['name' => self::NAME] + $props, 'name');
         }
+        // Wi-Fi objects of modes no longer selected (mode switch, decision 2026-11-02): "leftover", clean-up block per router
+        foreach ($this->wifiLeftovers($g, $menus) as $id => $item) {
+            $out['wifi'][$id] = ['path' => $item['path'], 'name' => $item['name'], 'status' => 'leftover', 'diff' => []];
+        }
         // CAPsMAN: cfg-guest in the slave configurations of the selected masters' provisioning rules (not with
         // a CAP selection: then only the own rules per CAP carry it)
         foreach (array_intersect($g['wifi_modes'], Site::CAPSMAN_MODES) as $mode) {
@@ -247,6 +253,98 @@ trait MikrotikRos7RouterState
         }
 
         return $out;
+    }
+
+    /**
+     * Wi-Fi objects of an earlier selection that the Wi-Fi block of the selected modes no longer covers (decision
+     * 2026-11-02, mode switch, e.g. CAPsMAN to local radio): per package path whose CAPsMAN mode is not selected,
+     * the own CAP rules and the rules of others that still list the own cfg-guest (CAPs keep broadcasting the guest
+     * SSID); without mode local the own virtual APs "wifi-guest[-<master>]"; without any mode of the path the own
+     * dp-guest, sec-guest and cfg-guest. Own = exact key or legacy comment, like the uninstall; objects of others are
+     * never listed. A path whose menus are missing on the router (package not installed) has none.
+     *
+     * @return array<string, array{path: string, name: ?string, remove: string}> state id "leftover:<menu>:<object>" =>
+     *                                                                           item; remove = kind of clean-up
+     */
+    private function wifiLeftovers(array $g, array $menus): array
+    {
+        $rows = fn (string $menu) => is_array($menus[$menu] ?? null) && ! isset($menus[$menu]['error']) ? (array) ($menus[$menu]['rows'] ?? []) : [];
+        $own = fn (array $row, string $key) => in_array($comment = (string) ($row['comment'] ?? ''), [$key, self::NAME], true)
+            || str_starts_with($comment, self::NAME.': ');
+        $out = [];
+        foreach (['capsman1' => '/caps-man', 'capsman2' => '/interface wifi'] as $capsman => $path) {
+            $pathModes = $path === '/caps-man' ? ['capsman1'] : ['capsman2', 'local'];
+            $ownCfg = collect($rows("{$path} configuration"))->contains(fn ($r) => ($r['name'] ?? null) === 'cfg-guest' && $own($r, self::key('wifi', 'cfg-guest')));
+            if (! in_array($capsman, $g['wifi_modes'], true)) {
+                foreach ($rows("{$path} provisioning") as $r) {
+                    $ident = (string) ($r['.id'] ?? '');
+                    if (self::isCapRule($r)) {
+                        $out["leftover:{$path} provisioning:".$r['comment']] = ['path' => "{$path} provisioning", 'name' => (string) ($r['radio-mac'] ?? '') ?: null, 'remove' => 'cap-rule'];
+                    } elseif ($ownCfg && in_array('cfg-guest', self::listValue($r['slave-configurations'] ?? ''), true)) {
+                        $out["leftover:{$path} provisioning:slave-{$ident}"] = ['path' => "{$path} provisioning", 'name' => (string) ($r['master-configuration'] ?? '') ?: null, 'remove' => 'slave'];
+                    }
+                }
+            }
+            if ($path === '/interface wifi' && ! in_array('local', $g['wifi_modes'], true)) {
+                foreach ($rows('/interface wifi') as $r) {
+                    $name = (string) ($r['name'] ?? '');
+                    if (preg_match('/^wifi-guest(-[A-Za-z0-9._-]{1,48})?\z/', $name) === 1 && $own($r, self::key('wifi', $name))) {
+                        $out["leftover:/interface wifi:{$name}"] = ['path' => '/interface wifi', 'name' => $name, 'remove' => 'virtual-ap'];
+                    }
+                }
+            }
+            if (array_intersect($pathModes, $g['wifi_modes']) === []) {
+                foreach (['datapath' => 'dp-guest', 'security' => 'sec-guest', 'configuration' => 'cfg-guest'] as $menu => $name) {
+                    if (collect($rows("{$path} {$menu}"))->contains(fn ($r) => ($r['name'] ?? null) === $name && $own($r, self::key('wifi', $name)))) {
+                        $out["leftover:{$path} {$menu}:{$name}"] = ['path' => "{$path} {$menu}", 'name' => $name, 'remove' => 'object'];
+                    }
+                }
+            }
+        }
+
+        return $out;
+    }
+
+    /**
+     * One-time clean-up of the Wi-Fi objects of an earlier selection found in a stored state (wifiLeftovers(),
+     * decision 2026-11-02), null when there are none. Same commands as the network uninstall, per package path in
+     * its order: own CAP rules, cfg-guest out of the rules of others (approved exception, only while the own
+     * cfg-guest exists), own virtual APs by name plus key, then the own objects. Only paths with leftovers, so
+     * every menu of the script exists on that router.
+     */
+    public function leftoverCommands(Site $site, array $state): ?string
+    {
+        $g = $this->guestValues($site);
+        $leftovers = collect($this->wifiLeftovers($g, self::ownWifiComments(self::withoutDynamic((array) ($state['menus'] ?? [])))));
+        if ($leftovers->isEmpty()) {
+            return null;
+        }
+        $n = self::NAME;
+        $out = ["# Clean-up of an earlier Wi-Fi mode: objects of {$n} found by the router state query that the selected",
+            '# Wi-Fi modes no longer use. Removes only own objects (comment key or legacy comment) and takes cfg-guest out',
+            '# of the provisioning rules of a CAPsMAN package whose mode is not selected (other slaves kept, nothing else',
+            '# of the rules changed); objects of others are not touched. Run once, then query the router state again.'];
+        foreach (['/caps-man', '/interface wifi'] as $path) {
+            $here = $leftovers->filter(fn ($l) => str_starts_with($l['path'], $path.' ') || $l['path'] === $path);
+            if ($here->isEmpty()) {
+                continue;
+            }
+            if ($here->contains('remove', 'cap-rule')) {
+                $out[] = $this->wifiCapRulesRemove($path);
+            }
+            if ($here->contains('remove', 'slave')) {
+                $out[] = $this->wifiSlaveRemove($path, self::owned(self::key('wifi', 'cfg-guest')));
+            }
+            foreach ($here->where('remove', 'virtual-ap') as $ap) {
+                $out[] = '/interface wifi remove [find where name="'.$ap['name'].'" && '.self::owned(self::key('wifi', $ap['name'])).']';
+            }
+            if ($here->contains('remove', 'object')) {
+                $out[] = '# only if created for the guest network: configuration, security, datapath';
+                $out[] = self::wifiObjectsRemove($path);
+            }
+        }
+
+        return implode("\n", $out);
     }
 
     /** State without the dynamic rows of DYNAMIC_MENUS. */
@@ -531,6 +629,23 @@ trait MikrotikRos7RouterState
         };
 
         return $norm($want) === $norm($actual);
+    }
+
+    /**
+     * Why the RouterOS container cannot run on a router according to its stored state (hint of the container
+     * step, decision 2026-11-02): "package" when both /container menus are missing (no container package),
+     * "device_mode" when the device mode does not allow containers, null when fine or unknown.
+     */
+    public function containerProblem(array $state): ?string
+    {
+        $menus = (array) ($state['menus'] ?? []);
+        $missing = fn (string $menu) => is_array($menus[$menu] ?? null) && isset($menus[$menu]['error']);
+        if ($missing('/container mounts') && $missing('/container envs')) {
+            return 'package';
+        }
+        $mode = $menus['/system device-mode']['rows'][0]['container'] ?? null;
+
+        return in_array($mode, ['no', 'false', false], true) ? 'device_mode' : null;
     }
 
     public function deriveSetup(Site $site, array $state): array

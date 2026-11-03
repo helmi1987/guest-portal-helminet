@@ -48,7 +48,8 @@ trait MikrotikRos7Provisioning
                     continue;
                 }
                 $master = (string) ($r['master-configuration'] ?? '');
-                $slaves = self::listValue($r['slave-configurations'] ?? '');
+                // References to deleted configurations ("*<id>") are dropped: the script compares and sets without them
+                $slaves = array_values(array_filter(self::listValue($r['slave-configurations'] ?? ''), fn ($v) => ! str_starts_with($v, '*')));
                 $bands = self::listValue($r[$bandProp] ?? '');
                 $rules[] = [
                     'id' => $id,
@@ -158,7 +159,8 @@ trait MikrotikRos7Provisioning
         $out = [
             "# Provisioning rules of {$pkg['path']} as edited in the setup assistant (generated from the router state",
             '# query; nothing is stored in the portal). Changed rules are addressed by id and set only while they',
-            '# still have the master and slave configurations of the state query, else skipped with a message.',
+            '# still have the master and slave configurations of the state query, else skipped with a message',
+            '# (references to deleted configurations, shown as *<id>, are ignored there and dropped by the set).',
             '# New rules are added at the end, only when no rule with the same band and master configuration',
             '# exists, without comment (they are yours: the uninstall never removes them). Move them if a rule',
             '# before them matches the same radios (first match wins).',
@@ -173,7 +175,7 @@ trait MikrotikRos7Provisioning
                 .(implode(',', $rule['slaves']) ?: '-').' -> '.(implode(',', $slaves) ?: '-'));
             $out[] = ":if ([:len [{$p} find where .id={$id}]] = 0) do={ :put \"{$n}: provisioning rule {$id} not found, skipped\" } else={\n"
                 ."    :local gpList \"\"\n"
-                ."    :foreach gpSlave in=[{$p} get {$id} slave-configurations] do={ :if ([:len \$gpSlave] > 0) do={ :set gpList (\$gpList . \",\" . \$gpSlave) } }\n"
+                ."    :foreach gpSlave in=[{$p} get {$id} slave-configurations] do={ :if ([:len \$gpSlave] > 0 && [:pick \$gpSlave 0 1] != \"*\") do={ :set gpList (\$gpList . \",\" . \$gpSlave) } }\n"
                 ."    :if ([:tostr [{$p} get {$id} master-configuration]] = \"{$rule['master']}\" && \$gpList = \"".($old === ',' ? '' : $old)."\") do={\n"
                 ."        {$p} set {$id} master-configuration={$master}".($slaveSet !== '' ? ' '.$slaveSet : '').$unset."\n"
                 ."    } else={ :put \"{$n}: provisioning rule {$id} was changed on the router after the state query, skipped\" }\n"

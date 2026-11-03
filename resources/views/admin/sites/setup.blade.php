@@ -97,6 +97,10 @@
             <x-admin.step-status :ok="false" :label="__('portal.setup.optional')" /></summary>
         <p class="my-3 text-sm text-slate-600">{{ __('portal.setup.container.help') }}</p>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.setup.container.docker') }}</p>
+        {{-- Hint only (router state): no container package, or device mode without containers --}}
+        @foreach ($containerProblems as $routerId => $problem)
+            <p class="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm font-medium text-amber-900" role="status" data-container-problem="{{ $problem }}">{{ __('portal.setup.container.problem.'.$problem, ['router' => $routers->firstWhere('id', $routerId)?->name]) }}</p>
+        @endforeach
         <form method="POST" action="{{ route('admin.sites.setup.container', $site) }}" class="mb-4 grid gap-3 md:grid-cols-3">
             @csrf
             <label class="label">{{ __('portal.setup.container.veth_address') }}
@@ -133,20 +137,22 @@
                 <input name="interface" value="{{ $net('interface') }}" placeholder="vlan-guest" required class="field"></label>
             <label class="label">{{ __('portal.setup.network.ssid') }}{{ $mark('ssid') }}
                 <input name="ssid" value="{{ $net('ssid') }}" placeholder="Guest-WiFi" required class="field"></label>
-            {{-- Never rendered back in clear: empty keeps the stored password, the checkbox removes it --}}
-            <label class="label">{{ __('portal.setup.network.wifi_password') }}
-                <input name="wifi_password" type="password" autocomplete="new-password" minlength="8" maxlength="63" class="field"
-                    @if ($wifiPasswordSet) placeholder="••••••••" @endif>
-                <span class="text-xs text-slate-500">{{ $wifiPasswordSet ? __('portal.setup.network.wifi_password_stored').' ' : '' }}{{ __('portal.setup.network.wifi_password_help') }}</span>
+            {{-- Never rendered back in clear: empty keeps the stored password, the checkbox removes it. Every control has
+                 its own label (a label around all of them gave the checkboxes no name of their own). --}}
+            <div class="label" data-wifi-password-group>
+                <label class="flex flex-col gap-1">{{ __('portal.setup.network.wifi_password') }}
+                    <input name="wifi_password" type="password" autocomplete="new-password" minlength="8" maxlength="63" class="field" aria-describedby="wifi-password-help"
+                        @if ($wifiPasswordSet) placeholder="••••••••" @endif></label>
+                <span id="wifi-password-help" class="text-xs text-slate-500">{{ $wifiPasswordSet ? __('portal.setup.network.wifi_password_stored').' ' : '' }}{{ __('portal.setup.network.wifi_password_help') }}</span>
                 @if ($wifiPasswordSet)
-                    <span class="text-xs"><input type="checkbox" name="wifi_password_clear" value="1"> {{ __('portal.setup.network.wifi_password_clear') }}</span>
+                    <label class="text-xs"><input type="checkbox" name="wifi_password_clear" value="1"> {{ __('portal.setup.network.wifi_password_clear') }}</label>
                 @endif
-                <span class="text-xs"><input type="checkbox" name="wifi_password_shared" value="1" @checked($wifiPasswordShared)> {{ __('portal.setup.network.wifi_password_shared') }}</span>
-                <span class="text-xs text-slate-500">{{ __('portal.setup.network.wifi_password_shared_help') }}</span>
+                <label class="text-xs"><input type="checkbox" name="wifi_password_shared" value="1" aria-describedby="wifi-password-shared-help" @checked($wifiPasswordShared)> {{ __('portal.setup.network.wifi_password_shared') }}</label>
+                <span id="wifi-password-shared-help" class="text-xs text-slate-500">{{ __('portal.setup.network.wifi_password_shared_help') }}</span>
                 @if ($wifiPasswordUnavailable)
                     <span class="text-xs text-amber-800">{{ __('portal.setup.network.wifi_password_unavailable') }}</span>
                 @endif
-            </label>
+            </div>
             <label class="label">{{ __('portal.setup.network.subnet') }}{{ $mark('subnet') }}
                 <input name="subnet" value="{{ $net('subnet') }}" placeholder="10.30.0.0/24" required class="field"></label>
             <label class="label">{{ __('portal.setup.network.gateway') }}{{ $mark('gateway') }}
@@ -167,6 +173,15 @@
         <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan')" :code="$commands['network']['vlan']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan'])" />
         <p class="mb-2 text-sm text-slate-600">{{ __('portal.setup.network.vlan_filtering_help') }}</p>
         <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan_filtering')" :code="$commands['network']['vlan_filtering']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan_filtering'])" />
+        {{-- Clean-up of the previous Wi-Fi mode per router (router state: own objects of modes no longer selected) --}}
+        @foreach ($wifiLeftovers as $routerId => $leftoverScript)
+            @php($leftoverRouter = $routers->firstWhere('id', $routerId))
+            <div class="mb-4 rounded border border-amber-300 bg-amber-50 p-3" data-wifi-leftover="{{ $routerId }}">
+                <h3 class="mb-1 font-semibold text-amber-900">{{ __('portal.setup.network.wifi_leftover_title', ['router' => $leftoverRouter?->name]) }}</h3>
+                <p class="mb-2 text-sm text-amber-900" role="status">{{ __('portal.setup.network.wifi_leftover_help', ['router' => $leftoverRouter?->name]) }}</p>
+                <x-admin.code :title="__('portal.setup.network.wifi_leftover_title', ['router' => $leftoverRouter?->name])" :code="$leftoverScript" />
+            </div>
+        @endforeach
         <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.wifi')" :code="$commands['network']['wifi']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['wifi'])" :secrets-url="$secretsUrl" />
         @if (array_intersect($wifiModes, \App\Models\Site::CAPSMAN_MODES) !== []) <p class="mb-4 text-sm text-amber-800">{{ __('portal.setup.network.slaves_help') }}</p> @endif
         {{-- Provisioning editor per router (CAPsMAN rules from the stored state; script preview, nothing stored) --}}

@@ -79,6 +79,25 @@ class ProvisioningEditorTest extends TestCase
         $this->assertStringContainsString("{$p} set *1 master-configuration=cfg-five\n        {$p} unset *1 slave-configurations", $s);
     }
 
+    public function test_references_to_deleted_configurations_are_dropped(): void
+    {
+        // RouterOS shows a deleted slave configuration as its internal id ("*A")
+        $state = $this->nas->router_state;
+        $state['menus']['/interface wifi provisioning']['rows'][0]['slave-configurations'] = 'cfg-iot;*A';
+        $this->nas->forceFill(['router_state' => $state])->save();
+        $rule = $this->site->driver()->provisioningRules($this->nas->fresh())['capsman2']['rules'][0];
+        $this->assertSame(['cfg-iot'], $rule['slaves']);
+        $this->assertTrue($rule['editable']);
+
+        $s = $this->script(['mode' => 'capsman2', 'rules' => ['*1' => ['master' => 'cfg-main', 'slaves' => ['cfg-iot', 'cfg-guest']]]]);
+        $p = '/interface wifi provisioning';
+        // The router-side comparison skips them as well, the set drops them
+        $this->assertStringContainsString(":foreach gpSlave in=[{$p} get *1 slave-configurations] do={ :if ([:len \$gpSlave] > 0 && [:pick \$gpSlave 0 1] != \"*\") do={", $s);
+        $this->assertStringContainsString('$gpList = ",cfg-iot")', $s);
+        $this->assertStringContainsString("{$p} set *1 master-configuration=cfg-main slave-configurations=cfg-iot,cfg-guest", $s);
+        $this->assertStringNotContainsString('*A', $s);
+    }
+
     public function test_new_rules_are_added_only_when_missing_and_without_comment(): void
     {
         $s = $this->script(['mode' => 'capsman2', 'new' => [['band' => '5ghz', 'master' => 'cfg-five', 'slaves' => ['cfg-guest']]]]);
