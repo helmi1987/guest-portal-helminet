@@ -26,6 +26,7 @@ return [
         'terms' => 'J\'ai lu et j\'accepte les conditions d\'utilisation du Wi-Fi invités.',
         'terms_show' => 'Conditions d\'utilisation',
         'terms_version' => 'version :version',
+        'terms_default' => 'texte standard',
         'connect' => 'Se connecter',
         'connecting' => 'Connexion …',
         'continue' => 'Continuer',
@@ -83,7 +84,7 @@ return [
     'terms' => [
         'title' => 'Conditions d\'utilisation',
         'help' => 'Texte brut par langue ; une ligne vide commence un nouveau paragraphe. L\'enregistrement d\'un texte modifié publie une nouvelle version, les versions précédentes sont conservées. Les invités acceptent la version actuelle de leur langue (à défaut : langue par défaut) à chaque connexion.',
-        'none' => 'Aucune condition publiée. Les invités confirment alors seulement la déclaration générale.',
+        'none' => 'Aucune condition publiée. Les invités voient le texte standard ci-dessous.',
         'current' => 'Version actuelle',
         'publish' => 'Publier',
         'published' => 'Version :version publiée.',
@@ -92,6 +93,38 @@ return [
         'version' => 'Version',
         'published_at' => 'Publiée',
         'acceptances' => 'Acceptations',
+        'default_hint' => 'Texte standard, pas encore publié : les invités voient ce texte jusqu\'à ce que vous publiiez une version.',
+        'default_loaded' => 'Texte standard chargé. Le publier crée une nouvelle version.',
+        'load_default' => 'Charger le texte standard',
+        'publish_defaults' => 'Publier les textes standard dans toutes les langues',
+        'defaults_published' => 'Textes standard publiés pour : :locales',
+        'defaults_none' => 'Toutes les langues ont déjà une version.',
+        // Default terms (formal), shown while nothing is published; paragraphs separated by blank lines.
+        'default' => <<<'TEXT'
+            1. Champ d'application
+            L'exploitant de ce Wi-Fi invités met gratuitement à disposition un accès à Internet. L'utilisation se fait à vos propres risques. Les présentes conditions d'utilisation s'appliquent à chaque connexion ; en vous connectant, vous les acceptez.
+
+            2. Utilisation autorisée
+            Vous ne pouvez utiliser l'accès qu'à des fins licites. Sont notamment interdits la consultation, la diffusion ou l'enregistrement de contenus illicites, les violations du droit d'auteur, les attaques contre d'autres appareils ou réseaux, le balayage de réseaux, l'envoi de spam, le contournement de blocages ou de restrictions ainsi que la revente commerciale de l'accès.
+
+            3. Aucune garantie
+            L'exploitant ne garantit ni la disponibilité, ni la bande passante, ni la portée. L'accès peut être limité, filtré ou interrompu à tout moment, par exemple pour des travaux de maintenance.
+
+            4. Sécurité et responsabilité
+            Le Wi-Fi invités est un réseau accessible au public, sur lequel des tiers peuvent intercepter le trafic. Chiffrez vos connexions (par exemple avec HTTPS ou un VPN). L'exploitant décline toute responsabilité pour les dommages, pertes de données ou frais résultant de l'utilisation, sous réserve des dispositions impératives du droit.
+
+            5. Données
+            Pour l'exploitation, la prévention des abus et le respect des obligations légales, le portail enregistre le prénom et le nom, l'adresse de l'appareil (MAC), l'adresse IP, l'heure et la durée de la connexion, le volume de données, la version acceptée des présentes conditions et, pour la connexion par SMS, le numéro de téléphone. Pour la connexion avec le compte d'un fournisseur externe, le fournisseur, l'identifiant du compte et l'adresse e-mail sont également enregistrés. Les données sont conservées pendant la durée fixée par l'exploitant (un an par défaut) et ne sont transmises que si la loi l'exige.
+
+            6. Fin et blocage de l'accès
+            L'exploitant peut mettre fin à l'accès, le bloquer ou le limiter à tout moment et sans indication de motifs, notamment en cas d'abus.
+
+            7. Utilisation équitable
+            Une utilisation permanente avec un volume de données élevé n'est pas autorisée. L'exploitant peut limiter la bande passante.
+
+            8. Responsabilité et droit applicable
+            Vous êtes responsable de toute utilisation effectuée au moyen de votre appareil, y compris par des personnes à qui vous le confiez. Le droit applicable est celui du siège de l'exploitant ; le for juridique est au siège de l'exploitant.
+            TEXT,
     ],
     'languages' => ['de' => 'Deutsch', 'it' => 'Italiano', 'fr' => 'Français', 'en' => 'English'],
     'auth' => [
@@ -575,7 +608,7 @@ return [
         'methods' => ['code' => 'Code', 'sms' => 'SMS', 'approval' => 'Approbation', 'site_code' => 'Code du site'],
         'active_only' => 'Accès en cours uniquement',
         'terms' => 'Conditions acceptées',
-        'generic_terms' => 'Déclaration générique',
+        'generic_terms' => 'Texte standard',
         'no_grant' => 'Aucun accès (en attente, refusé ou non vérifié)',
         'extend' => 'Prolonger',
         'stale' => 'obsolète',

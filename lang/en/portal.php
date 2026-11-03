@@ -26,6 +26,7 @@ return [
         'terms' => 'I have read and accept the terms of use of the guest Wi-Fi.',
         'terms_show' => 'Terms of use',
         'terms_version' => 'version :version',
+        'terms_default' => 'default text',
         'connect' => 'Connect',
         'connecting' => 'Connecting …',
         'continue' => 'Continue',
@@ -83,7 +84,7 @@ return [
     'terms' => [
         'title' => 'Terms of use',
         'help' => 'Plain text per language; a blank line starts a new paragraph. Saving a changed text publishes a new version, previous versions are kept. Guests accept the current version of their language (fallback: default language) at every login.',
-        'none' => 'No terms published yet. Guests then only confirm the generic statement.',
+        'none' => 'No terms published yet. Guests see the default text below.',
         'current' => 'Current version',
         'publish' => 'Publish',
         'published' => 'Version :version published.',
@@ -92,6 +93,38 @@ return [
         'version' => 'Version',
         'published_at' => 'Published',
         'acceptances' => 'Acceptances',
+        'default_hint' => 'Default text, not published yet: guests see this text until you publish a version.',
+        'default_loaded' => 'Default text loaded. Publishing it creates a new version.',
+        'load_default' => 'Load default text',
+        'publish_defaults' => 'Publish default texts in all languages',
+        'defaults_published' => 'Default texts published for: :locales',
+        'defaults_none' => 'All languages already have a version.',
+        // Default terms (formal), shown while nothing is published; paragraphs separated by blank lines.
+        'default' => <<<'TEXT'
+            1. Scope
+            The operator of this guest Wi-Fi provides internet access free of charge. Use is at your own risk. These terms of use apply to every login; by logging in you accept them.
+
+            2. Permitted use
+            You may use the access for lawful purposes only. In particular, it is prohibited to access, distribute or store illegal content, to infringe copyrights, to attack other devices or networks, to scan networks, to send spam, to circumvent blocks or restrictions and to resell the access commercially.
+
+            3. No guarantee
+            The operator guarantees neither availability nor bandwidth nor coverage. Access may be limited, filtered or interrupted at any time, for example for maintenance.
+
+            4. Security and liability
+            The guest Wi-Fi is a publicly accessible network in which third parties may intercept the traffic. Encrypt your connections (for example with HTTPS or a VPN). The operator is not liable for damage, data loss or costs caused by the use, except where mandatory law provides otherwise.
+
+            5. Data
+            For operation, abuse prevention and legal obligations, the portal stores first and last name, the device address (MAC), the IP address, time and duration of the login, the traffic volume, the accepted version of these terms and, for SMS login, the phone number. For login with an account of an external provider, the provider, the account identifier and the e-mail address are stored as well. The data is kept for the retention period set by the operator (one year by default) and is only passed on where the law requires it.
+
+            6. Ending and blocking
+            The operator may end, block or limit access at any time without giving reasons, in particular in case of misuse.
+
+            7. Fair use
+            Permanent use with a high traffic volume is not permitted. The operator may limit the bandwidth.
+
+            8. Responsibility and applicable law
+            You are responsible for all use through your device, including use by persons you let use it. The law at the operator's registered office applies; the place of jurisdiction is the operator's registered office.
+            TEXT,
     ],
     'languages' => ['de' => 'Deutsch', 'it' => 'Italiano', 'fr' => 'Français', 'en' => 'English'],
     'auth' => [
@@ -575,7 +608,7 @@ return [
         'methods' => ['code' => 'Code', 'sms' => 'SMS', 'approval' => 'Approval', 'site_code' => 'Site code'],
         'active_only' => 'Running grants only',
         'terms' => 'Accepted terms',
-        'generic_terms' => 'Generic statement',
+        'generic_terms' => 'Default text',
         'no_grant' => 'No access (pending, denied or not verified)',
         'extend' => 'Extend',
         'stale' => 'stale',

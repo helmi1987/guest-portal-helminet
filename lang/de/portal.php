@@ -26,6 +26,7 @@ return [
         'terms' => 'Ich habe die Nutzungsbedingungen des Gäste-WLANs gelesen und akzeptiere sie.',
         'terms_show' => 'Nutzungsbedingungen',
         'terms_version' => 'Version :version',
+        'terms_default' => 'Standardtext',
         'connect' => 'Verbinden',
         'connecting' => 'Verbinde …',
         'continue' => 'Weiter',
@@ -83,7 +84,7 @@ return [
     'terms' => [
         'title' => 'Nutzungsbedingungen',
         'help' => 'Reiner Text pro Sprache; eine Leerzeile beginnt einen neuen Absatz. Speichern eines geänderten Texts veröffentlicht eine neue Version, frühere Versionen bleiben erhalten. Gäste akzeptieren bei jeder Anmeldung die aktuelle Version ihrer Sprache (Ersatz: Standardsprache).',
-        'none' => 'Noch keine Bedingungen veröffentlicht. Gäste bestätigen dann nur die allgemeine Erklärung.',
+        'none' => 'Noch keine Bedingungen veröffentlicht. Gäste sehen den Standardtext unten.',
         'current' => 'Aktuelle Version',
         'publish' => 'Veröffentlichen',
         'published' => 'Version :version veröffentlicht.',
@@ -92,6 +93,38 @@ return [
         'version' => 'Version',
         'published_at' => 'Veröffentlicht',
         'acceptances' => 'Zustimmungen',
+        'default_hint' => 'Standardtext, noch nicht veröffentlicht: Gäste sehen diesen Text, bis du eine Version veröffentlichst.',
+        'default_loaded' => 'Standardtext geladen. Veröffentlichen erstellt eine neue Version.',
+        'load_default' => 'Standardtext laden',
+        'publish_defaults' => 'Standardtexte in allen Sprachen veröffentlichen',
+        'defaults_published' => 'Standardtexte veröffentlicht für: :locales',
+        'defaults_none' => 'Alle Sprachen haben bereits eine Version.',
+        // Default terms (formal), shown while nothing is published; paragraphs separated by blank lines.
+        'default' => <<<'TEXT'
+            1. Geltungsbereich
+            Der Betreiber dieses Gäste-WLANs stellt den Internetzugang kostenlos zur Verfügung. Die Nutzung erfolgt auf eigene Gefahr. Diese Nutzungsbedingungen gelten für jede Anmeldung; mit der Anmeldung akzeptieren Sie sie.
+
+            2. Zulässige Nutzung
+            Sie dürfen den Zugang nur für rechtmässige Zwecke nutzen. Untersagt sind insbesondere das Abrufen, Verbreiten oder Speichern rechtswidriger Inhalte, Verletzungen von Urheberrechten, Angriffe auf andere Geräte oder Netze, das Scannen von Netzen, der Versand von Spam, das Umgehen von Sperren oder Beschränkungen sowie der gewerbliche Weiterverkauf des Zugangs.
+
+            3. Keine Gewähr
+            Der Betreiber garantiert weder Verfügbarkeit noch Bandbreite oder Reichweite. Der Zugang kann jederzeit eingeschränkt, gefiltert oder unterbrochen werden, zum Beispiel für Wartungsarbeiten.
+
+            4. Sicherheit und Haftung
+            Das Gäste-WLAN ist ein öffentlich zugängliches Netz, in dem Dritte den Datenverkehr mitlesen können. Verschlüsseln Sie Ihre Verbindungen (zum Beispiel mit HTTPS oder einem VPN). Der Betreiber haftet nicht für Schäden, Datenverluste oder Kosten, die durch die Nutzung entstehen, soweit das zwingende Recht nichts anderes vorsieht.
+
+            5. Daten
+            Für den Betrieb, zur Verhinderung von Missbrauch und zur Erfüllung gesetzlicher Pflichten speichert das Portal Vor- und Nachnamen, die Geräteadresse (MAC), die IP-Adresse, Zeitpunkt und Dauer der Anmeldung, das Datenvolumen, die akzeptierte Version dieser Bedingungen sowie bei der Anmeldung per SMS die Telefonnummer. Bei der Anmeldung mit dem Konto eines externen Anbieters werden zusätzlich der Anbieter, die Kontokennung und die E-Mail-Adresse gespeichert. Die Daten werden während der vom Betreiber festgelegten Aufbewahrungsfrist (standardmässig ein Jahr) aufbewahrt und nur weitergegeben, wenn das Gesetz es verlangt.
+
+            6. Beenden und Sperren
+            Der Betreiber kann den Zugang jederzeit und ohne Angabe von Gründen beenden, sperren oder einschränken, insbesondere bei Missbrauch.
+
+            7. Faire Nutzung
+            Eine dauerhafte Nutzung mit hohem Datenvolumen ist nicht gestattet. Der Betreiber kann die Bandbreite begrenzen.
+
+            8. Verantwortung und anwendbares Recht
+            Sie sind für jede Nutzung über Ihr Gerät verantwortlich, auch durch Personen, denen Sie es überlassen. Es gilt das Recht am Sitz des Betreibers; Gerichtsstand ist der Sitz des Betreibers.
+            TEXT,
     ],
     'languages' => ['de' => 'Deutsch', 'it' => 'Italiano', 'fr' => 'Français', 'en' => 'English'],
     'auth' => [
@@ -575,7 +608,7 @@ return [
         'methods' => ['code' => 'Code', 'sms' => 'SMS', 'approval' => 'Freigabe', 'site_code' => 'Standortcode'],
         'active_only' => 'Nur laufende Zugänge',
         'terms' => 'Akzeptierte Bedingungen',
-        'generic_terms' => 'Allgemeine Erklärung',
+        'generic_terms' => 'Standardtext',
         'no_grant' => 'Kein Zugang (offen, abgelehnt oder nicht bestätigt)',
         'extend' => 'Verlängern',
         'stale' => 'veraltet',

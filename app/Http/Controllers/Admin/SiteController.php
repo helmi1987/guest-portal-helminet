@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers\Admin;
 
+use App\Federation\Pairing;
 use App\Http\Controllers\Controller;
 use App\Models\Instance;
+use App\Models\LocalSetting;
 use App\Models\NasClient;
 use App\Models\Site;
+use App\Models\TermsVersion;
 use App\Nas\NasDrivers;
 use App\Nas\RouterOs\RouterStateDriver;
 use App\Radius\ClientsFile;
@@ -37,8 +40,15 @@ class SiteController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
+        $first = Site::query()->doesntExist();
         $site = Site::create($this->validated($request));
         Audit::log('site.created', $site, ['slug' => $site->slug, 'name' => $site->name]);
+        // The first site of an instance that never joined a federation sets up a new portal: it gets the
+        // default terms as version 1 in every language (CONCEPT.md §7.1). Not earlier: a fresh instance
+        // with any replicated row can no longer join a federation.
+        if ($first && LocalSetting::get(Pairing::JOINED_SETTING) === null) {
+            TermsVersion::publishDefaults();
+        }
 
         return redirect()->route('admin.sites.edit', $site)->with('status', __('portal.saved'));
     }

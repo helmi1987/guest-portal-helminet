@@ -8,7 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 /**
- * A guest's acceptance of a terms version at login (version null: no terms were published yet).
+ * A guest's acceptance of a terms version at login (version null: nothing was published, the guest
+ * accepted the default text of the lang files).
  */
 #[Fillable(['guest_id', 'terms_version_id', 'grant_id', 'site_id', 'mac', 'accepted_at'])]
 class TermsAcceptance extends Model
