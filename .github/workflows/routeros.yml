@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload harness output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: routeros-${{ steps.v.outputs.version }}
           path: |
