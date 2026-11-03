@@ -38,7 +38,7 @@
 
         @if ($method !== null && count($methods) > 1)
             <p class="gp-other-methods mt-4 border-t border-(--gp-divider) pt-4 text-sm">
-                <a href="{{ route('guest.portal') }}" class="gp-link underline">{{ __('portal.guest.other_methods') }}</a>
+                <a href="{{ $guestPreview?->url('chooser') ?? route('guest.portal') }}" class="gp-link underline">{{ __('portal.guest.other_methods') }}</a>
             </p>
         @endif
     </section>

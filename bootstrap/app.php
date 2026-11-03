@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Middleware\ApplyGuestTexts;
 use App\Http\Middleware\AuthenticateFederationPeer;
 use App\Http\Middleware\BounceOidcCallback;
 use App\Http\Middleware\DetectZone;
@@ -47,6 +48,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => EnsureRole::class,
             'two_factor' => EnsureTwoFactor::class,
             'locale' => SetLocale::class,
+            'guest.texts' => ApplyGuestTexts::class,
             'federation.peer' => AuthenticateFederationPeer::class,
             'oidc.bounce' => BounceOidcCallback::class,
         ]);

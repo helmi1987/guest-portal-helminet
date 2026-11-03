@@ -9,6 +9,7 @@ use App\Http\Controllers\Admin\CertificateController;
 use App\Http\Controllers\Admin\FederationController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\GuestController;
+use App\Http\Controllers\Admin\GuestTextsController;
 use App\Http\Controllers\Admin\LogoutController;
 use App\Http\Controllers\Admin\MacWhitelistController;
 use App\Http\Controllers\Admin\OidcController;
@@ -41,7 +42,8 @@ use Illuminate\View\Middleware\ShareErrorsFromSession;
 
 // Every throttle has its own prefix: without one, all throttled routes share one counter per IP
 // (e.g. branding files loaded by each page would use up the 5/min of the approval request).
-Route::middleware(['zone:guest', 'locale'])->group(function () {
+// guest.texts: the admin's text overrides of the guest's language (CONCEPT.md §9 "Guest texts").
+Route::middleware(['zone:guest', 'locale', 'guest.texts'])->group(function () {
     Route::view('/', 'guest.landing')->name('guest.landing');
     Route::get('/lang/{locale}', LocaleController::class)->name('guest.locale');
     Route::get('/portal', [PortalController::class, 'show'])->name('guest.portal');
@@ -148,7 +150,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 });
             });
 
-            // Admin only: code CSV export, settings, channels, toolbox, terms, sites/routers/setup, users, audit log, backups, certificates, federation.
+            // Admin only: code CSV export, settings, channels, toolbox, terms, guest texts, sites/routers/setup, users, audit log, backups, certificates, federation.
             Route::middleware('role:admin')->name('admin.')->group(function () {
                 Route::get('/grants/export', [GrantController::class, 'export'])->name('grants.export');
                 Route::get('/settings', [SettingsController::class, 'show'])->name('settings');
@@ -180,6 +182,12 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/terms', [TermsController::class, 'index'])->name('terms');
                 Route::post('/terms/defaults', [TermsController::class, 'publishDefaults'])->name('terms.publish-defaults');
                 Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('terms.update');
+                // Guest texts with a live preview of the real guest views (iframe, drafts posted, never stored).
+                Route::get('/texts', [GuestTextsController::class, 'index'])->name('texts');
+                Route::get('/texts/preview', [GuestTextsController::class, 'preview'])->name('texts.preview');
+                Route::post('/texts/preview', [GuestTextsController::class, 'previewDraft'])->name('texts.preview.draft');
+                Route::post('/texts/{locale}', [GuestTextsController::class, 'update'])->name('texts.update')
+                    ->whereIn('locale', config('portal.locales'));
 
                 Route::resource('sites', SiteController::class)->except(['show']);
                 Route::get('/sites/{site}/login.html', [SiteController::class, 'loginPage'])->name('sites.login-page');

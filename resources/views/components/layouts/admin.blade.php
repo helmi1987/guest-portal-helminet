@@ -34,6 +34,7 @@
                             <div class="gp-nav-menu absolute left-0 z-20 mt-1 min-w-40 rounded bg-(--gp-header-bg) py-1 shadow-lg ring-1 ring-white/20">
                                 <a href="{{ route('admin.sites.index') }}" class="block px-3 py-1 hover:underline">{{ __('portal.sites.title') }}</a>
                                 <a href="{{ route('admin.terms') }}" class="block px-3 py-1 hover:underline">{{ __('portal.terms.title') }}</a>
+                                <a href="{{ route('admin.texts') }}" class="block px-3 py-1 hover:underline">{{ __('portal.texts.title') }}</a>
                                 <a href="{{ route('admin.settings') }}" class="block px-3 py-1 hover:underline">{{ __('portal.admin.settings') }}</a>
                                 <a href="{{ route('admin.users.index') }}" class="block px-3 py-1 hover:underline">{{ __('portal.users.title') }}</a>
                                 <a href="{{ route('admin.audit') }}" class="block px-3 py-1 hover:underline">{{ __('portal.audit.title') }}</a>

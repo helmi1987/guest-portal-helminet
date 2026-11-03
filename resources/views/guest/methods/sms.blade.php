@@ -1,6 +1,7 @@
 {{-- Login with an SMS code (CONCEPT.md §7.2 B): name, mobile number and terms, then the code page. --}}
-<form id="gp-login-form" method="POST" action="{{ route('guest.sms.request') }}" class="gp-form flex flex-col gap-4">
+<form id="gp-login-form" method="POST" action="{{ $guestPreview?->action() ?? route('guest.sms.request') }}" class="gp-form flex flex-col gap-4" @if ($guestPreview) novalidate @endif>
     @csrf
+    {{ $guestPreview?->fields('sms_otp') }}
     @include('guest.partials.name-fields')
     <label class="gp-label label">
         <span>{{ __('portal.guest.phone') }}</span>

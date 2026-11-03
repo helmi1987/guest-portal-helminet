@@ -1,6 +1,7 @@
 {{-- Login with an access code or the site code (CONCEPT.md §7.2 A, §8). --}}
-<form id="gp-login-form" method="POST" action="{{ route('guest.redeem') }}" class="gp-form flex flex-col gap-4">
+<form id="gp-login-form" method="POST" action="{{ $guestPreview?->action() ?? route('guest.redeem') }}" class="gp-form flex flex-col gap-4" @if ($guestPreview) novalidate @endif>
     @csrf
+    {{ $guestPreview?->fields('status') }}
     @include('guest.partials.name-fields')
     <label class="gp-label label">
         <span>{{ __('portal.guest.code') }}</span>

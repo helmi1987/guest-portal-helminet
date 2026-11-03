@@ -27,5 +27,30 @@
             {{ $slot }}
         </main>
     </div>
+    @if ($guestPreview)
+        {{-- Admin preview (CONCEPT.md §9 "Guest texts"): a click inside the iframe asks the admin page to
+             re-post its drafts for the next screen, so unsaved texts are kept; plain links work without JS. --}}
+        <script>
+        (function () {
+            if (window.parent === window) { return; }
+            var path = @json(parse_url(route('admin.texts.preview'), PHP_URL_PATH));
+            var send = function (data) { window.parent.postMessage(data, location.origin); };
+            document.addEventListener('click', function (e) {
+                var a = e.target.closest ? e.target.closest('a[href]') : null;
+                if (!a || a.getAttribute('href').charAt(0) === '#') { return; }
+                var url = new URL(a.href, location.href);
+                if (url.origin !== location.origin || url.pathname !== path) { return; }
+                e.preventDefault();
+                send({screen: url.searchParams.get('screen'), locale: url.searchParams.get('locale')});
+            });
+            document.addEventListener('submit', function (e) {
+                var screen = e.target.elements ? e.target.elements.namedItem('screen') : null;
+                if (!screen) { return; }
+                e.preventDefault();
+                send({screen: screen.value});
+            });
+        })();
+        </script>
+    @endif
 </body>
 </html>

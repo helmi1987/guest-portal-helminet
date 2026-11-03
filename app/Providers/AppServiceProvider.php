@@ -16,6 +16,7 @@ use App\Support\LocalInstance;
 use Illuminate\Database\Connection;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Route;
+use Illuminate\Support\Facades\View;
 use Illuminate\Support\ServiceProvider;
 use Livewire\Livewire;
 
@@ -48,6 +49,9 @@ class AppServiceProvider extends ServiceProvider
             ->middleware('zone:admin'));
         // Livewire update requests re-apply the zone of the page they came from.
         Livewire::addPersistentMiddleware([EnsureZone::class]);
+
+        // Guest views link to the guest routes unless the admin preview shares its GuestPreview (CONCEPT.md §9).
+        View::share('guestPreview', null);
 
         // Columns shared by all replicated tables (CONCEPT.md §10.3, §11).
         Blueprint::macro('replicated', function () {

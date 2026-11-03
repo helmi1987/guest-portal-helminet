@@ -3,12 +3,13 @@
         <h1 class="gp-card-title mb-1 text-xl font-semibold sm:text-2xl">{{ __('portal.guest.sms_title') }}</h1>
         <p class="gp-intro mb-4 opacity-80">{{ __('portal.guest.sms_sent', ['phone' => $phone, 'minutes' => config('portal.sms.ttl_minutes')]) }}</p>
 
-        @if (session('status'))
-            <p class="gp-success mb-4 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-800" role="status">{{ session('status') }}</p>
+        @if ($message = $statusMessage ?? session('status'))
+            <p class="gp-success mb-4 rounded border border-green-200 bg-green-50 p-3 text-sm text-green-800" role="status">{{ $message }}</p>
         @endif
 
-        <form method="POST" action="{{ route('guest.sms.verify') }}" class="gp-form flex flex-col gap-4">
+        <form method="POST" action="{{ $guestPreview?->action() ?? route('guest.sms.verify') }}" class="gp-form flex flex-col gap-4" @if ($guestPreview) novalidate @endif>
             @csrf
+            {{ $guestPreview?->fields('status') }}
             <label class="gp-label label">
                 <span>{{ __('portal.guest.otp') }}</span>
                 <input name="otp" inputmode="numeric" pattern="[0-9 ]*" maxlength="7" required autocomplete="one-time-code" autofocus
@@ -24,10 +25,10 @@
 
         <div class="mt-4 flex flex-wrap items-center justify-between gap-2 border-t border-(--gp-divider) pt-4 text-sm">
             @if ($canResend)
-                <form method="POST" action="{{ route('guest.sms.resend') }}">
-                    @csrf <button type="submit" class="gp-button gp-button-secondary btn-light">{{ __('portal.guest.sms_resend') }}</button></form>
+                <form method="POST" action="{{ $guestPreview?->action() ?? route('guest.sms.resend') }}">
+                    @csrf {{ $guestPreview?->fields('sms_resent') }} <button type="submit" class="gp-button gp-button-secondary btn-light">{{ __('portal.guest.sms_resend') }}</button></form>
             @endif
-            <a href="{{ route('guest.portal', ['method' => 'sms']) }}" class="gp-link underline">{{ __('portal.guest.sms_change') }}</a>
+            <a href="{{ $guestPreview?->url('sms') ?? route('guest.portal', ['method' => 'sms']) }}" class="gp-link underline">{{ __('portal.guest.sms_change') }}</a>
         </div>
     </section>
     <script>
