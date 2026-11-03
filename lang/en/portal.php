@@ -834,6 +834,7 @@ return [
             'duration' => 'Access duration (hours, from login)',
             'origins_help' => 'Every guest address needs its own redirect URI at the provider: APP_URL and the portal URL of each site (currently :count). The lists below contain all of them.',
             'walled_garden' => 'The router’s walled garden must allow the provider’s hosts; the generated RouterOS script contains them once the provider is enabled.',
+            'walled_garden_changed' => 'The walled-garden hosts for the routers have changed: apply the router script again at every active site (or use the setup assistant), otherwise the providers’ sign-in pages do not open in the guest Wi-Fi.',
             'providers' => [
                 'google' => 'Google',
                 'apple' => 'Apple',

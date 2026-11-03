@@ -193,6 +193,23 @@ class SocialSettingsTest extends TestCase
         $this->assertStringNotContainsString('new-github-secret', json_encode($audits->pluck('data')));
     }
 
+    public function test_saving_hints_at_the_walled_garden_when_the_hosts_change(): void
+    {
+        LoginMethods::save(['code' => true, 'social' => true]);
+        $payload = $this->form(['google' => ['enabled' => '1', 'client_id' => 'google-client', 'secret' => self::GOOGLE_SECRET]]);
+
+        $this->onZone('admin')->actingAs($this->admin())->post('/admin/settings/social', $payload)
+            ->assertRedirect()->assertSessionHas('warning')->assertSessionHas('warning_link');
+        // The same configuration again: the hosts are unchanged, no hint.
+        $payload['providers']['google']['secret'] = '';
+        $this->onZone('admin')->actingAs($this->admin())->post('/admin/settings/social', $payload)
+            ->assertRedirect()->assertSessionMissing('warning');
+        // Switching social login off removes the hosts: hint again.
+        $this->onZone('admin')->actingAs($this->admin())->post('/admin/settings/login-methods', ['methods' => ['code' => '1']])
+            ->assertRedirect()->assertSessionHas('warning');
+        $this->onZone('admin')->actingAs($this->admin())->get('/admin/settings')->assertSee(__('portal.settings.social.walled_garden_changed'));
+    }
+
     public function test_duration_is_validated(): void
     {
         $admin = $this->admin();

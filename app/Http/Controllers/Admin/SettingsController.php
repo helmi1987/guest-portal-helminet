@@ -9,6 +9,7 @@ use App\Auth\Social\AppleClientSecret;
 use App\Auth\Social\LoginMethods;
 use App\Auth\Social\ProviderCheck;
 use App\Auth\Social\SocialSettings;
+use App\Auth\Social\WalledGarden;
 use App\Auth\TwoFactor;
 use App\Branding\BrandingSettings;
 use App\Federation\Topology;
@@ -136,12 +137,13 @@ class SettingsController extends Controller
         if (! in_array(true, $flags, true)) {
             throw ValidationException::withMessages(['methods' => __('portal.settings.login_methods.at_least_one')]);
         }
+        $hostsBefore = WalledGarden::hosts();
         LoginMethods::save($flags);
         // Lists, not flags by method name: Audit strips a key named "code".
         Audit::log('settings.login_methods', null, ['enabled' => array_keys(array_filter($flags)),
             'disabled' => array_keys(array_diff_key($flags, array_filter($flags)))]);
 
-        return back()->with('status', __('portal.saved'));
+        return $this->withWalledGardenHint(back()->with('status', __('portal.saved')), $hostsBefore);
     }
 
     /**
@@ -198,6 +200,7 @@ class SettingsController extends Controller
                 ->withInput($request->except($secretFields));
         }
 
+        $hostsBefore = WalledGarden::hosts();
         SocialSettings::save($config, $secrets);
         // Audit keys must not look like secrets (Audit strips them), hence "credential_changed"; no values.
         Audit::log('settings.social', null, [
@@ -208,7 +211,23 @@ class SettingsController extends Controller
             ]])->all(),
         ]);
 
-        return back()->with('status', __('portal.saved'));
+        return $this->withWalledGardenHint(back()->with('status', __('portal.saved')), $hostsBefore);
+    }
+
+    /**
+     * The walled-garden hosts the routers must allow follow the enabled providers (WalledGarden::hosts()):
+     * when a save changes them, the admin is told to apply the router script of the active sites again.
+     *
+     * @param  list<string>  $hostsBefore
+     */
+    private function withWalledGardenHint(RedirectResponse $response, array $hostsBefore): RedirectResponse
+    {
+        if (WalledGarden::hosts() === $hostsBefore) {
+            return $response;
+        }
+
+        return $response->with('warning', __('portal.settings.social.walled_garden_changed'))
+            ->with('warning_link', [route('admin.sites.index'), __('portal.sites.title')]);
     }
 
     /** The pasted .p8 content must be an EC P-256 private key that can sign the Apple client secret. */

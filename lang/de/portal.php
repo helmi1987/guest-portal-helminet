@@ -834,6 +834,7 @@ return [
             'duration' => 'Zugangsdauer (Stunden, ab Anmeldung)',
             'origins_help' => 'Jede Gast-Adresse braucht beim Anbieter eine eigene Redirect-URI: APP_URL und die Portal-URL jedes Standorts (zurzeit :count). Die Listen unten enthalten alle.',
             'walled_garden' => 'Der Walled Garden des Routers muss die Hosts des Anbieters erlauben; das generierte RouterOS-Skript enthält sie, sobald der Anbieter aktiviert ist.',
+            'walled_garden_changed' => 'Die Walled-Garden-Hosts für die Router haben sich geändert: Bei jedem aktiven Standort das Router-Skript neu einspielen oder im Setup-Assistenten anwenden, sonst öffnen sich die Anmeldeseiten der Anbieter im Gäste-WLAN nicht.',
             'providers' => [
                 'google' => 'Google',
                 'apple' => 'Apple',

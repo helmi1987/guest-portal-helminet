@@ -834,6 +834,7 @@ return [
             'duration' => 'Durata dell\'accesso (ore, dall\'accesso)',
             'origins_help' => 'Ogni indirizzo ospite richiede il proprio URI di reindirizzamento presso il provider: APP_URL e l\'URL del portale di ogni sede (attualmente :count). Gli elenchi qui sotto li contengono tutti.',
             'walled_garden' => 'Il walled garden del router deve consentire gli host del provider; lo script RouterOS generato li contiene non appena il provider è attivato.',
+            'walled_garden_changed' => 'Gli host del walled garden per i router sono cambiati: riapplicare lo script del router in ogni sito attivo (o usare l’assistente di configurazione), altrimenti le pagine di accesso dei provider non si aprono nel Wi-Fi ospiti.',
             'providers' => [
                 'google' => 'Google',
                 'apple' => 'Apple',
