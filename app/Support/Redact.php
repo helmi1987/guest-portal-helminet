@@ -30,4 +30,18 @@ final class Redact
 
         return mb_substr($phone, 0, $keep).str_repeat('*', max(0, mb_strlen($phone) - $keep - 2)).mb_substr($phone, -2);
     }
+
+    /** Masked email address for the manager role, e.g. a***@example.com (first character and domain kept). */
+    public static function email(?string $email): string
+    {
+        if ($email === null || $email === '') {
+            return '';
+        }
+        $at = mb_strrpos($email, '@');
+        if ($at === false || $at === 0) {
+            return '***';
+        }
+
+        return mb_substr($email, 0, 1).'***'.mb_substr($email, $at);
+    }
 }

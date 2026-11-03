@@ -46,7 +46,11 @@ class ApprovalTest extends TestCase
             'api.telegram.org/*' => Http::response(['ok' => true, 'result' => true]),
         ]);
 
-        $this->enterPortal()->assertOk()->assertSee(__('portal.guest.approval_request'));
+        // Code and approval available: the chooser links to the approval page.
+        $this->enterPortal()->assertOk()->assertSee(__('portal.guest.choose.approval'))->assertSee('/portal?method=approval', false)
+            ->assertDontSee(__('portal.guest.approval_request'));
+        $this->onZone('guest')->get('/portal?method=approval')->assertOk()->assertSee(__('portal.guest.approval_request'))
+            ->assertSee('action="'.route('guest.approval.request').'"', false);
         $this->requestApproval()->assertRedirect('/portal/approval');
         $request = ApprovalRequest::sole();
         $this->assertSame(7, $request->meta[$channel->id]['message_id']);

@@ -39,10 +39,15 @@
                         <td>
                             <div class="font-medium">{{ $guest->last_name }}, {{ $guest->first_name }}</div>
                             @if ($guest->phone_e164)<div class="font-mono text-xs">{{ auth()->user()->displayPhone($guest->phone_e164) }}</div>@endif
+                            @if ($guest->email)<div class="text-xs" title="{{ __('portal.guests.email') }}">{{ auth()->user()->displayEmail($guest->email) }}</div>@endif
                             <div class="text-xs text-slate-500">{{ \App\Support\LocalTime::format($guest->created_at, 'Y-m-d H:i') }}</div>
                         </td>
                         <td>
-                            {{ $method ? __('portal.guests.methods.'.$method->value) : '–' }}<br>
+                            @if ($method === \App\Enums\GrantType::Social && $guest->social_provider)
+                                {{ __('portal.guests.method_social', ['provider' => \App\Auth\Social\SocialLogin::name($guest->social_provider)]) }}<br>
+                            @else
+                                {{ $method ? __('portal.guests.methods.'.$method->value) : '–' }}<br>
+                            @endif
                             <span class="text-xs">{{ $sites[$acceptance?->site_id] ?? '–' }}</span>
                         </td>
                         <td class="text-xs">

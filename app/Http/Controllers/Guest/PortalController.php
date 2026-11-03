@@ -3,14 +3,16 @@
 namespace App\Http\Controllers\Guest;
 
 use App\Approval\ApprovalService;
+use App\Auth\Social\LoginMethods;
+use App\Auth\Social\SocialSettings;
 use App\Branding\BrandingSettings;
 use App\Enums\ApprovalStatus;
 use App\Enums\GrantStatus;
 use App\Enums\GrantType;
 use App\Federation\Topology;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\Guest\Concerns\GuestLogin;
 use App\Models\ApprovalRequest;
-use App\Models\Channel;
 use App\Models\Grant;
 use App\Models\Guest;
 use App\Models\OtpChallenge;
@@ -40,10 +42,13 @@ use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
 
 /**
- * Guest login with a code, SMS code or push approval (CONCEPT.md §7.1, §7.2 A-C), status page and error pages.
+ * Guest login with a code, SMS code or push approval (CONCEPT.md §7.1, §7.2 A-C), the method chooser,
+ * status page and error pages. Social login: SocialLoginController (§7.2 D).
  */
 class PortalController extends Controller
 {
+    use GuestLogin;
+
     /** Entry from the router's login.html redirect; parameters are kept in the session. */
     public function show(Request $request, LoginThrottle $throttle): View|Response
     {
@@ -68,22 +73,48 @@ class PortalController extends Controller
             return $this->error('locked', 429);
         }
 
+        // Method chooser (decision 2026-11-03): one available method is shown directly, so is the one
+        // selected with ?method= and the code page for a prefilled code; otherwise the chooser.
+        $methods = LoginMethods::availableList();
+        if ($methods === []) {
+            return $this->error('no_login_method');
+        }
+        $selected = $request->query('method');
+        $selected = is_string($selected) && in_array($selected, $methods, true) ? $selected : null;
+        $method = match (true) {
+            count($methods) === 1 => $methods[0],
+            $selected !== null => $selected,
+            $prefill !== null && in_array(LoginMethods::CODE, $methods, true) => LoginMethods::CODE,
+            default => null,
+        };
+        // Notices only on the first page the guest sees (chooser or the page shown directly).
+        $first = $selected === null;
+
         return view('guest.portal', [
             'site' => $site,
+            'methods' => $methods,
+            'method' => $method,
             'terms' => TermsVersion::current(app()->getLocale()),
-            'routerFailed' => $this->previousHandoffFailed($request),
+            'routerFailed' => $first && $this->previousHandoffFailed($request),
             // Limited mode (hub unreachable, CONCEPT.md §10.1): no push approval for new logins.
-            'limitedMode' => $limited = app(Topology::class)->limitedMode(),
-            'approvalEnabled' => ! $limited && Channel::query()->activeNotification()->exists(),
-            'smsEnabled' => OtpService::enabled(),
+            'limitedMode' => app(Topology::class)->limitedMode(),
             'prefillCode' => $request->session()->get('portal_code'),
+            'socialProviders' => $method === LoginMethods::SOCIAL || $method === null ? SocialSettings::enabledProviders() : [],
+            // Social login hint for captive-portal mini browsers: this page's address to open elsewhere.
+            'entryUrl' => $request->getSchemeAndHttpHost().'/portal?'.http_build_query(array_filter([
+                'site' => $site->slug, 'mac' => $context->mac, 'ip' => $context->ip, 'link-login-only' => $context->loginUrl,
+            ])),
             // Returning device whose access ended (expired, revoked, disconnected); reason only.
-            'endedNotice' => AccessEndedNotice::for($context->mac, $site),
+            'endedNotice' => $first ? AccessEndedNotice::for($context->mac, $site) : null,
         ]);
     }
 
     public function redeem(Request $request, GrantManager $grants, SiteCodeManager $siteCodes, LoginThrottle $throttle): View|Response|RedirectResponse
     {
+        // The code switch covers normal codes and the site code.
+        if ($refused = $this->methodUnavailable(LoginMethods::CODE)) {
+            return $refused;
+        }
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
@@ -169,6 +200,12 @@ class PortalController extends Controller
     /** Ask an approver for access (CONCEPT.md §7.2 C); the guest then waits on the approval page. */
     public function requestApproval(Request $request, ApprovalService $approvals, LoginThrottle $throttle): Response|RedirectResponse
     {
+        if (LoginMethods::enabled(LoginMethods::APPROVAL) && app(Topology::class)->limitedMode()) {
+            throw ValidationException::withMessages(['approval' => __('portal.guest.errors.limited_mode')]);
+        }
+        if ($refused = $this->methodUnavailable(LoginMethods::APPROVAL)) {
+            return $refused;
+        }
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
@@ -177,11 +214,8 @@ class PortalController extends Controller
         ]);
 
         [$site, $context] = $this->current($request);
-        if ($site === null || ! $context->isComplete() || ! Channel::query()->activeNotification()->exists()) {
+        if ($site === null || ! $context->isComplete()) {
             return redirect()->route('guest.portal');
-        }
-        if (app(Topology::class)->limitedMode()) {
-            throw ValidationException::withMessages(['approval' => __('portal.guest.errors.limited_mode')]);
         }
         $terms = TermsVersion::current(app()->getLocale());
         if (($data['terms_version'] ?? null) !== $terms?->id) {
@@ -247,6 +281,9 @@ class PortalController extends Controller
     /** Send an SMS code (CONCEPT.md §7.2 B); the guest then enters it on the SMS page. */
     public function requestSms(Request $request, OtpService $otp, LoginThrottle $throttle): Response|RedirectResponse
     {
+        if ($refused = $this->methodUnavailable(LoginMethods::SMS)) {
+            return $refused;
+        }
         $data = $request->validate([
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
@@ -256,7 +293,7 @@ class PortalController extends Controller
         ]);
 
         [$site, $context] = $this->current($request);
-        if ($site === null || ! $context->isComplete() || ! OtpService::enabled()) {
+        if ($site === null || ! $context->isComplete()) {
             return redirect()->route('guest.portal');
         }
         $terms = TermsVersion::current(app()->getLocale());
@@ -397,16 +434,6 @@ class PortalController extends Controller
         return $this->handoff($request, $grant, $site, $context, $token, $password);
     }
 
-    private function handoff(Request $request, Grant $grant, Site $site, HotspotContext $context, RadiusToken $token, string $password): View
-    {
-        $request->session()->put('handoff_token', $token->id);
-        // Valid until the grant ends (plus a margin for the "expired" page).
-        $statusUrl = url(URL::temporarySignedRoute('guest.status', $grant->refresh()->expires_at->copy()->addHour(),
-            ['grant' => $grant->id, 'token' => $token->id], absolute: false));
-
-        return view('guest.handoff', $site->driver()->loginHandoff($context, $token->username, $password, $statusUrl));
-    }
-
     /** Target of the router after the login (dst): remaining time of the grant. Signed URL, no cookie needed. */
     public function status(Request $request, string $grant, int $token): View|Response
     {
@@ -437,11 +464,6 @@ class PortalController extends Controller
             'remaining' => $remaining === null ? null : CarbonInterval::seconds(max(60, $remaining))->cascade()
                 ->locale(app()->getLocale())->forHumans(['parts' => 2, 'join' => true]),
         ]);
-    }
-
-    private function error(string $kind, int $status = 200): Response
-    {
-        return response()->view('guest.error', ['kind' => $kind], $status);
     }
 
     /**
@@ -482,14 +504,5 @@ class PortalController extends Controller
         $token = $id ? RadiusToken::find($id) : null;
 
         return $token !== null && $token->used_at === null && $token->created_at->gt(now()->subMinutes(10));
-    }
-
-    /** @return array{0: ?Site, 1: HotspotContext} */
-    private function current(Request $request): array
-    {
-        $portal = $request->session()->get('portal');
-        $site = $portal ? Site::find($portal['site']) : null;
-
-        return [$site, HotspotContext::fromArray($site ? $portal['context'] : [])];
     }
 }

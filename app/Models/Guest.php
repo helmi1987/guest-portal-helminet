@@ -10,9 +10,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
- * A guest as entered at one login (name, optional phone). Each login creates a new row.
+ * A guest as entered at one login (name, optional phone; for a social login the provider, its subject
+ * and the email it reported). Each login creates a new row.
  */
-#[Fillable(['first_name', 'last_name', 'phone_e164', 'locale'])]
+#[Fillable(['first_name', 'last_name', 'phone_e164', 'locale', 'social_provider', 'social_subject', 'email'])]
 class Guest extends Model
 {
     use Replicated;
@@ -52,6 +53,7 @@ class Guest extends Model
         return $grant?->type ?? match (true) {
             (bool) $this->approval_requests_exists => GrantType::Approval,
             (bool) $this->otp_challenges_exists => GrantType::Sms,
+            $this->social_provider !== null => GrantType::Social,
             default => null,
         };
     }

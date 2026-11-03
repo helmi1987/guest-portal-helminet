@@ -1,5 +1,6 @@
 <?php
 
+use App\Auth\Social\SocialSettings;
 use App\Http\Controllers\Admin\ApprovalController;
 use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\BackupController;
@@ -23,6 +24,7 @@ use App\Http\Controllers\Admin\WizardController;
 use App\Http\Controllers\ApprovalLinkController;
 use App\Http\Controllers\Guest\LocaleController;
 use App\Http\Controllers\Guest\PortalController;
+use App\Http\Controllers\Guest\SocialLoginController;
 use App\Livewire\Admin\Login;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Session\Middleware\StartSession;
@@ -57,7 +59,28 @@ Route::middleware(['zone:guest', 'locale'])->group(function () {
         ->middleware('throttle:5,1,guest-sms-resend');
     Route::get('/status/{grant}/{token}', [PortalController::class, 'status'])->name('guest.status')
         ->whereNumber('token')->middleware('signed:relative');
+
+    // Social login (CONCEPT.md §7.2 D): start (POST, terms) → go (GET, 302 to the provider) → callback.
+    Route::prefix('/portal/social')->name('guest.social.')->group(function () {
+        Route::get('/name', [SocialLoginController::class, 'name'])->name('name');
+        Route::post('/name', [SocialLoginController::class, 'storeName'])->name('name.store')
+            ->middleware('throttle:20,1,guest-social-name');
+        Route::post('/{provider}', [SocialLoginController::class, 'start'])->name('start')
+            ->whereIn('provider', SocialSettings::PROVIDERS)->middleware('throttle:10,1,guest-social-start');
+        Route::get('/{provider}/go', [SocialLoginController::class, 'go'])->name('go')
+            ->whereIn('provider', SocialSettings::PROVIDERS)->middleware('throttle:10,1,guest-social-go');
+        Route::get('/{provider}/callback', [SocialLoginController::class, 'callback'])->name('callback')
+            ->whereIn('provider', SocialSettings::PROVIDERS)->middleware('throttle:20,1,guest-social-callback');
+    });
 });
+
+// Apple's form_post callback (CONCEPT.md §7.2 D): a cross-site POST without the guest session cookie. No
+// session (a new session cookie would replace the guest's), no CSRF check, no locale from the session; the
+// answer forwards the values to the GET callback as a same-site navigation.
+Route::middleware(['zone:guest', 'throttle:20,1,guest-social-callback'])
+    ->withoutMiddleware([StartSession::class, ShareErrorsFromSession::class, PreventRequestForgery::class])
+    ->post('/portal/social/{provider}/callback', [SocialLoginController::class, 'bounce'])->name('guest.social.callback.post')
+    ->whereIn('provider', [SocialSettings::APPLE]);
 
 // Signed approve/deny links (Gotify, webhook): no login and no session, so opening a link does not
 // replace an admin session cookie; the signature authorizes GET (show) and POST (decide).

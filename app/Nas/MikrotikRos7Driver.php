@@ -2,6 +2,7 @@
 
 namespace App\Nas;
 
+use App\Auth\Social\WalledGarden;
 use App\Models\Grant;
 use App\Models\NasClient;
 use App\Models\RadiusAccounting;
@@ -73,7 +74,9 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         $o = fn (string $path, ?string $name = null) => ['path' => $path, 'name' => $name];
         $blocks = [
             'radius' => ['server' => $o('/radius')],
-            'walled' => ['portal-host' => $o('/ip hotspot walled-garden'), 'portal-ip' => $o('/ip hotspot walled-garden ip')],
+            // Social login hosts (decision 2026-11-03): one entry per host of the providers offered to guests
+            'walled' => ['portal-host' => $o('/ip hotspot walled-garden'), 'portal-ip' => $o('/ip hotspot walled-garden ip')]
+                + array_fill_keys(array_map(WalledGarden::object(...), WalledGarden::hosts()), $o('/ip hotspot walled-garden')),
             'cert' => ['script' => $o('/system script', self::NAME.'-cert'), 'scheduler' => $o('/system scheduler', self::NAME.'-cert')],
             // No own hotspot-name entry (decision 2026-11-02): the hotspot adds a dynamic one for its dns-name
             'dns' => ['portal-a' => $o('/ip dns static', self::NAME.'-v4.internal'),
@@ -355,6 +358,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         /ip hotspot walled-garden
         remove [find where {$oHost}]
         add dst-host={$portalHost} action=allow comment="{$kHost}"
+        {$this->socialWalledGarden()}
         # IP walled garden: action=accept. Only the own entry is replaced; entries of others are never
         # changed. An existing drop entry covering {$portalIp} (e.g. dst-address=<LAN>/24 action=drop)
         # blocks the portal for guests: check with the print of the diagnostics block, remove it manually.
@@ -368,6 +372,34 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         # of the setup assistant.
 
         RSC;
+    }
+
+    /**
+     * Walled-garden entries of the social login (decision 2026-11-03): the sign-in hosts of the providers
+     * offered to guests (WalledGarden::hosts()). The own entries of every provider are removed by their
+     * exact comment keys first, so a provider switched off loses its entries on the next run.
+     */
+    private function socialWalledGarden(): string
+    {
+        $key = fn (string $host) => self::key('walled', WalledGarden::object($host));
+        $lines = ['# Social login: sign-in pages of the enabled providers (Google, Apple, Facebook, GitHub) before login.',
+            '# The own entries of all providers are replaced; entries of others are never changed.'];
+        foreach (WalledGarden::HOSTS as $hosts) {
+            $lines[] = 'remove [find where ('.implode(' || ', array_map(fn ($h) => 'comment="'.$key($h).'"', $hosts)).') && !dynamic]';
+        }
+        foreach (WalledGarden::hosts() as $host) {
+            $lines[] = 'add dst-host="'.$host.'" action=allow comment="'.$key($host).'"';
+        }
+
+        return implode("\n", $lines);
+    }
+
+    /** Uninstall: the own social login entries of all providers (exact comment keys). */
+    private function socialWalledGardenRemove(): string
+    {
+        $keys = array_map(fn ($h) => 'comment="'.self::key('walled', WalledGarden::object($h)).'"', WalledGarden::allHosts());
+
+        return '/ip hotspot walled-garden remove [find where ('.implode(' || ', $keys).') && !dynamic]';
     }
 
     /** Hotspot profile and server "guest-portal"; used by the router script and the setup assistant. */
@@ -699,6 +731,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
                 /ip hotspot remove [find where name="{$n}"]
                 /ip hotspot profile remove [find where name="{$n}"]
                 /ip hotspot walled-garden remove [find where {$ws('walled', 'portal-host')}]
+                {$this->socialWalledGardenRemove()}
                 /ip hotspot walled-garden ip remove [find where {$ws('walled', 'portal-ip')}]
                 /radius remove [find where {$o('radius', 'server')}]
                 # /radius incoming has no comment: only if nothing else uses Disconnect/CoA on this router:

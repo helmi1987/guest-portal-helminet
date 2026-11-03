@@ -44,7 +44,9 @@ class SmsLoginTest extends TestCase
         $this->clickatell();
         Http::fake(['platform.clickatell.com/*' => Http::response(['messages' => [['apiMessageId' => 'm1', 'accepted' => true]]])]);
 
-        $this->enterPortal()->assertOk()->assertSee(__('portal.guest.sms_request'));
+        $this->enterPortal()->assertOk()->assertSee(__('portal.guest.choose.sms'))->assertSee('/portal?method=sms', false);
+        $this->onZone('guest')->get('/portal?method=sms')->assertOk()->assertSee(__('portal.guest.sms_request'))
+            ->assertSee('name="phone"', false);
         $this->requestSms()->assertRedirect('/portal/sms');
         Http::assertSent(fn (Request $r) => $r->url() === 'https://platform.clickatell.com/messages'
             && $r->hasHeader('Authorization', 'test-api-key') && $r['to'] === ['41790000000']);

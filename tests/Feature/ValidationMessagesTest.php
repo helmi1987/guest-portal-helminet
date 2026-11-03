@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\Channel;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Middleware\ThrottleRequests;
 use Illuminate\Support\MessageBag;
@@ -27,6 +28,10 @@ class ValidationMessagesTest extends TestCase
     public function test_empty_guest_forms_show_translated_messages_in_de_it_fr(): void
     {
         $this->withoutMiddleware(ThrottleRequests::class);
+        // SMS and approval login are available only with an SMS provider and a notification channel.
+        Channel::create(['kind' => 'sms', 'driver' => 'clickatell', 'name' => 'SMS', 'enabled' => true, 'config' => ['api_key' => 'test-api-key']]);
+        Channel::create(['kind' => 'notification', 'driver' => 'gotify', 'name' => 'Gotify', 'enabled' => true,
+            'config' => ['url' => 'https://gotify.example.com', 'app_token' => 'app-token']]);
         foreach (['de', 'it', 'fr'] as $locale) {
             foreach (self::FORMS as $uri => $fields) {
                 $response = $this->onZone('guest')->withSession(['locale' => $locale])->post($uri, []);
