@@ -52,7 +52,10 @@
                             @else – @endif
                         </td>
                         <td>
-                            @if ($grant)
+                            @if ($grant?->trashed())
+                                <span class="font-mono">{{ $grant->code ?? __('portal.guests.methods.'.$grant->type->value) }}</span>
+                                <div class="text-xs text-slate-500">{{ __('portal.guests.grant_deleted') }}</div>
+                            @elseif ($grant)
                                 <a href="{{ route('admin.grants.edit', $grant) }}" class="font-mono underline">{{ $grant->code ?? __('portal.guests.methods.'.$grant->type->value) }}</a>
                                 <div class="text-xs">{{ $grant->status()->label() }}@if ($grant->isUsable() && $grant->remainingSeconds() !== null) · {{ __('portal.grants.remaining') }} {{ \App\Support\Duration::format($grant->remainingSeconds()) }}@endif</div>
                                 @unless ($grant->revoked_at)

@@ -4,10 +4,11 @@
         <a href="{{ route('admin.grants.create') }}" class="btn">{{ __('portal.grants.create') }}</a>
     </div>
     <nav class="mb-4 flex flex-wrap gap-2 text-sm">
-        <a href="{{ route('admin.grants.index') }}" @class(['btn-light', 'font-semibold' => ! $status])>{{ __('portal.all') }}</a>
+        <a href="{{ route('admin.grants.index') }}" @class(['btn-light', 'font-semibold' => ! $status && ! $all])>{{ __('portal.grants.current') }}</a>
         @foreach (\App\Enums\GrantStatus::cases() as $case)
             <a href="{{ route('admin.grants.index', ['status' => $case->value]) }}" @class(['btn-light', 'font-semibold' => $status === $case])>{{ $case->label() }}</a>
         @endforeach
+        <a href="{{ route('admin.grants.index', ['status' => 'all']) }}" @class(['btn-light', 'font-semibold' => $all])>{{ __('portal.all') }}</a>
     </nav>
     <form method="GET" action="{{ route('admin.grants.print') }}" class="card">
         <table class="data-table">
@@ -30,6 +31,12 @@
                 @endforelse
             </tbody>
         </table>
-        <button class="btn-light mt-4">{{ __('portal.grants.print_selected') }}</button>
+        {{-- One checkbox form without JavaScript: printing is a GET; the delete button posts the same
+             selection and carries the CSRF token as its own value, so the token never lands in a print URL. --}}
+        <div class="mt-4 flex flex-wrap gap-2">
+            <button class="btn-light">{{ __('portal.grants.print_selected') }}</button>
+            <button class="btn-danger" formmethod="POST" formaction="{{ route('admin.grants.destroy-selected') }}" name="_token" value="{{ csrf_token() }}"
+                onclick="return confirm(@js(__('portal.grants.delete_selected_confirm')))">{{ __('portal.grants.delete_selected') }}</button>
+        </div>
     </form>
 </x-layouts.admin>

@@ -393,6 +393,12 @@ All login methods produce a **grant**; a code is a grant created in advance.
   is unused by design), so the guest types the printed code. CSV export (admin only; code, label,
   status, duration, expiry mode, validity, sites, created; formula prefixes neutralised; audited
   `grant.exported` with count).
+- Decision 2026-11-03 (v0.22.0, list and deletion): the codes list shows current grants (pending,
+  unused, active) by default, every status and "all" via the filter; ended grants (lapsed, expired,
+  revoked) can be deleted, singly or among a selection (usable ones are refused/skipped), as a soft
+  delete = federation tombstone (devices, tokens and sessions go with the retention purge; audited
+  `grant.deleted` / `grant.bulk_deleted`, never the code). Printed voucher batches otherwise clutter the
+  list for good; site codes stay deactivate-only, their history keeps the login counts.
 - **Site code** (decision 2026-10-29, v0.12.0): per site at most one active shared 6-digit code for any
   number of devices (`site_codes` R, site-scoped: valid only at its own site). Fields: duration per
   device (presets or custom hours), optional `valid_until` (no new logins afterwards), optional max.
@@ -491,7 +497,7 @@ Features:
 | Area | Content |
 |---|---|
 | Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods. |
-| Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke. |
+| Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke, delete ended codes (list shows current codes by default). |
 | Guests & sessions | Implemented M6 (admin + manager), one page: guests newest first (each login creates a guest row) with name, phone (masked for managers), login method (grant type; without grant: approval request or SMS challenge), site and accepted terms version + time of the latest acceptance, created; its grant (code/status/remaining, extend and revoke via the grant routes) and devices (MAC, online = open session summary of grant + MAC, IP, start/end, traffic from local accounting `bytes_in`/`bytes_out`). An open session without accounting update for `PORTAL_RADIUS_STALE_AFTER` (default 3 x interim interval = 900 s) is shown as "stale" (Stop probably lost; display only, data unchanged). Disconnect: Disconnect-Request job for an open session served by this instance (sessions of other instances: M7); the grant stays valid, audited `grant.disconnected`. Filters: site, method, running grants only, name (LIKE wildcards literal) or exact code; invalid filter values are ignored; 25 per page. Extend/shorten takes whole hours; a revoked grant cannot be extended (422). No new fields. |
 | MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
 | Approvals | Pending requests (approve/deny in UI as well). |

@@ -101,6 +101,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/grants/{grant}/extend', [GrantController::class, 'extend'])->name('grants.extend');
                 Route::post('/grants/{grant}/expiry', [GrantController::class, 'expiry'])->name('grants.expiry');
                 Route::post('/grants/{grant}/revoke', [GrantController::class, 'revoke'])->name('grants.revoke');
+                Route::delete('/grants/{grant}', [GrantController::class, 'destroy'])->name('grants.destroy');
+                Route::post('/grants/delete', [GrantController::class, 'destroySelected'])->name('grants.destroy-selected');
                 Route::get('/approvals', [ApprovalController::class, 'index'])->name('approvals.index');
                 Route::post('/approvals/{approval}', [ApprovalController::class, 'decide'])->name('approvals.decide');
                 Route::get('/guests', [GuestController::class, 'index'])->name('guests.index');

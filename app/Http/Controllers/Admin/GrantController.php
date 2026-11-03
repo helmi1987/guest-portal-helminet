@@ -26,16 +26,21 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
  */
 class GrantController extends Controller
 {
+    /** Default: current grants only (pending, unused, active); `?status=all` or one status (CONCEPT.md §8). */
     public function index(Request $request): View
     {
-        $status = GrantStatus::tryFrom((string) $request->query('status'));
+        $filter = (string) $request->query('status');
+        $status = GrantStatus::tryFrom($filter);
+        $all = $status === null && $filter === 'all';
         $grants = Grant::query()->with(['siteLinks', 'devices' => fn ($q) => $q->whereNull('unbound_at')])
             ->when($status, fn ($q) => $q->withStatus($status))
+            ->when($status === null && ! $all, fn ($q) => $q->withStatuses(GrantStatus::current()))
             ->latest()->limit(500)->get();
 
         return view('admin.grants.index', [
             'grants' => $grants,
             'status' => $status,
+            'all' => $all,
             'sites' => Site::query()->pluck('name', 'id'),
         ]);
     }
@@ -152,6 +157,23 @@ class GrantController extends Controller
         Audit::log('grant.revoked', $grant);
 
         return back()->with('status', __('portal.grants.revoked'));
+    }
+
+    /** Delete an ended grant (tombstone); usable grants are refused with a validation error. */
+    public function destroy(Grant $grant, GrantManager $manager): RedirectResponse
+    {
+        $manager->delete($grant);
+
+        return redirect()->route('admin.grants.index')->with('status', __('portal.grants.deleted'));
+    }
+
+    /** Delete the ended grants among the selected ones (ids[], max. 100); the others are skipped. */
+    public function destroySelected(Request $request, GrantManager $manager): RedirectResponse
+    {
+        $ids = array_slice(array_filter((array) $request->input('ids', []), 'is_string'), 0, 100);
+        $result = $manager->deleteEnded(Grant::query()->whereIn('id', $ids)->get());
+
+        return back()->with('status', __('portal.grants.bulk_deleted', $result));
     }
 
     public function print(Request $request, VoucherQr $qr): View

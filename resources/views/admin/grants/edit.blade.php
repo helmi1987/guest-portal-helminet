@@ -1,11 +1,18 @@
 <x-layouts.admin :title="__('portal.grants.code').' '.$grant->code">
     <div class="mb-4 flex items-center justify-between">
         <h1 class="text-2xl font-semibold">{{ __('portal.grants.code') }} <span class="font-mono">{{ $grant->code }}</span> · {{ $grant->status()->label() }}</h1>
-        @if ($grant->type === \App\Enums\GrantType::Code)
-            <a href="{{ route('admin.grants.print', ['ids' => [$grant->id]]) }}" class="btn-light">{{ __('portal.grants.print') }}</a>
-        @elseif ($grant->site_code_id)
-            <a href="{{ route('admin.site-codes.show', $grant->siteCode->site_id) }}" class="btn-light">{{ __('portal.site_codes.title') }}</a>
-        @endif
+        <div class="flex flex-wrap items-center gap-2">
+            @if ($grant->type === \App\Enums\GrantType::Code)
+                <a href="{{ route('admin.grants.print', ['ids' => [$grant->id]]) }}" class="btn-light">{{ __('portal.grants.print') }}</a>
+            @elseif ($grant->site_code_id)
+                <a href="{{ route('admin.site-codes.show', $grant->siteCode->site_id) }}" class="btn-light">{{ __('portal.site_codes.title') }}</a>
+            @endif
+            @if ($grant->isEnded())
+                <form method="POST" action="{{ route('admin.grants.destroy', $grant) }}" onsubmit="return confirm(@js(__('portal.grants.delete_confirm')))">
+                    @csrf @method('DELETE') <button class="btn-danger">{{ __('portal.grants.delete') }}</button>
+                </form>
+            @endif
+        </div>
     </div>
 
     <section class="card mb-6 grid gap-2 text-sm md:grid-cols-3">

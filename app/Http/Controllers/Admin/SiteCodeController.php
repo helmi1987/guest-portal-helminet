@@ -36,7 +36,8 @@ class SiteCodeController extends Controller
     public function show(Site $site): View
     {
         $history = SiteCode::query()->where('site_id', $site->id)
-            ->with(['creator', 'deactivator'])->withCount(['grants', 'runningGrants'])
+            // Login counts include deleted (ended) device grants until the retention purge removes them.
+            ->with(['creator', 'deactivator'])->withCount(['grants' => fn ($q) => $q->withTrashed(), 'runningGrants'])
             ->latest()->orderByDesc('id')->get();
 
         return view('admin.site-codes.show', [
