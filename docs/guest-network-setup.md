@@ -516,6 +516,29 @@ popup). Expected: redirect to the portal page, then login, then internet.
 (Use `/log/print` if a topic filter requires it; enable debugging if needed:
 `/system logging add topics=radius,debug action=memory`, remove it after the test.)
 
+### 6.6 Walled garden for social login
+When social login is switched on and a provider is configured (admin settings, CONCEPT.md §7.2 D), the
+guest must reach the provider's sign-in pages before the hotspot login. The router script adds one
+`/ip hotspot walled-garden` entry (`dst-host`, `action=allow`) per host of every configured provider,
+with the comment key `guest-portal:walled:social-<host>` (`*` written as `any`, `.` as `-`). It first
+removes the own entries of all providers by their exact keys, so a provider that is switched off loses
+its entries on the next run; entries of others are never changed. The router state query shows missing
+entries (and own entries of providers no longer offered) as "apply" lines.
+
+| Provider | Hosts |
+|---|---|
+| Google | `accounts.google.com`, `*.googleusercontent.com`, `*.gstatic.com`, `apis.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`, `play.google.com` (Android captive portal browser), `fonts.googleapis.com` |
+| Apple | `appleid.apple.com`, `appleid.cdn-apple.com`, `idmsa.apple.com`, `gsa.apple.com`, `*.cdn-apple.com` |
+| Facebook | `*.facebook.com`, `*.fbcdn.net`, `*.facebook.net`, `*.fbsbx.com` |
+| GitHub | `github.com`, `*.github.com`, `*.githubassets.com`, `*.githubusercontent.com` |
+
+The list lives in `app/Auth/Social/WalledGarden.php`. Providers change the hosts their sign-in pages load
+from: when a sign-in page stays blank or half-loaded before login, check the blocked hosts in the browser's
+developer tools and extend the list **(to verify per provider on real devices)**. Federation limited mode
+does not change the entries. Re-run the router script after switching social login or a provider on or off.
+Captive-portal mini browsers may not open the provider pages at all (Google refuses embedded web views):
+the social login page shows its own address for the guest's normal browser.
+
 ## 7. Central instance and inter-site connectivity
 
 The portal instance sits in one central network (e.g. at site A). Sites reach it through the existing

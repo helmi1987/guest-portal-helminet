@@ -72,4 +72,10 @@ class User extends Authenticatable
     {
         return $this->isAdmin() ? (string) $phone : Redact::phone($phone);
     }
+
+    /** Email addresses of guests (social login) in full for admins, masked for managers (CONCEPT.md §9). */
+    public function displayEmail(?string $email): string
+    {
+        return $this->isAdmin() ? (string) $email : Redact::email($email);
+    }
 }

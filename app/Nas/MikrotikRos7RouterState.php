@@ -2,6 +2,7 @@
 
 namespace App\Nas;
 
+use App\Auth\Social\WalledGarden;
 use App\Models\NasClient;
 use App\Models\Site;
 
@@ -150,6 +151,9 @@ trait MikrotikRos7RouterState
             $k('api', 'group') => ['policy' => self::API_POLICY],
             $k('api', 'user') => ['group' => self::API_GROUP],
         ];
+        foreach (WalledGarden::hosts() as $host) {
+            $expect[$k('walled', WalledGarden::object($host))] = ['dst-host' => $host, 'action' => 'allow'];
+        }
         foreach ($g['wifi_masters']['local'] ?? [] as $master) {
             $expect[$k('wifi', self::guestInterface($master))] = ['master-interface' => $master, 'configuration' => 'cfg-guest'];
         }
@@ -193,6 +197,17 @@ trait MikrotikRos7RouterState
                 $ident = $object['name'] !== null ? (self::IDENT[$object['path']] ?? 'name') : null;
                 $out[$block][$id] = ['path' => $object['path'], 'name' => $object['name']] + ($key !== $id ? ['key' => $key] : [])
                     + $this->compareObject($menus[$object['path']] ?? null, $key, $expected[$id] ?? [], $ident, $object['path']);
+            }
+        }
+        // Own social login entries of providers no longer offered (decision 2026-11-03): the next run of the
+        // router script removes them
+        $wanted = array_map(fn ($h) => self::key('walled', WalledGarden::object($h)), WalledGarden::hosts());
+        foreach (WalledGarden::allHosts() as $host) {
+            $key = self::key('walled', WalledGarden::object($host));
+            $rows = (array) ($menus['/ip hotspot walled-garden']['rows'] ?? []);
+            if (! in_array($key, $wanted, true) && collect($rows)->contains(fn ($r) => is_array($r) && ($r['comment'] ?? null) === $key)) {
+                $out['walled'][$key] = ['path' => '/ip hotspot walled-garden', 'name' => null, 'status' => 'differs',
+                    'diff' => ['dst-host' => ['–', $host]]];
             }
         }
         $g = $this->guestValues($site);

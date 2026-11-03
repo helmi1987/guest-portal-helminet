@@ -7,7 +7,8 @@ are marked **(to verify)**; proposals not yet confirmed by the maintainer are ma
 ## 1. Goals and scope
 
 - Guests on a hotspot network get internet access only after logging in through the portal.
-- Login methods: admin-issued code, SMS one-time password (OTP), push approval by an admin.
+- Login methods: admin-issued code, SMS one-time password (OTP), push approval by an admin, social login
+  (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0).
 - Every login requires first name, last name and acceptance of the current terms of use.
 - Multi-site: one instance can serve several sites, or each site runs its own self-sufficient
   instance; instances can join a **federation** so grants are valid everywhere (§10).
@@ -15,7 +16,7 @@ are marked **(to verify)**; proposals not yet confirmed by the maintainer are ma
   site-specific is baked in.
 - Small user base: a handful of admins/managers (household / small business).
 
-Out of scope: payment, social login, user self-registration, billing.
+Out of scope: payment, user self-registration, billing.
 License: AGPL-3.0-or-later (decided), see `LICENSE`.
 
 ## 2. Architecture overview
@@ -262,6 +263,13 @@ CoovaChilli) are future/community work.
   `PORTAL_ENDED_NOTICE_HOURS` (default 24, 0 = off), not for unknown MACs or when another usable grant
   is bound to the MAC. Reason only, no name or code; "sign in again" jumps to the normal login form.
   The MAC is a UX hint (spoofing reveals only one of three generic reasons).
+- Method chooser (decision 2026-11-03, v0.22.0): every method has a switch in the settings (code, which also
+  covers the site code; SMS; approval; social login); a method is offered when its switch is on and its
+  prerequisites are met (SMS provider, notification channel, a configured social provider; no approval and no
+  social login in federation limited mode). More than one available method: `/portal` shows a chooser (plain
+  links `?method=<m>`, no JS); exactly one: its page directly; a prefilled code opens the code page. Each
+  method page has its own form and links back to the chooser; the access-ended and router-failed notices
+  appear on the first page only. None available: error page. The server refuses a disabled method (403).
 - Required for all methods: first name, last name, acceptance of current terms version.
 - Languages DE, IT, FR, EN (Laravel lang files); auto-detect via `Accept-Language`, switcher.
 - After success: one-time RADIUS credentials → auto-submit to router → status page (implemented M3:
@@ -353,6 +361,36 @@ CoovaChilli) are future/community work.
    10 open requests per site (`portal.approval.max_pending_per_site`); a pending request of the same
    device is reused.
 5. Step 5 of A, triggered automatically from the waiting page.
+
+**D. Social login (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0)**
+1. Guest accepts the terms on the social page and picks a provider (one form button per configured
+   provider). `POST /portal/social/{provider}` checks terms version, provider, hotspot context and lockout,
+   stores the attempt in the session (state, nonce, PKCE verifier, redirect URI, terms version, site, MAC;
+   single use, 10 min) and redirects to `GET .../go`, which answers the 302 to the provider: the hop to a
+   foreign origin is never the direct answer of the form POST (Chrome applies the CSP `form-action` to such
+   redirects; kept although the guest CSP allows `https:`).
+2. The redirect URI is the request origin plus `/portal/social/{provider}/callback`, only when that origin is
+   APP_URL or a site portal URL (otherwise "misconfigured", warning logged): the callback must reach the host
+   the session cookie lives on, and every origin must be registered at the provider.
+3. Providers via laravel/socialite (stateless; state, nonce and PKCE are the portal's own): Google
+   (`openid email profile`, PKCE, nonce checked in the ID token of the token response), Facebook (`email
+   public_profile`, fields id, first/last name, email), GitHub (`read:user user:email`, PKCE, name split at
+   the first space, login as fallback first name), Apple (own provider: `name email`, `response_mode=
+   form_post`, nonce, client secret = ES256 JWT of the .p8 key; ID token verified against Apple's JWKS,
+   cached 1 h: RS256 signature, iss, aud, exp, nonce; name from the `user` JSON of the first authorisation).
+   Outbound requests as in §12 (TLS verified, 10 s, no redirects). Provider errors and failed checks show a
+   generic error page; the log gets the reason without tokens or codes.
+4. Apple posts the callback cross-site (`form_post`), without the SameSite=Lax session cookie: that POST
+   route runs without session and CSRF and answers a page that forwards code, state and `user` encrypted
+   with the instance key (valid 5 min) to the GET callback as a same-site navigation (meta refresh).
+5. First or last name missing: a small page asks for it (identity kept in the session for 10 min).
+6. Like the SMS verify path: guest (names, locale, provider, provider subject, email), terms acceptance (the
+   version accepted at the start must still be current, otherwise back to the social page), grant type
+   `social` restricted to the site with the duration from the settings, time from login, label = provider;
+   recorded as login attempt `social`. Each login gets a new grant (the same device too). Then step 5 of A.
+   Guest list: method "Social (provider)", email in full for admins, masked for managers.
+7. Walled garden: the router script adds the sign-in hosts of the configured providers (§13; list in
+   `App\Auth\Social\WalledGarden`, docs/guest-network-setup.md 6.6); limited mode does not change it.
 
 ### 7.3 Drivers
 
@@ -795,8 +833,8 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `sites` R | id, slug, name, driver (e.g. `mikrotik_ros7`), home_instance_id, settings (json); local not replicated: wifi_password_local (`encrypted`, APP_KEY) |
 | `nas_clients` R | id (ULID), legacy_id, site_id, name, nas_ip (unique per serving instance), nas_identifier, radius_secret (`federated`), coa_port, cert_token (`federated`); local status not replicated: last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at, router_state, router_state_at, router_state_error; local router API access not replicated: api_host, api_type, api_port, api_user/api_password (`LocalEncrypted`, APP_KEY), api_pin |
 | `certificate_sources` R | id (from instance + target), instance_id, target (portal/router), type, url, name, ca_pem, api_key (`federated`) |
-| `guests` R | id, first_name, last_name, phone_e164 (nullable), locale |
-| `grants` R | id, type (code/sms/approval/site_code), site_code_id, code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
+| `guests` R | id, first_name, last_name, phone_e164 (nullable), locale, social_provider, social_subject, email (nullable; social login, v0.22.0) |
+| `grants` R | id, type (code/sms/approval/site_code/social), site_code_id, code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
 | `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
@@ -817,6 +855,10 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `federation_events` / `peer_cursors` | change log, local and foreign (origin, seq, table, record_id, version, payload, proto, sig, created_at; unique origin+seq) / last_seq + pause state per origin |
 | `federation_peers` / `federation_join_tokens` | local: heartbeat state per direct peer (last_seen_at, clock_skew_ms, protocol, origins, acks, pause) / join tokens (sha256, expires_at, used_at) |
 | Laravel defaults | `jobs`, `failed_jobs`, `cache`, `sessions`, `migrations` |
+
+Decision 2026-11-03 (v0.22.0): instances older than 0.22.0 drop the new guest columns of incoming events and
+cannot read grants of type `social`, so every instance of a federation must run 0.22.0 or later before social
+login is switched on.
 
 Purge job removes guests, devices, summaries, accounting, attempts, acceptances, OTP challenges,
 sent SMS records and audit entries older than the retention period (active grants kept; replicated rows
@@ -894,6 +936,8 @@ links) and change log events are purged after all direct peers have acknowledged
 | Disconnect-Request reliability | Revoke not immediate. | Test in M2; Session-Timeout as upper bound; retry + log. |
 | MAC randomization | Device binding/roaming breaks. | Rebind with code; same SSID name across sites helps **(to verify per OS)**. |
 | Captive browsers (OS mini browsers) | JS/cookie limits. | Light pages; test polling in M3. |
+| Social login in captive browsers | Mini browsers may block provider pages or pop-ups; Google refuses embedded web views (sign-in fails there). | Social page shows its own address for the normal browser; other methods stay available **(to verify on iOS/Android)**. |
+| Social login walled garden | Providers change the hosts of their sign-in pages; a missing host leaves the page blank before login. | Host list in one place (`WalledGarden`), documented; re-run the router script after an update. |
 | SQLite concurrency | Write locks. | WAL, short transactions; MariaDB option. |
 | SMS cost abuse | Cost; an exhausted cap blocks SMS login for all guests of the site/instance. | Country allowlist, rate limits, caps per number/device/site/instance; cap hits logged; code and approval login unaffected. |
 | Telegram owner down | No Telegram approvals. | Manual failover; other channels and admin UI still work. |

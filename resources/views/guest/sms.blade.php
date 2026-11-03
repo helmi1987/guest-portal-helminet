@@ -27,7 +27,7 @@
                 <form method="POST" action="{{ route('guest.sms.resend') }}">
                     @csrf <button type="submit" class="gp-button gp-button-secondary btn-light">{{ __('portal.guest.sms_resend') }}</button></form>
             @endif
-            <a href="{{ route('guest.portal') }}" class="gp-link underline">{{ __('portal.guest.sms_change') }}</a>
+            <a href="{{ route('guest.portal', ['method' => 'sms']) }}" class="gp-link underline">{{ __('portal.guest.sms_change') }}</a>
         </div>
     </section>
     <script>

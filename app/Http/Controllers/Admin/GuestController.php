@@ -40,6 +40,7 @@ class GuestController extends Controller
                 GrantType::SiteCode => $q->whereHas('acceptances.grant', fn ($g) => $g->where('type', GrantType::SiteCode)),
                 GrantType::Sms => $q->has('otpChallenges'),
                 GrantType::Approval => $q->has('approvalRequests'),
+                GrantType::Social => $q->whereNotNull('social_provider'),
             })
             ->when($filters['active'], fn ($q) => $q->whereHas('acceptances.grant', fn ($g) => $g->withStatus(GrantStatus::Active)))
             ->when($filters['q'], function (Builder $q, string $term) {

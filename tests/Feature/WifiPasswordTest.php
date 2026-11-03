@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Auth\Social\WalledGarden;
 use App\Federation\DataKey;
 use App\Federation\FederatedSecrets;
 use App\Federation\Federation;
@@ -184,7 +185,9 @@ class WifiPasswordTest extends TestCase
             // Exact legacy comment "guest-portal" appears only inside the removal/re-run guards
             // (and the key of the single virtual AP before 0.16, only in the find conditions of mode local)
             // (and the DNS entry of the hotspot name before 0.19.1, only removed)
-            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest', 'guest-portal:dns:hotspot-name'])), $mode);
+            // (and the social login entries of providers not offered, only removed: social login is off here)
+            $social = array_map(fn ($host) => MikrotikRos7Driver::key('walled', WalledGarden::object($host)), WalledGarden::allHosts());
+            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest', 'guest-portal:dns:hotspot-name', ...$social])), $mode);
             // Outside the find conditions no add/set writes a legacy comment
             $outside = $all;
             do {
