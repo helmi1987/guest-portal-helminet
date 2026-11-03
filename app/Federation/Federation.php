@@ -78,6 +78,24 @@ final class Federation
      */
     public const SECURITY_SITE_SETTINGS = ['hotspot_hosts', 'portal_url'];
 
+    /**
+     * Columns of an active admin's user row that decide who can log in as that admin, or whether the
+     * admin stays one (CONCEPT.md §10.6, decision 2026-11-02, extended 2026-11-03): a remote event changes
+     * them only from the hub. Two more columns are checked by rule instead of by value:
+     * `recovery_codes` may only lose codes (a code used on another instance), `totp_last_step` may not lie
+     * in the future (it would block every TOTP code). `name` and `remember_token` replicate as before (the
+     * remember cookie is encrypted with each instance's own APP_KEY).
+     */
+    public const ADMIN_LOGIN_COLUMNS = [
+        'email',             // login name
+        'password',          // password hash
+        'role',              // demotion
+        'deleted_at',        // deletion
+        'totp_secret',       // TOTP secret (data key)
+        'totp_confirmed_at', // 2FA enrolled
+        'oidc_subject',      // OIDC identity bound to the account
+    ];
+
     /** @return list<string> */
     public static function localColumns(string $table): array
     {

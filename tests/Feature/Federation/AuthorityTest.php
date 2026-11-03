@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Federation;
 
+use App\Auth\TwoFactor;
 use App\Enums\ExpiryMode;
 use App\Enums\GrantType;
 use App\Federation\Applier;
@@ -22,6 +23,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 /**
@@ -302,6 +304,120 @@ class AuthorityTest extends TestCase
         $this->forgeOnB('users', $admin->id, ['deleted_at' => null]);
         $this->assertNotNull($this->rowOn('hub', 'users', $admin->id)['deleted_at']);
         $this->assertNotNull($this->rowOn('a', 'users', $admin->id)['deleted_at']);
+    }
+
+    public function test_password_and_two_factor_of_an_admin_change_only_by_the_hub(): void
+    {
+        $admin = $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'admin@example.com']));
+        $manager = $this->on('hub', fn () => User::factory()->create(['email' => 'manager@example.com']));
+        $codes = $this->on('hub', function () use ($admin) {
+            $twoFactor = app(TwoFactor::class);
+            $user = User::find($admin->id);
+            $twoFactor->begin($user);
+
+            return $twoFactor->confirm($user, $twoFactor->currentCode($user->totp_secret));
+        });
+        $this->syncRound();
+        $original = $this->rowOn('hub', 'users', $admin->id);
+        $this->assertSame($original['password'], $this->rowOn('a', 'users', $admin->id)['password']);
+
+        // b sets the admin's password, then a new TOTP secret, and a TOTP step far in the future: all stay on b.
+        $this->on('b', fn () => User::find($admin->id)->update(['password' => 'Rogue password 1']));
+        $this->syncRound();
+        $this->on('b', fn () => User::find($admin->id)->forceFill(['totp_secret' => 'JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP'])->save());
+        $this->syncRound();
+        $this->forgeOnB('users', $admin->id, ['totp_last_step' => 99_999_999_999]);
+        foreach (['hub', 'a'] as $name) {
+            $row = $this->rowOn($name, 'users', $admin->id);
+            foreach (['password', 'totp_secret', 'totp_confirmed_at', 'totp_last_step', 'recovery_codes', 'email'] as $column) {
+                $this->assertSame($original[$column], $row[$column], "$name $column");
+            }
+            $reasons = $this->on($name, fn () => AuditLog::where('action', 'federation.event_refused')->where('subject_id', $admin->id)
+                ->get()->pluck('data.reason')->implode("\n"));
+            $this->assertStringContainsString('login data of an admin (password)', $reasons, $name);
+            // b's row keeps its own values, so later events name them again
+            $this->assertStringContainsString('(password, totp_secret)', $reasons, $name);
+            $this->assertStringContainsString('(password, totp_secret, totp_last_step)', $reasons, $name);
+        }
+        $this->assertTrue($this->on('b', fn () => Hash::check('Rogue password 1', User::find($admin->id)->password)));
+
+        // The hub's password change is applied everywhere, b included.
+        $this->on('hub', fn () => User::find($admin->id)->update(['password' => 'Hub password 1']));
+        $this->syncRound();
+        foreach (['a', 'b'] as $name) {
+            $this->assertTrue($this->on($name, fn () => Hash::check('Hub password 1', User::find($admin->id)->password)), $name);
+        }
+
+        // A recovery code used on a spoke replicates (codes only removed); new codes from a spoke do not.
+        $this->assertTrue($this->on('a', fn () => app(TwoFactor::class)->useRecoveryCode(User::find($admin->id), $codes[0])));
+        $this->syncRound();
+        $used = $this->rowOn('hub', 'users', $admin->id)['recovery_codes'];
+        $this->assertCount(count($codes) - 1, json_decode($used, true));
+        $this->assertSame($used, $this->rowOn('b', 'users', $admin->id)['recovery_codes']);
+        $this->on('a', fn () => app(TwoFactor::class)->regenerateRecoveryCodes(User::find($admin->id)));
+        $this->syncRound();
+        $this->assertSame($used, $this->rowOn('hub', 'users', $admin->id)['recovery_codes']);
+        $this->assertSame($used, $this->rowOn('b', 'users', $admin->id)['recovery_codes']);
+
+        // Users other than admins keep replicating from every instance.
+        $this->on('b', fn () => User::find($manager->id)->update(['password' => 'Manager password 1']));
+        $this->syncRound();
+        foreach (['hub', 'a'] as $name) {
+            $this->assertTrue($this->on($name, fn () => Hash::check('Manager password 1', User::find($manager->id)->password)), $name);
+        }
+        $this->assertSame(0, $this->on('hub', fn () => DB::table('peer_cursors')->whereNotNull('paused_at')->count()));
+    }
+
+    public function test_admins_are_demoted_or_deleted_only_by_the_hub(): void
+    {
+        $admin = $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'admin@example.com']));
+        $second = $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'second@example.com']));
+        $this->syncRound();
+
+        $this->on('b', fn () => User::find($admin->id)->update(['role' => 'manager']));
+        $this->on('b', fn () => User::find($second->id)->delete());
+        $this->syncRound();
+        foreach (['hub', 'a'] as $name) {
+            $this->assertSame('admin', $this->rowOn($name, 'users', $admin->id)['role'], $name);
+            $this->assertNull($this->rowOn($name, 'users', $second->id)['deleted_at'], $name);
+            $reasons = $this->on($name, fn () => AuditLog::where('action', 'federation.event_refused')->get()->pluck('data.reason')->all());
+            $this->assertContains('admin demoted by a non-hub instance', $reasons, $name);
+            $this->assertContains('admin deleted by a non-hub instance', $reasons, $name);
+        }
+
+        // The hub may.
+        $this->on('hub', fn () => User::find($admin->id)->update(['role' => 'manager']));
+        $this->on('hub', fn () => User::find($second->id)->delete());
+        $this->syncRound();
+        foreach (['a', 'b'] as $name) {
+            $this->assertSame('manager', $this->rowOn($name, 'users', $admin->id)['role'], $name);
+            $this->assertNotNull($this->rowOn($name, 'users', $second->id)['deleted_at'], $name);
+        }
+    }
+
+    public function test_a_conflict_rule_does_not_hand_an_admins_email_to_a_user_of_a_spoke(): void
+    {
+        $admin = $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'admin@example.com']));
+        $this->syncRound();
+
+        // b frees the e-mail locally and sends a user with an older id and the admin's e-mail (older id keeps it).
+        $rogue = '01AAAAAAAAAAAAAAAAAAAAAAAA';
+        $this->on('b', function () use ($admin, $rogue) {
+            DB::table('users')->where('id', $admin->id)->update(['email' => 'moved@example.com']);
+            DB::transaction(function () use ($rogue) {
+                DB::table('users')->insert(['id' => $rogue, 'name' => 'Rogue', 'email' => 'admin@example.com',
+                    'password' => Hash::make('Rogue password 1'), 'role' => 'manager', 'version' => app(Hlc::class)->now(),
+                    'created_at' => now(), 'updated_at' => now()]);
+                app(Outbox::class)->record('users', $rogue);
+            });
+        });
+        $this->syncRound();
+        foreach (['hub', 'a'] as $name) {
+            $this->assertSame('admin@example.com', $this->rowOn($name, 'users', $admin->id)['email'], $name);
+            $this->assertNull($this->rowOn($name, 'users', $rogue), $name);
+            $this->assertTrue($this->on($name, fn () => AuditLog::where('action', 'federation.event_refused')
+                ->where('subject_id', $rogue)->exists()), $name);
+        }
     }
 
     public function test_security_settings_change_only_by_the_hub(): void

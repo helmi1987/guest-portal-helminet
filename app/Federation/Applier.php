@@ -45,6 +45,12 @@ class Applier
     /** Recovering own events (no cursor, no pause state for the own origin). */
     private bool $own = false;
 
+    /** Re-applying the new hub's user events at re-pairing (reapplyHubUsers()): no security authority check. */
+    private bool $trusted = false;
+
+    /** TOTP steps (30 s) a replicated `totp_last_step` may lie ahead of the current step (clock skew). */
+    private const TOTP_STEP_MARGIN = 10;
+
     public function __construct(private LocalInstance $instance, private Hlc $hlc, private ApplyHooks $hooks) {}
 
     /** True while the engine changes a local row because of a conflict rule (version kept on purpose). */
@@ -242,6 +248,58 @@ class Applier
         return $written;
     }
 
+    /**
+     * Re-pairing with a (new) hub (CONCEPT.md §10.6): its user events that were refused here while it was
+     * not this instance's hub yet (admins created or changed between takeover and re-pairing) are applied
+     * again, trusted like the membership state because an admin here confirmed the hub by its certificate
+     * pin. They go through the normal apply path, so the uniqueness rules hold. Only the latest stored
+     * event per user counts, and only when it is newer than the row here.
+     *
+     * @return int events applied
+     */
+    public function reapplyHubUsers(string $hub): int
+    {
+        $this->result = new ApplyResult($hub);
+        $this->changes = [];
+        $this->own = false;
+        $this->trusted = true;
+        $applied = 0;
+        try {
+            DB::transaction(function () use ($hub, &$applied) {
+                $latest = [];
+                foreach (DB::table(Outbox::TABLE)->where('origin', $hub)->where('table', 'users')->orderBy('seq')->get() as $event) {
+                    $latest[$event->record_id] = $event;
+                }
+                foreach ($latest as $event) {
+                    $event = $this->normalise($event);
+                    $local = $this->row('users', $event['record_id']);
+                    if ($local !== null && strcmp($event['version'], (string) $local['version']) <= 0) {
+                        continue;
+                    }
+                    $changeCount = count($this->changes);
+                    try {
+                        $applied += DB::transaction(fn () => $this->applyEvent($event, false)) === 'applied' ? 1 : 0;
+                    } catch (Throwable $e) {
+                        // A broken event must not block the re-pairing; the row stays as it is here.
+                        array_splice($this->changes, $changeCount);
+                        Log::warning('Federation re-pairing: user event not applied', ['origin' => $hub,
+                            'seq' => $event['seq'], 'id' => $event['record_id'], 'error' => mb_substr($e->getMessage(), 0, 150)]);
+                    }
+                }
+                $changes = $this->changes;
+                DB::afterCommit(function () use ($changes) {
+                    foreach ($changes as $change) {
+                        $this->hooks->dispatch($change);
+                    }
+                });
+            });
+        } finally {
+            $this->trusted = false;
+        }
+
+        return $applied;
+    }
+
     /** Pause an origin (e.g. invalid event signature) until an admin resumes it. */
     public function pauseOrigin(string $origin, string $reason): void
     {
@@ -386,7 +444,9 @@ class Applier
 
             return 'dropped';
         }
-        if ($incomingWins && ! $this->own && ($reason = $this->securityViolation($table, $event['origin'], $row, $local)) !== null) {
+        $guarded = $incomingWins && ! $this->own && ! $this->trusted && in_array($table, ['users', 'settings', 'sites'], true)
+            && $this->nonHub($event['origin']);
+        if ($guarded && ($reason = $this->securityViolation($table, $event['origin'], $row, $before ?? $local, $local)) !== null) {
             $this->refused($event, $reason);
 
             return 'dropped';
@@ -401,7 +461,14 @@ class Applier
             return 'waiting';
         }
 
-        return $this->write($table, $row, $local, $before, $event['origin']) ? 'applied' : 'ignored';
+        $written = $this->write($table, $row, $local, $before, $event['origin'], $guarded);
+        if ($written === null) {
+            $this->refused($event, 'e-mail or OIDC identity of an admin taken over by a conflict rule of a non-hub instance');
+
+            return 'dropped';
+        }
+
+        return $written ? 'applied' : 'ignored';
     }
 
     /**
@@ -453,29 +520,35 @@ class Applier
     }
 
     /**
-     * Security authority (CONCEPT.md §10.6, decision 2026-11-02): only the hub creates or promotes
-     * admins and changes the settings that control login or trust (Federation::SECURITY_SETTINGS);
-     * hotspot host names and portal URL of a site change only by the hub or the site's home instance.
-     * Without a configured hub (single instance, tests) every origin may, like the hub setting rule.
+     * A configured hub exists and $origin is not it. Without a configured hub (single instance, tests)
+     * the security authority does not apply, like the hub setting rule.
+     */
+    private function nonHub(string $origin): bool
+    {
+        $hub = Setting::get(Topology::HUB_SETTING);
+
+        return is_string($hub) && $hub !== '' && $origin !== $hub;
+    }
+
+    /**
+     * Security authority (CONCEPT.md §10.6, decisions 2026-11-02 and 2026-11-03) for events of a non-hub
+     * origin: only the hub creates, promotes, restores, demotes or deletes admins and changes the login
+     * columns of an admin (Federation::ADMIN_LOGIN_COLUMNS) and the settings that control login or trust
+     * (Federation::SECURITY_SETTINGS); hotspot host names and portal URL of a site change only by the hub
+     * or the site's home instance.
      *
      * @param  array<string, mixed>  $row  resulting row state
+     * @param  array<string, mixed>|null  $base  current own state of the row here (without conflict overlays)
      * @param  array<string, mixed>|null  $local  current row here
      * @return string|null reason to drop the event, null: allowed
      */
-    private function securityViolation(string $table, string $origin, array $row, ?array $local): ?string
+    private function securityViolation(string $table, string $origin, array $row, ?array $base, ?array $local): ?string
     {
-        if (! in_array($table, ['users', 'settings', 'sites'], true)) {
-            return null;
-        }
-        $hub = Setting::get(Topology::HUB_SETTING);
-        if (! is_string($hub) || $hub === '' || $origin === $hub) {
-            return null;
-        }
-
         if ($table === 'users') {
-            $activeAdmin = fn (?array $r) => $r !== null && ($r['role'] ?? null) === Role::Admin->value && ($r['deleted_at'] ?? null) === null;
-
-            return $activeAdmin($row) && ! $activeAdmin($local) ? 'admin created, promoted or restored by a non-hub instance' : null;
+            return $this->adminViolation($row, $base, $local);
+        }
+        if (! in_array($table, ['settings', 'sites'], true)) {
+            return null;
         }
 
         if ($table === 'settings') {
@@ -499,6 +572,72 @@ class Applier
         $home = $local !== null ? ($local['home_instance_id'] ?? null) : ($row['home_instance_id'] ?? null);
 
         return $home === $origin ? null : 'hotspot host names or portal URL of a site changed by an instance that is neither hub nor home instance';
+    }
+
+    /**
+     * Users part of the security authority: no new, promoted or restored admin, and for an active admin
+     * no change of a login column, no new recovery codes and no TOTP step in the future.
+     *
+     * @param  array<string, mixed>  $row  resulting row state
+     * @param  array<string, mixed>|null  $base  own state here (compared, so a conflict rename here is no change)
+     * @param  array<string, mixed>|null  $local  current row here
+     */
+    private function adminViolation(array $row, ?array $base, ?array $local): ?string
+    {
+        if (self::activeAdmin($row) && ! self::activeAdmin($local)) {
+            return 'admin created, promoted or restored by a non-hub instance';
+        }
+        if (! self::activeAdmin($local)) {
+            return null; // other users: unchanged rules
+        }
+        $base ??= $local;
+        $changed = array_values(array_filter(Federation::ADMIN_LOGIN_COLUMNS, fn (string $column) => array_key_exists($column, $row)
+            && ! self::sameValue($row[$column], $base[$column] ?? null)));
+        if (! self::onlyCodesUsed($base['recovery_codes'] ?? null, $row['recovery_codes'] ?? null)) {
+            $changed[] = 'recovery_codes';
+        }
+        $step = $row['totp_last_step'] ?? null;
+        if ($step !== null && ! self::sameValue($step, $base['totp_last_step'] ?? null)
+            && (int) $step > intdiv(max(time(), Carbon::now()->getTimestamp()), 30) + self::TOTP_STEP_MARGIN) {
+            $changed[] = 'totp_last_step';
+        }
+        if ($changed === []) {
+            return null;
+        }
+        if (in_array('deleted_at', $changed, true)) {
+            return 'admin deleted by a non-hub instance';
+        }
+        if (in_array('role', $changed, true)) {
+            return 'admin demoted by a non-hub instance';
+        }
+
+        return 'login data of an admin ('.implode(', ', $changed).') changed by a non-hub instance';
+    }
+
+    /** @param  array<string, mixed>|null  $row */
+    private static function activeAdmin(?array $row): bool
+    {
+        return $row !== null && ($row['role'] ?? null) === Role::Admin->value && ($row['deleted_at'] ?? null) === null;
+    }
+
+    private static function sameValue(mixed $a, mixed $b): bool
+    {
+        return $a === null || $b === null ? $a === $b : (string) $a === (string) $b;
+    }
+
+    /** Recovery codes (JSON list of hashes): the new list may only lack codes of the old one. */
+    private static function onlyCodesUsed(mixed $old, mixed $new): bool
+    {
+        if (self::sameValue($old, $new) || $new === null) {
+            return true;
+        }
+        $oldCodes = $old === null ? [] : json_decode((string) $old, true);
+        $newCodes = json_decode((string) $new, true);
+        if (! is_array($oldCodes) || ! is_array($newCodes)) {
+            return false;
+        }
+
+        return array_diff(array_map('strval', $newCodes), array_map('strval', $oldCodes)) === [];
     }
 
     /** A whole event refused by the security authority: logged and audited, the batch continues. */
@@ -528,7 +667,12 @@ class Applier
      * Write a row state; for tables with uniqueness rules also every other row of the affected groups,
      * in two phases (collision-free values first, then the final states) so values can move between rows.
      */
-    private function write(string $table, array $row, ?array $local, ?array $before, string $origin): bool
+    /**
+     * @param  bool  $guarded  event of a non-hub origin: a conflict rule may not rename the e-mail or OIDC
+     *                         subject of another, active admin (it would lock the admin out or hand the login over)
+     * @return bool|null written; null: refused by the guard, nothing written
+     */
+    private function write(string $table, array $row, ?array $local, ?array $before, string $origin, bool $guarded = false): ?bool
     {
         $id = $row['id'];
         if (! Constraints::has($table)) {
@@ -547,6 +691,15 @@ class Applier
             || array_intersect_key($state, $current[$rowId]) != array_intersect_key($current[$rowId], $state), ARRAY_FILTER_USE_BOTH);
         if ($changed === []) {
             return false;
+        }
+        if ($guarded && $table === 'users') {
+            foreach ($changed as $rowId => $state) {
+                $previous = $current[$rowId];
+                if ($rowId !== $id && self::activeAdmin($previous) && (! self::sameValue($state['email'] ?? null, $previous['email'] ?? null)
+                    || ! self::sameValue($state['oidc_subject'] ?? null, $previous['oidc_subject'] ?? null))) {
+                    return null;
+                }
+            }
         }
 
         self::$resolving = true;

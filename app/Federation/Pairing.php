@@ -341,8 +341,8 @@ class Pairing
 
     /**
      * Instance side: re-pair a joined instance (or a removed former hub) with the (new) hub at $url,
-     * confirmed by its certificate pin. Data stays; the membership state of the hub is taken over and
-     * replication continues from the cursors.
+     * confirmed by its certificate pin. Data stays; the membership state of the hub is taken over, its
+     * user events refused here before are applied again, and replication continues from the cursors.
      *
      * @throws PairingException
      */
@@ -375,6 +375,8 @@ class Pairing
             $security = array_filter((array) ($data['security_settings'] ?? []), fn ($row) => is_array($row)
                 && in_array($row['key'] ?? null, Federation::SECURITY_SETTINGS, true) && ($row['key'] ?? null) !== Topology::HUB_SETTING);
             $this->applier->applyTrusted('settings', [$hubRow, ...array_values($security)]);
+            // Admin rows the new hub changed meanwhile: its stored, refused user events (uniqueness rules kept).
+            $this->applier->reapplyHubUsers($hub);
             FederationPeer::query()->whereKeyNot($hub)->delete();
             FederationPeer::query()->whereKey($hub)->update(['paused_at' => null, 'pause_reason' => null]);
             $this->applier->unpause($hub);

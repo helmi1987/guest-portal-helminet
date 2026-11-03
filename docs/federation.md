@@ -170,7 +170,8 @@ Check: create a code on site B, it appears on site A within about 30 seconds (re
   2FA requirement, OIDC, admin URL, Telegram owner and "offline: SMS only". Made on another instance they
   stay local to it (the others drop them and list `federation.event_refused` in the audit log), so make
   them on the hub. Hotspot host names and portal URL of a site are shared from the hub or the site's home
-  instance.
+  instance. Manage admin accounts, their passwords and 2FA on the hub; such a change made on another
+  instance (including demoting or deleting an admin) stays local to it.
 
 ## 8. Branding files
 

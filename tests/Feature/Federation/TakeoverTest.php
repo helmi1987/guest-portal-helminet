@@ -18,6 +18,7 @@ use App\Support\LocalInstance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 
 /**
@@ -144,17 +145,24 @@ class TakeoverTest extends TestCase
 
     public function test_security_settings_and_admins_of_the_new_hub_follow_after_re_pairing(): void
     {
-        $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'admin@example.com']));
+        $existing = $this->on('hub', fn () => User::factory()->admin()->create(['email' => 'admin@example.com']));
         $this->syncRound();
         $this->down = ['hub'];
         $this->on('a', fn () => app(Pairing::class)->promote());
-        // Before b re-pairs, a is not b's hub: its security changes are dropped there.
+        // Before b re-pairs, a is not b's hub: its security changes and admin changes are dropped there.
         $this->on('a', fn () => Setting::put('require_2fa', true));
+        $early = $this->on('a', fn () => User::factory()->admin()->create(['email' => 'early-admin@example.com']));
+        $this->on('a', fn () => User::find($existing->id)->update(['password' => 'New hub password 1']));
         $this->syncRound();
         $this->assertNull($this->on('b', fn () => Setting::get('require_2fa')));
+        $this->assertNull($this->rowOn('b', 'users', $early->id));
+        $this->assertFalse($this->on('b', fn () => Hash::check('New hub password 1', User::find($existing->id)->password)));
 
+        // Re-pairing applies them: settings from the answer, admin rows from a's stored (refused) events.
         $this->repair('b', 'a');
         $this->assertTrue($this->on('b', fn () => Setting::get('require_2fa')));
+        $this->assertSame('admin', $this->rowOn('b', 'users', $early->id)['role']);
+        $this->assertTrue($this->on('b', fn () => Hash::check('New hub password 1', User::find($existing->id)->password)));
         // Afterwards a is b's hub: its admins and settings apply.
         $admin = $this->on('a', fn () => User::factory()->admin()->create(['email' => 'new-admin@example.com']));
         $this->on('a', fn () => Setting::put('admin_url', 'https://admin-a.example.com'));

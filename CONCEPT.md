@@ -767,6 +767,16 @@ implemented, released as v0.13.0 (§14). Setup and operation: docs/federation.md
   and it is logged and audited (`federation.event_refused`, origin and record). Such changes made on
   another instance stay local to it, channels stay multi-master (§10.1, every instance sends with them),
   and re-pairing with a new hub takes over its security settings like the hub setting.
+  Extended 2026-11-03: for an existing active admin also a change of a login column
+  (`Federation::ADMIN_LOGIN_COLUMNS`: e-mail, password hash, role, deletion, TOTP secret, 2FA enrolment,
+  `oidc_subject`), new recovery codes (removing used ones replicates) or a TOTP step in the future, so a
+  compromised instance can neither take over nor demote, delete or lock out the real admins; a conflict
+  rule (older id keeps the unique value, §10.3) triggered by a non-hub event may not rename an active
+  admin's e-mail or OIDC subject either (the event is dropped). Other users, and an admin's name, are
+  unchanged. Events carry the whole row, so after a refused change on an instance its later changes of
+  that admin are refused too until the hub writes the row again. At re-pairing the instance applies the
+  new hub's stored user events it refused before (latest per user, newer than the local row) through the
+  normal apply path, so the uniqueness rules hold.
 - Known limits (parts J, K): a compromised direct peer can claim own events of this instance beyond its
   sequence and so start the restore resync, which blocks replicated writes here until it delivers validly
   signed events or the admin lifts the block (`portal:federation:repair skip-resync --force`); it cannot
