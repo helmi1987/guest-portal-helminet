@@ -16,7 +16,7 @@ jobs:
     container:
       image: semgrep/semgrep
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Semgrep scan
         run: semgrep scan --config p/php --config p/laravel --sarif --output semgrep.sarif || true
       - name: Upload SARIF
