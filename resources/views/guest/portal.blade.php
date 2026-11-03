@@ -51,7 +51,7 @@
                 <details class="gp-terms rounded border border-(--gp-divider) bg-[color-mix(in_srgb,var(--gp-text)_3%,transparent)] text-sm">
                     <summary class="cursor-pointer px-3 py-2 font-medium">
                         {{ __('portal.guest.terms_show') }}
-                        <span class="opacity-70">({{ __('portal.guest.terms_version', ['version' => $terms->number]) }})</span>
+                        <span class="opacity-70">({{ $terms->isDefault() ? __('portal.guest.terms_default') : __('portal.guest.terms_version', ['version' => $terms->number]) }})</span>
                     </summary>
                     <div class="gp-terms-text max-h-64 space-y-2 overflow-y-auto border-t border-(--gp-divider) px-3 py-2" lang="{{ $terms->locale }}">
                         @foreach ($terms->paragraphs() as $paragraph)

@@ -263,6 +263,13 @@ CoovaChilli) are future/community work.
   is bound to the MAC. Reason only, no name or code; "sign in again" jumps to the normal login form.
   The MAC is a UX hint (spoofing reveals only one of three generic reasons).
 - Required for all methods: first name, last name, acceptance of current terms version.
+  Decision 2026-11-03 (v0.22.0, default terms): every language has a formal default text in the lang
+  files (`portal.terms.default`, neutral "operator of this guest Wi-Fi", 8 paragraphs incl. stored data).
+  While nothing at all is published, guests see it marked "default text" and accept it with version
+  null. A new portal publishes it as version 1 in every language with its first site (not earlier: a
+  fresh instance with replicated rows can no longer join a federation; never after a join); the admin
+  terms page has "Publish default texts in all languages" (only languages without a version) and loads
+  the default text into a language's form on request. Guests should never accept a blank statement.
 - Languages DE, IT, FR, EN (Laravel lang files); auto-detect via `Accept-Language`, switcher.
 - After success: one-time RADIUS credentials → auto-submit to router → status page (implemented M3:
   router `dst` = signed portal URL valid until grant expiry + 1 h, no cookie needed; remaining time, waiting page until RADIUS
@@ -276,8 +283,8 @@ CoovaChilli) are future/community work.
 **A. Code (6 digits, admin/manager-issued)**
 1. Guest enters name, accepts terms (current version of the guest's locale, fallback default locale;
    the submitted version must still be current), enters code. The acceptance records guest, terms
-   version, grant, site, MAC and time. Without any published terms a generic statement is accepted
-   (version null).
+   version, grant, site, MAC and time. Without any published terms the default text of the lang files
+   is shown and accepted (version null, §7.1).
 2. Instance checks rate limits, code status, validity window, site restriction.
 3. If the code is bound to another MAC with an active session: Disconnect-Request for the old
    session (via its serving instance, §10.4), rebind code to the new MAC.
@@ -502,7 +509,7 @@ Features:
 | MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
 | Approvals | Pending requests (approve/deny in UI as well). |
 | Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
-| Terms | Text per language, versioned; new version requires re-acceptance on next login. |
+| Terms | Text per language, versioned; new version requires re-acceptance on next login; default texts in all languages (shown until published, publishable by button). |
 | Retention | Retention period (default 1 year); nightly purge job. |
 | Backup | Implemented M6, per instance: daily `portal:backup` (02:45 UTC) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY), `certs/` and `branding/` (v0.10.0); entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Timestamp in the display time zone since v0.10.0 (before: UTC; known limit: two backups within the repeated DST hour may sort in the wrong order). Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. Since M7 also `federation/` (federation key and certificate); a restore of a federated instance triggers the resync (§10.3). |
 | Audit log | Admin/manager actions, logins, revocations, setting changes (implemented M6): code create (bulk: one entry with count)/edit/extend/expiry/revoke/disconnect/CSV export, approval decisions (admin UI, Telegram, signed link; actor label of the channel user), MAC whitelist changes, settings, sites, routers, setup inputs, terms, channels (incl. tests), users, 2FA enable/disable/reset, login success/failure, logout, backups (create/download/delete), certificate sources, pulls and updates. `data` never holds secrets (keys like password/secret/token are stripped) nor phone numbers. Admin page with filters (area, user, date, object) and pagination; purged with the retention period. |

@@ -149,6 +149,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                         ->middleware('throttle:120,1,toolbox-wifi-qr-preview');
                 });
                 Route::get('/terms', [TermsController::class, 'index'])->name('terms');
+                Route::post('/terms/defaults', [TermsController::class, 'publishDefaults'])->name('terms.publish-defaults');
                 Route::post('/terms/{locale}', [TermsController::class, 'update'])->name('terms.update');
 
                 Route::resource('sites', SiteController::class)->except(['show']);

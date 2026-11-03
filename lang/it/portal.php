@@ -26,6 +26,7 @@ return [
         'terms' => 'Ho letto e accetto le condizioni d\'uso del Wi-Fi ospiti.',
         'terms_show' => 'Condizioni d\'uso',
         'terms_version' => 'versione :version',
+        'terms_default' => 'testo standard',
         'connect' => 'Connetti',
         'connecting' => 'Connessione …',
         'continue' => 'Continua',
@@ -83,7 +84,7 @@ return [
     'terms' => [
         'title' => 'Condizioni d\'uso',
         'help' => 'Testo semplice per lingua; una riga vuota inizia un nuovo paragrafo. Salvando un testo modificato si pubblica una nuova versione, le versioni precedenti restano. Gli ospiti accettano a ogni accesso la versione attuale della loro lingua (in mancanza: lingua predefinita).',
-        'none' => 'Nessuna condizione pubblicata. Gli ospiti confermano allora solo la dichiarazione generica.',
+        'none' => 'Nessuna condizione pubblicata. Gli ospiti vedono il testo standard qui sotto.',
         'current' => 'Versione attuale',
         'publish' => 'Pubblica',
         'published' => 'Versione :version pubblicata.',
@@ -92,6 +93,38 @@ return [
         'version' => 'Versione',
         'published_at' => 'Pubblicata',
         'acceptances' => 'Accettazioni',
+        'default_hint' => 'Testo standard, non ancora pubblicato: gli ospiti vedono questo testo finché non pubblichi una versione.',
+        'default_loaded' => 'Testo standard caricato. Pubblicandolo si crea una nuova versione.',
+        'load_default' => 'Carica il testo standard',
+        'publish_defaults' => 'Pubblica i testi standard in tutte le lingue',
+        'defaults_published' => 'Testi standard pubblicati per: :locales',
+        'defaults_none' => 'Tutte le lingue hanno già una versione.',
+        // Default terms (formal), shown while nothing is published; paragraphs separated by blank lines.
+        'default' => <<<'TEXT'
+            1. Ambito di applicazione
+            Il gestore di questa rete Wi-Fi per ospiti mette a disposizione gratuitamente l'accesso a Internet. L'uso avviene a proprio rischio. Le presenti condizioni d'uso si applicano a ogni accesso; effettuando l'accesso Lei le accetta.
+
+            2. Uso consentito
+            Può utilizzare l'accesso solo per scopi leciti. Sono vietati in particolare la consultazione, la diffusione o la memorizzazione di contenuti illeciti, la violazione di diritti d'autore, gli attacchi ad altri dispositivi o reti, la scansione di reti, l'invio di spam, l'aggiramento di blocchi o limitazioni e la rivendita commerciale dell'accesso.
+
+            3. Nessuna garanzia
+            Il gestore non garantisce né la disponibilità né la larghezza di banda né la copertura. L'accesso può essere limitato, filtrato o interrotto in qualsiasi momento, ad esempio per lavori di manutenzione.
+
+            4. Sicurezza e responsabilità
+            La rete Wi-Fi per ospiti è una rete accessibile al pubblico, nella quale terzi possono intercettare il traffico dati. Cripti le Sue connessioni (ad esempio con HTTPS o una VPN). Il gestore non risponde di danni, perdite di dati o costi derivanti dall'uso, salvo quanto previsto dal diritto imperativo.
+
+            5. Dati
+            Per il funzionamento, la prevenzione degli abusi e l'adempimento degli obblighi di legge, il portale memorizza nome e cognome, l'indirizzo del dispositivo (MAC), l'indirizzo IP, l'ora e la durata dell'accesso, il volume di dati, la versione accettata delle presenti condizioni e, per l'accesso tramite SMS, il numero di telefono. Per l'accesso con l'account di un fornitore esterno vengono memorizzati anche il fornitore, l'identificativo dell'account e l'indirizzo e-mail. I dati sono conservati per il periodo stabilito dal gestore (di norma un anno) e vengono trasmessi solo se la legge lo richiede.
+
+            6. Fine e blocco dell'accesso
+            Il gestore può terminare, bloccare o limitare l'accesso in qualsiasi momento e senza indicarne i motivi, in particolare in caso di abuso.
+
+            7. Uso equo
+            Non è consentito un uso permanente con un elevato volume di dati. Il gestore può limitare la larghezza di banda.
+
+            8. Responsabilità e diritto applicabile
+            Lei è responsabile di ogni uso effettuato tramite il Suo dispositivo, anche da parte di persone a cui lo affida. Si applica il diritto della sede del gestore; il foro competente è quello della sede del gestore.
+            TEXT,
     ],
     'languages' => ['de' => 'Deutsch', 'it' => 'Italiano', 'fr' => 'Français', 'en' => 'English'],
     'auth' => [
@@ -583,7 +616,7 @@ return [
         'methods' => ['code' => 'Codice', 'sms' => 'SMS', 'approval' => 'Approvazione', 'site_code' => 'Codice sede'],
         'active_only' => 'Solo accessi in corso',
         'terms' => 'Condizioni accettate',
-        'generic_terms' => 'Dichiarazione generica',
+        'generic_terms' => 'Testo standard',
         'no_grant' => 'Nessun accesso (in attesa, rifiutato o non verificato)',
         'grant_deleted' => 'eliminato',
         'extend' => 'Prolunga',

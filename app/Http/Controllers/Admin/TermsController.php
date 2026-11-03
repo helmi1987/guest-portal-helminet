@@ -14,11 +14,29 @@ use Illuminate\View\View;
  */
 class TermsController extends Controller
 {
-    public function index(): View
+    /** ?default=<locale> opens that card with the default text (JS-free "load default text"). */
+    public function index(Request $request): View
     {
         $versions = TermsVersion::query()->withCount('acceptances')->orderByDesc('number')->get()->groupBy('locale');
+        $locales = config('portal.locales');
+        $load = in_array($request->query('default'), $locales, true) ? $request->query('default') : null;
 
-        return view('admin.terms', ['versions' => $versions]);
+        return view('admin.terms', [
+            'versions' => $versions,
+            'load' => $load,
+            'defaults' => collect($locales)->mapWithKeys(fn (string $l) => [$l => TermsVersion::defaultText($l)]),
+            'missing' => array_values(array_filter($locales, fn (string $l) => ! $versions->has($l))),
+        ]);
+    }
+
+    /** Publish the default text as version 1 for every language without a version. */
+    public function publishDefaults(): RedirectResponse
+    {
+        $published = TermsVersion::publishDefaults();
+
+        return back()->with('status', $published === []
+            ? __('portal.terms.defaults_none')
+            : __('portal.terms.defaults_published', ['locales' => implode(', ', $published)]));
     }
 
     public function update(Request $request, string $locale): RedirectResponse
