@@ -5,6 +5,10 @@ namespace App\Http\Controllers\Admin;
 use App\Approval\ApprovalSettings;
 use App\Auth\Oidc\OidcClient;
 use App\Auth\Oidc\OidcSettings;
+use App\Auth\Social\AppleClientSecret;
+use App\Auth\Social\LoginMethods;
+use App\Auth\Social\ProviderCheck;
+use App\Auth\Social\SocialSettings;
 use App\Auth\TwoFactor;
 use App\Branding\BrandingSettings;
 use App\Federation\Topology;
@@ -12,6 +16,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Channel;
 use App\Models\Instance;
 use App\Models\Setting;
+use App\Sms\OtpService;
 use App\Sms\PhoneNumber;
 use App\Sms\SmsSettings;
 use App\Support\Audit;
@@ -22,6 +27,7 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 use Illuminate\View\View;
@@ -55,6 +61,179 @@ class SettingsController extends Controller
             'oidcSecretBroken' => OidcSettings::clientSecretBroken(),
             'oidcRedirectUri' => OidcSettings::redirectUri(),
             'branding' => BrandingSettings::global(),
+            'loginMethods' => LoginMethods::all(),
+            'loginMethodHints' => $this->loginMethodHints(),
+            'socialDurationHours' => round(SocialSettings::durationS() / 3600, 2),
+            'social' => $this->socialStatus(),
+            'socialOrigins' => SocialSettings::origins(),
+        ]);
+    }
+
+    /**
+     * Why a switched-on login method is not offered to guests (prerequisite missing), per method.
+     *
+     * @return array<string, string> method => lang key
+     */
+    private function loginMethodHints(): array
+    {
+        $flags = LoginMethods::all();
+        $available = LoginMethods::available();
+        $limited = app(Topology::class)->limitedMode();
+        $hints = [];
+        foreach (LoginMethods::ALL as $method) {
+            if (! $flags[$method] || $available[$method]) {
+                continue;
+            }
+            $hints[$method] = match (true) {
+                $method === LoginMethods::SMS && ! OtpService::enabled() => 'portal.settings.login_methods.hint_sms',
+                $limited => 'portal.settings.login_methods.hint_limited',
+                $method === LoginMethods::APPROVAL => 'portal.settings.login_methods.hint_approval',
+                default => 'portal.settings.login_methods.hint_social',
+            };
+        }
+
+        return $hints;
+    }
+
+    /** @return array<string, array<string, mixed>> provider => settings, secret state, readiness, missing items, redirect URIs */
+    private function socialStatus(): array
+    {
+        $out = [];
+        foreach (SocialSettings::all()['providers'] as $provider => $config) {
+            // secretBroken() first: secret() logs a warning for an unreadable secret on every call.
+            $broken = SocialSettings::secretBroken($provider);
+            $hasSecret = ! $broken && SocialSettings::hasSecret($provider);
+            $missing = [];
+            if (! $config['enabled']) {
+                $missing[] = 'enabled';
+            }
+            if ($config['client_id'] === '') {
+                $missing[] = 'client_id';
+            }
+            if (! $hasSecret) {
+                $missing[] = 'secret';
+            }
+            if ($provider === SocialSettings::APPLE && ($config['team_id'] === '' || $config['key_id'] === '')) {
+                $missing[] = 'apple_ids';
+            }
+            $out[$provider] = $config + [
+                'has_secret' => $hasSecret,
+                'secret_broken' => $broken,
+                'ready' => $missing === [],
+                'missing' => $missing,
+                'redirect_uris' => SocialSettings::redirectUris($provider),
+            ];
+        }
+
+        return $out;
+    }
+
+    /** Guest login methods (CONCEPT.md §9, decision 2026-11-03): one switch per method, at least one stays on. */
+    public function updateLoginMethods(Request $request): RedirectResponse
+    {
+        $request->validate(collect(LoginMethods::ALL)->mapWithKeys(fn ($m) => ["methods.$m" => ['boolean']])->all());
+        $flags = collect(LoginMethods::ALL)->mapWithKeys(fn ($m) => [$m => $request->boolean("methods.$m")])->all();
+        if (! in_array(true, $flags, true)) {
+            throw ValidationException::withMessages(['methods' => __('portal.settings.login_methods.at_least_one')]);
+        }
+        LoginMethods::save($flags);
+        // Lists, not flags by method name: Audit strips a key named "code".
+        Audit::log('settings.login_methods', null, ['enabled' => array_keys(array_filter($flags)),
+            'disabled' => array_keys(array_diff_key($flags, array_filter($flags)))]);
+
+        return back()->with('status', __('portal.saved'));
+    }
+
+    /**
+     * Social login providers (CONCEPT.md §9, decision 2026-11-03). An empty secret field keeps the stored
+     * secret, "remove" deletes it; secrets are never logged, audited or flashed back as old input.
+     */
+    public function updateSocial(Request $request): RedirectResponse
+    {
+        $secretFields = array_map(fn ($p) => "providers.$p.secret", SocialSettings::PROVIDERS);
+        $rules = ['social_duration_hours' => ['required', 'numeric', 'between:0.25,8760']];
+        foreach (SocialSettings::PROVIDERS as $provider) {
+            $rules += [
+                "providers.$provider.enabled" => ['boolean'],
+                "providers.$provider.client_id" => ['nullable', 'string', 'max:255'],
+                "providers.$provider.secret" => ['nullable', 'string', $provider === SocialSettings::APPLE ? 'max:10000' : 'max:500'],
+                "providers.$provider.secret_clear" => ['boolean'],
+            ];
+        }
+        $rules += [
+            'providers.apple.team_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
+            'providers.apple.key_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
+        ];
+        $validator = Validator::make($request->all(), $rules, [
+            'providers.apple.team_id.regex' => __('portal.settings.social.apple_id_invalid'),
+            'providers.apple.key_id.regex' => __('portal.settings.social.apple_id_invalid'),
+        ], [
+            'social_duration_hours' => __('portal.settings.social.duration'),
+            ...collect(SocialSettings::PROVIDERS)->mapWithKeys(fn ($p) => ["providers.$p.client_id" => __('portal.settings.social.providers.'.$p).': '
+                .__($p === SocialSettings::APPLE ? 'portal.settings.social.services_id' : 'portal.settings.social.client_id')])->all(),
+        ]);
+        if ($validator->fails()) {
+            return back()->withErrors($validator)->withInput($request->except($secretFields));
+        }
+        $data = $validator->validated();
+
+        $config = ['duration_s' => (int) round($data['social_duration_hours'] * 3600), 'providers' => []];
+        $secrets = [];
+        foreach (SocialSettings::PROVIDERS as $provider) {
+            $input = $data['providers'][$provider] ?? [];
+            $config['providers'][$provider] = [
+                'enabled' => $request->boolean("providers.$provider.enabled"),
+                'client_id' => trim((string) ($input['client_id'] ?? '')),
+            ];
+            if ($provider === SocialSettings::APPLE) {
+                $config['providers'][$provider]['team_id'] = strtoupper(trim((string) ($input['team_id'] ?? '')));
+                $config['providers'][$provider]['key_id'] = strtoupper(trim((string) ($input['key_id'] ?? '')));
+            }
+            $secret = trim(str_replace(["\r\n", "\r"], "\n", (string) ($input['secret'] ?? '')));
+            $secrets[$provider] = $request->boolean("providers.$provider.secret_clear") ? '' : ($secret !== '' ? $secret : null);
+        }
+        if (is_string($secrets[SocialSettings::APPLE]) && $secrets[SocialSettings::APPLE] !== ''
+            && ! $this->isAppleKey($secrets[SocialSettings::APPLE])) {
+            return back()->withErrors(['providers.apple.secret' => __('portal.settings.social.apple_key_invalid')])
+                ->withInput($request->except($secretFields));
+        }
+
+        SocialSettings::save($config, $secrets);
+        // Audit keys must not look like secrets (Audit strips them), hence "credential_changed"; no values.
+        Audit::log('settings.social', null, [
+            'duration_s' => $config['duration_s'],
+            'providers' => collect(SocialSettings::PROVIDERS)->mapWithKeys(fn ($p) => [$p => [
+                'enabled' => $config['providers'][$p]['enabled'],
+                'credential_changed' => $secrets[$p] !== null,
+            ]])->all(),
+        ]);
+
+        return back()->with('status', __('portal.saved'));
+    }
+
+    /** The pasted .p8 content must be an EC P-256 private key that can sign the Apple client secret. */
+    private function isAppleKey(#[\SensitiveParameter] string $pem): bool
+    {
+        try {
+            AppleClientSecret::make('check', 'ABCDEFGHIJ', 'ABCDEFGHIJ', $pem);
+
+            return true;
+        } catch (Throwable) {
+            return false;
+        }
+    }
+
+    /** Check button of a provider (ProviderCheck): the result is flashed next to the provider. */
+    public function checkSocial(string $provider): RedirectResponse
+    {
+        abort_unless(in_array($provider, SocialSettings::PROVIDERS, true), 404);
+        $result = ProviderCheck::run($provider);
+        Audit::log('settings.social_checked', null, ['provider' => $provider, 'status' => $result['status']]);
+
+        return redirect()->to(route('admin.settings').'#social-'.$provider)->with('social_check', [
+            'provider' => $provider,
+            'status' => $result['status'],
+            'message' => __($result['message'], ['status' => $result['http'] ?? '–']),
         ]);
     }
 

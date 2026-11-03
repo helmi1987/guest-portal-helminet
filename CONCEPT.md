@@ -484,6 +484,29 @@ All login methods produce a **grant**; a code is a grant created in advance.
   code (capped per hour). The password login stays as emergency access (always available). Deactivating a user or
   removing groups at the provider takes effect at the next OIDC login or when the session expires. Authentik
   `amr`/`acr` and `email_verified` values **(to verify)**.
+- **Login methods and social login settings** (decision 2026-11-03, v0.22.0; admin only, hub-only
+  in a federation via `Federation::SECURITY_SETTINGS`): Settings → "Guest login methods" has one switch
+  per method (code, SMS, push approval, social; at least one stays on, audited `settings.login_methods`);
+  a switched-on method whose prerequisite is missing (enabled SMS provider, enabled notification channel,
+  a ready social provider, hub reachable) shows a hint, because guests are only offered available
+  methods. Settings → "Social login": access duration (hours, from login) and one card per provider
+  (Google, Apple, Facebook, GitHub): enabled, client ID (Apple: services ID), secret (Apple: the `.p8`
+  private key, validated as EC P-256; plus team ID and key ID, 10 characters each), status (secret
+  stored / unreadable / none, ready or what is missing, warning when ready but the social switch is
+  off), the redirect URIs to register and a translated setup guide. Secrets are encrypted with the
+  federation data key (§10.2), masked, never logged, audited (`settings.social` records only
+  `credential_changed` per provider) or flashed back as old input; an empty field keeps, "remove"
+  deletes. Redirect URI rule: one `<origin>/portal/social/<provider>/callback` per guest origin (APP_URL
+  and each site's portal URL), since the callback must return to the host that holds the guest session.
+  A GitHub OAuth app allows only one callback URL and the portal keeps one client per provider, so with
+  several guest origins GitHub login works only on the first origin (APP_URL); the settings say so.
+  Check button per provider (`App\Auth\Social\ProviderCheck`, 10 s timeout, TLS verified, no
+  redirects, 10 per minute): it sends the provider's token request with the made-up code `portal-check`
+  (Facebook: an app access token request); providers check the client credentials before the code, so
+  "invalid client" means rejected credentials and "invalid code" means accepted ones (`ok`); missing
+  data gives `incomplete` without a request, transport errors or other answers `unreachable` with the
+  HTTP status. Apple's client secret is an ES256 JWT built per request (`AppleClientSecret`, 5 minutes).
+  Only provider, outcome and HTTP status are logged; audited `settings.social_checked`.
 - First-start web setup: first admin (one-time setup token in container log), URLs, TLS source,
   "create federation" or "join federation".
   Until it exists (and later as fallback), `artisan portal:admin` creates an admin or manager
@@ -509,6 +532,7 @@ Features:
 | MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
 | Approvals | Pending requests (approve/deny in UI as well). |
 | Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
+| Login methods | Decision 2026-11-03 (v0.22.0, admin only, Settings): switch per guest login method with prerequisite hints; social login providers (Google, Apple, Facebook, GitHub) with encrypted secrets, redirect URIs per guest origin, setup guide and check button (see the bullet above). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login; default texts in all languages (shown until published, publishable by button). |
 | Retention | Retention period (default 1 year); nightly purge job. |
 | Backup | Implemented M6, per instance: daily `portal:backup` (02:45 UTC) to `/data/backups` (may be a bind mount to a NAS share): one `portal-backup-<timestamp>.tar.gz` (mode 0600) with SQLite snapshot (`VACUUM INTO` on an own connection, WAL-safe), `.env` (APP_KEY), `certs/` and `branding/` (v0.10.0); entries mirror `/data`; files unreadable for the app user, symlinks and names outside `[A-Za-z0-9._-]{1,94}` or with `..` are skipped and listed in `backup-manifest.json`. Timestamp in the display time zone since v0.10.0 (before: UTC; known limit: two backups within the repeated DST hour may sort in the wrong order). Keep N (local setting, default 14; sorted by timestamp + counter). Admin page (admin only): list, create now, download, delete, retention, warning if the folder is not 0700 / not owned by the app user; create/download/delete and failures (incl. scheduled) audited. Restore by CLI (stop container, extract into `/data`), no `portal:restore` (needs stopped services). SQLite only. Since M7 also `federation/` (federation key and certificate); a restore of a federated instance triggers the resync (§10.3). |

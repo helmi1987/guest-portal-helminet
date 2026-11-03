@@ -104,6 +104,8 @@
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 
+    @include('admin.settings-login')
+
     <form method="POST" action="{{ route('admin.settings.sms') }}" class="card mb-6 grid gap-4 md:grid-cols-2">
         @csrf
         <h2 class="text-lg font-semibold md:col-span-2">{{ __('portal.settings.sms') }}</h2>
