@@ -317,6 +317,10 @@ class DirectoryLoginTest extends TestCase
         $this->saveDirectory($admin, ['bind_password_clear' => '1', 'bind_dn' => ''])->assertSessionHasNoErrors();
         $this->assertNull($this->site->fresh()->setting('directory.bind_password'));
 
+        // Spaces at the ends of the service password are kept.
+        $this->saveDirectory($admin, ['bind_password' => ' Svc pass 2 '])->assertSessionHasNoErrors();
+        $this->assertSame(' Svc pass 2 ', DirectorySettings::password($this->site->fresh()));
+
         // Unencrypted: saved with a warning.
         $this->saveDirectory($admin, ['tls' => 'none', 'port' => 389, 'bind_dn' => ''])->assertSessionHas('warning', __('portal.directory.tls_none_warning'));
 

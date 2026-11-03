@@ -41,8 +41,8 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->prepend(DetectZone::class);
-        // Wi-Fi passphrases may start or end with spaces.
-        $middleware->trimStrings(except: ['wifi_password', 'api_password']);
+        // Wi-Fi passphrases and directory passwords may start or end with spaces (the guest's "password" is a default exception).
+        $middleware->trimStrings(except: ['wifi_password', 'api_password', 'directory.bind_password']);
         $middleware->alias([
             'zone' => EnsureZone::class,
             'role' => EnsureRole::class,
@@ -62,8 +62,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->trustProxies(at: TrustedProxies::resolve(env('TRUSTED_PROXIES')));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
-        // Guest Wi-Fi password and router API credentials: never flashed to the session as old input
-        $exceptions->dontFlash(['wifi_password', 'api_user', 'api_password']);
+        // Guest Wi-Fi password, router API credentials and the directory service account password: never
+        // flashed to the session as old input (the guest's "password" is a default exception).
+        $exceptions->dontFlash(['wifi_password', 'api_user', 'api_password', 'directory.bind_password']);
         $exceptions->shouldRenderJsonWhen(
             fn (Request $request) => $request->is('internal/*', 'federation/*') || $request->expectsJson()
                 || in_array(Zone::of($request), [Zone::INTERNAL, Zone::FEDERATION], true),
