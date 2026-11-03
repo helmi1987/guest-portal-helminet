@@ -1,0 +1,14 @@
+# CodeRabbit: comment-only review, never blocks a merge.
+language: "en-US"
+reviews:
+  request_changes_workflow: false
+  high_level_summary: true
+  review_status: true
+  path_filters:
+    - "!vendor/**"
+    - "!node_modules/**"
+    - "!public/build/**"
+    - "!resources/screenshots/**"
+    - "!**/*.lock"
+    - "!package-lock.json"
+    - "!composer.lock"
