@@ -22,6 +22,8 @@ can be supported via drivers (contributions welcome, see [docs/nas-driver.md](do
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.23: guest texts editable per language with live preview (admin System → Guest texts; the preview
+  shows the real guest pages with unsaved texts and can be clicked through).
 - v0.22: guest login method chooser (code, SMS, social login, push approval; one method is shown directly),
   switch per method and social login with Google, Apple, Facebook and GitHub (settings with setup guide,
   encrypted secrets, configuration check, walled-garden hosts in the generated RouterOS script, grant type

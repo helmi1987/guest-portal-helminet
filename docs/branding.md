@@ -4,6 +4,10 @@ Logo, favicon, colour scheme, colours and custom CSS of the guest pages and the 
 change is written to the audit log (`settings.branding`, `site.branding`; changed keys only, no file
 contents or CSS text). Decisions: CONCEPT.md §9 ("Branding"), §10.3, §12.
 
+Texts are not branding: the labels and texts of the guest pages are edited per language under System →
+Guest texts (with a live preview, CONCEPT.md §9 "Guest texts"); use CSS and the `gp-*` hooks below for the
+look only, not to replace wording.
+
 ## 1. Where to configure
 
 | What | Where | Applies to |
