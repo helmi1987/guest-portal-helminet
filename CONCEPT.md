@@ -920,7 +920,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `nas_clients` R | id (ULID), legacy_id, site_id, name, nas_ip (unique per serving instance), nas_identifier, radius_secret (`federated`), coa_port, cert_token (`federated`); local status not replicated: last_seen_at (RADIUS contact, max. 1 write/min), cert_fetched_at, login_page_fetched_at, router_state, router_state_at, router_state_error; local router API access not replicated: api_host, api_type, api_port, api_user/api_password (`LocalEncrypted`, APP_KEY), api_pin |
 | `certificate_sources` R | id (from instance + target), instance_id, target (portal/router), type, url, name, ca_pem, api_key (`federated`) |
 | `guests` R | id, first_name, last_name, phone_e164 (nullable), locale, social_provider, social_subject, email (nullable; social login, v0.22.0) |
-| `grants` R | id, type (code/sms/approval/site_code/social), site_code_id, code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
+| `grants` R | id, type (code/sms/approval/site_code/social/account), site_code_id, code (nullable), label, note, duration_s, expiry_mode, valid_from, redeem_until, expires_at, first_login_at, revoked_at, max_extensions, extensions_used, rate_limit, created_by |
 | `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
