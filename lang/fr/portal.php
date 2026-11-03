@@ -34,7 +34,7 @@ return [
         ],
         'other_methods' => 'Autres modes de connexion',
         'social_with' => 'Se connecter avec :provider',
-        'social_hint' => 'Si la page de connexion ne s\'ouvre pas dans cette fenêtre, ouvrez cette adresse dans votre navigateur habituel :',
+        'social_hint' => 'Si la page de connexion du fournisseur ne s\'ouvre pas dans cette fenêtre : fermez cette fenêtre (choisissez «Utiliser sans Internet» si on vous le demande), ouvrez votre navigateur habituel et visitez n\'importe quel site ; vous reviendrez sur cette page de connexion.',
         'social_name_title' => 'Compléter votre nom',
         'social_name_intro' => ':provider n\'a pas transmis votre nom complet. Veuillez le compléter.',
         'first_name' => 'Prénom',

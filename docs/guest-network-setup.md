@@ -537,7 +537,7 @@ from: when a sign-in page stays blank or half-loaded before login, check the blo
 developer tools and extend the list **(to verify per provider on real devices)**. Federation limited mode
 does not change the entries. Re-run the router script after switching social login or a provider on or off.
 Captive-portal mini browsers may not open the provider pages at all (Google refuses embedded web views):
-the social login page shows its own address for the guest's normal browser.
+the social login page tells the guest to close the mini browser and open any website in the normal browser (the hotspot redirects to the portal again).
 
 ## 7. Central instance and inter-site connectivity
 

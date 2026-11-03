@@ -34,7 +34,7 @@ return [
         ],
         'other_methods' => 'Andere Anmeldearten',
         'social_with' => 'Mit :provider anmelden',
-        'social_hint' => 'Falls sich die Anmeldeseite in diesem Fenster nicht öffnet, öffne diese Adresse in deinem normalen Browser:',
+        'social_hint' => 'Öffnet sich die Anmeldeseite des Anbieters in diesem Fenster nicht: Schliesse dieses Fenster (bei der Frage «Ohne Internet verwenden» wählen), öffne deinen normalen Browser und rufe eine beliebige Webseite auf; du landest wieder auf dieser Anmeldeseite.',
         'social_name_title' => 'Namen ergänzen',
         'social_name_intro' => ':provider hat deinen vollständigen Namen nicht übermittelt. Bitte ergänze ihn.',
         'first_name' => 'Vorname',

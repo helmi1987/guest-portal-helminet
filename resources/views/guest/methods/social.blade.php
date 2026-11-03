@@ -12,5 +12,4 @@
 </form>
 <div class="gp-hint gp-social-hint mt-4 text-sm opacity-80">
     <p>{{ __('portal.guest.social_hint') }}</p>
-    <p class="mt-1 break-all"><a href="{{ $entryUrl }}" class="gp-link underline">{{ $entryUrl }}</a></p>
 </div>

@@ -34,7 +34,7 @@ return [
         ],
         'other_methods' => 'Altri modi di accesso',
         'social_with' => 'Accedi con :provider',
-        'social_hint' => 'Se la pagina di accesso non si apre in questa finestra, apri questo indirizzo nel tuo browser abituale:',
+        'social_hint' => 'Se la pagina di accesso del provider non si apre in questa finestra: chiudi questa finestra (se richiesto scegli «Usa senza Internet»), apri il tuo browser abituale e visita un sito qualsiasi; tornerai a questa pagina di accesso.',
         'social_name_title' => 'Completa il tuo nome',
         'social_name_intro' => ':provider non ha trasmesso il tuo nome completo. Completalo.',
         'first_name' => 'Nome',

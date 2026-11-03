@@ -77,7 +77,7 @@ class SocialLoginTest extends TestCase
             ->assertSee('formaction="'.route('guest.social.start', 'github').'"', false)
             ->assertDontSee(route('guest.social.start', 'apple'))
             ->assertSee('name="terms"', false)->assertSee(__('portal.guest.social_hint'))
-            ->assertSee('/portal?site=site-a&amp;mac=AA%3ABB%3ACC%3A00%3A00%3A01', false)
+            ->assertDontSee('mac=AA%3ABB%3ACC%3A00%3A00%3A01', false)
             ->assertSee(__('portal.guest.other_methods'))->assertDontSee('portal.guest.');
         $this->guest()->get('/portal?method=code')->assertOk()->assertSee('name="code"', false)->assertSee(__('portal.guest.other_methods'));
         // Unknown or unavailable selection: the chooser

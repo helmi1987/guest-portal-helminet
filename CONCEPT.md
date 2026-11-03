@@ -973,7 +973,7 @@ links) and change log events are purged after all direct peers have acknowledged
 | Disconnect-Request reliability | Revoke not immediate. | Test in M2; Session-Timeout as upper bound; retry + log. |
 | MAC randomization | Device binding/roaming breaks. | Rebind with code; same SSID name across sites helps **(to verify per OS)**. |
 | Captive browsers (OS mini browsers) | JS/cookie limits. | Light pages; test polling in M3. |
-| Social login in captive browsers | Mini browsers may block provider pages or pop-ups; Google refuses embedded web views (sign-in fails there). | Social page shows its own address for the normal browser; other methods stay available **(to verify on iOS/Android)**. |
+| Social login in captive browsers | Mini browsers may block provider pages or pop-ups; Google refuses embedded web views (sign-in fails there). | Social page tells the guest how to get back in the normal browser (close the mini browser, open any website: the hotspot redirects again), without printing a URL (it would carry the MAC and is not typeable); other methods stay available **(to verify on iOS/Android)**. |
 | Social login walled garden | Providers change the hosts of their sign-in pages; a missing host leaves the page blank before login. | Host list in one place (`WalledGarden`), documented; re-run the router script after an update. |
 | SQLite concurrency | Write locks. | WAL, short transactions; MariaDB option. |
 | SMS cost abuse | Cost; an exhausted cap blocks SMS login for all guests of the site/instance. | Country allowlist, rate limits, caps per number/device/site/instance; cap hits logged; code and approval login unaffected. |

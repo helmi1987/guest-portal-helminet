@@ -100,10 +100,6 @@ class PortalController extends Controller
             'limitedMode' => app(Topology::class)->limitedMode(),
             'prefillCode' => $request->session()->get('portal_code'),
             'socialProviders' => $method === LoginMethods::SOCIAL || $method === null ? SocialSettings::enabledProviders() : [],
-            // Social login hint for captive-portal mini browsers: this page's address to open elsewhere.
-            'entryUrl' => $request->getSchemeAndHttpHost().'/portal?'.http_build_query(array_filter([
-                'site' => $site->slug, 'mac' => $context->mac, 'ip' => $context->ip, 'link-login-only' => $context->loginUrl,
-            ])),
             // Returning device whose access ended (expired, revoked, disconnected); reason only.
             'endedNotice' => $first ? AccessEndedNotice::for($context->mac, $site) : null,
         ]);

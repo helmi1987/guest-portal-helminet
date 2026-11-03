@@ -34,7 +34,7 @@ return [
         ],
         'other_methods' => 'Other sign-in options',
         'social_with' => 'Sign in with :provider',
-        'social_hint' => 'If the sign-in page does not open in this window, open this address in your normal browser:',
+        'social_hint' => 'If the provider\'s sign-in page does not open in this window: close this window (choose «Use without internet» if asked), open your normal browser and visit any website; you will land on this sign-in page again.',
         'social_name_title' => 'Complete your name',
         'social_name_intro' => ':provider did not provide your full name. Please complete it.',
         'first_name' => 'First name',
