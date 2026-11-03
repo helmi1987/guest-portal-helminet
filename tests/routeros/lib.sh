@@ -1,4 +1,4 @@
-# Shared helpers of the RouterOS CHR harness (sourced by run.sh and chr.sh).
+# Shared helpers of the RouterOS CHR harness (sourced by run.sh, guard.sh and chr.sh).
 # Connection: ROS_HOST/ROS_PORT/ROS_USER/ROS_PASS (CHR default user admin, empty password).
 
 ROS_HOST=${ROS_HOST:-127.0.0.1}
@@ -29,6 +29,20 @@ ros_wait() { # wait until SSH answers (max ~6 min under TCG)
     done
     echo "RouterOS did not answer on $ROS_HOST:$ROS_PORT" >&2
     return 1
+}
+
+# Full verbose export (with secrets) without the lines that change by themselves, for "nothing changed"
+# comparisons (run.sh snapshot(), guard.sh config()). None of them is touched by the portal scripts:
+# - header lines (timestamp, system id, software id)
+# - /system keymat-provider: its hkdf-secret="" appears/disappears by itself (RouterOS internal)
+# - /app (built-in app catalog, incl. continuation lines) and the default ipsec profile: their export
+#   varies between runs on RouterOS 7.25 (the profile line moves)
+# - /system resource irq ... cpu=auto: these lines appear a few seconds after boot (RouterOS 7.24.5)
+ros_export() {
+    ros '/export terse verbose show-sensitive' | grep -v '^# [0-9]\{4\}-' | grep -v '^# system id' | grep -v '^# software id' \
+        | grep -v '^/system keymat-provider' \
+        | awk '/^\/(app |ip ipsec profile set \[ find default=yes \])/ { skip = 1 } skip { if ($0 !~ /\\$/) skip = 0; next } { print }' \
+        | grep -vE '^/system resource irq set .*cpu=auto( |$)'
 }
 
 log() { printf '\n=== %s\n' "$*"; }

@@ -42,8 +42,17 @@ import() { # <file>
     ros '/file remove [find where name="guard.rsc"]' >/dev/null
 }
 
-# Whole configuration (with secrets, without header lines), for "nothing changed" comparisons.
-config() { ros '/export terse verbose show-sensitive' | grep -v '^# [0-9]\{4\}-' | grep -v '^# system id' | grep -v '^# software id' | grep -v '^/system keymat-provider'; }
+# Whole configuration (with secrets, without the lines that change by themselves: ros_export in lib.sh),
+# for "nothing changed" comparisons.
+config() { ros_export; }
+
+# Compare two configurations; on a difference print the diff (first 40 lines) so the cause is in the log.
+same() { # <expected file> <actual file>
+    local d
+    d=$(diff "$1" "$2") && return 0
+    printf '%s\n' "$d" | head -40 | sed 's/^/    | /'
+    return 1
+}
 
 # Whole guarded group as generated (comment lines dropped): from the opening "{" to its matching "}".
 # Other placeholders replaced with harmless values (nothing of the tail may run while the password is left).
@@ -106,7 +115,7 @@ for way in paste import; do
         out=$(run_way $way "$WORK/$MODE-masked.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-left1.txt"
         check "$T placeholder left: error message" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
         check "$T placeholder left: no object created" test "$(count_wifi "$P")" = 0
-        check "$T placeholder left: configuration unchanged" diff -q "$WORK/cfg0.txt" <(config)
+        check "$T placeholder left: configuration unchanged" same "$WORK/cfg0.txt" <(config)
 
         # Tail inside the group: nothing after the guard may run (paste runs line by line, import as a whole)
         group_all "$WORK/rsc/$MODE/network.wifi.masked.rsc" "$WORK/$MODE-full-masked.rsc"
@@ -123,7 +132,7 @@ for way in paste import; do
             check "$T tail, placeholder left: error message" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
             check "$T tail, placeholder left: no wifi-guest interface added" test "$(ros ':put [:len [/interface wifi find where name~"^wifi-guest"]]')" = 0
         fi
-        check "$T tail, placeholder left: configuration unchanged" diff -q "$WORK/cfg0t.txt" <(config)
+        check "$T tail, placeholder left: configuration unchanged" same "$WORK/cfg0t.txt" <(config)
 
         out=$(run_way $way "$WORK/$MODE-filled.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-$MODE-fill1.txt"
         check "$T password filled: no error" bash -c "! grep -qiE 'replace <|script error|syntax error|failure:|bad command|expected end|no such item|does not match' '$WORK/out-$way-$MODE-fill1.txt'"
@@ -133,7 +142,7 @@ for way in paste import; do
 
         out=$(run_way $way "$WORK/$MODE-filled.rsc")
         check "$T run twice: still 3 objects (add-or-set)" test "$(count_wifi "$P")" = 3
-        check "$T run twice: configuration identical" diff -q "$WORK/cfg1.txt" <(config)
+        check "$T run twice: configuration identical" same "$WORK/cfg1.txt" <(config)
 
         if [ "$MODE" = capsman1 ]; then
             # Whole block with the password filled: cfg-guest appended to both selected rules, existing slave kept;
@@ -145,7 +154,7 @@ for way in paste import; do
             check "$T whole block filled: cfg-office slaves cfg-guest" test "$(caps_slaves cfg-office)" = "cfg-guest"
             config > "$WORK/cfg1f.txt"
             out=$(run_way $way "$WORK/$MODE-full-filled.rsc")
-            check "$T whole block filled, run twice: configuration identical" diff -q "$WORK/cfg1f.txt" <(config)
+            check "$T whole block filled, run twice: configuration identical" same "$WORK/cfg1f.txt" <(config)
             # Network uninstall: cfg-guest out of every rule (other slaves kept, only-cfg-guest -> empty), then the
             # objects removed; run twice = identical
             U="[$way/$MODE uninstall_network]"
@@ -157,7 +166,7 @@ for way in paste import; do
             check "$U own Wi-Fi objects removed" test "$(count_wifi "$P")" = 0
             config > "$WORK/cfg1u.txt"
             out=$(run_way $way "$WORK/$MODE-uninstall.rsc")
-            check "$U run twice: configuration identical" diff -q "$WORK/cfg1u.txt" <(config)
+            check "$U run twice: configuration identical" same "$WORK/cfg1u.txt" <(config)
             out=$(run_way $way "$WORK/$MODE-filled.rsc")
             caps_reset
             config > "$WORK/cfg1.txt"
@@ -166,7 +175,7 @@ for way in paste import; do
         out=$(run_way $way "$WORK/$MODE-masked.rsc")
         check "$T placeholder left on existing objects: error" grep -qE '(^|[Ee]rror: )replace <WIFI_PASSWORD> first' <<<"$out"
         check "$T placeholder left on existing objects: passphrase unchanged" test "$(wifi_pass "$P")" = "$PASS_WIFI"
-        check "$T placeholder left on existing objects: configuration identical" diff -q "$WORK/cfg1.txt" <(config)
+        check "$T placeholder left on existing objects: configuration identical" same "$WORK/cfg1.txt" <(config)
         clean_wifi "$P"
     done
 
@@ -179,16 +188,16 @@ for way in paste import; do
     out=$(run_way $way "$WORK/api-masked.rsc"); printf '%s\n' "$out" > "$WORK/out-$way-api-left1.txt"
     check "$T placeholder left: error message" grep -qE '(^|[Ee]rror: )replace <API_PASSWORD> first' <<<"$out"
     check "$T placeholder left: no group/user created" test "$(api_count)" = 0
-    check "$T placeholder left: configuration unchanged" diff -q "$WORK/cfg0.txt" <(config)
+    check "$T placeholder left: configuration unchanged" same "$WORK/cfg0.txt" <(config)
     out=$(run_way $way "$WORK/api-filled.rsc")
     check "$T password filled: group and user created" test "$(api_count)" = 2
     config > "$WORK/cfg1.txt"
     out=$(run_way $way "$WORK/api-filled.rsc")
     check "$T run twice: still group and user once" test "$(api_count)" = 2
-    check "$T run twice: configuration identical" diff -q "$WORK/cfg1.txt" <(config)
+    check "$T run twice: configuration identical" same "$WORK/cfg1.txt" <(config)
     out=$(run_way $way "$WORK/api-masked.rsc")
     check "$T placeholder left on existing objects: error" grep -qE '(^|[Ee]rror: )replace <API_PASSWORD> first' <<<"$out"
-    check "$T placeholder left on existing objects: configuration identical" diff -q "$WORK/cfg1.txt" <(config)
+    check "$T placeholder left on existing objects: configuration identical" same "$WORK/cfg1.txt" <(config)
     clean_api
 done
 
