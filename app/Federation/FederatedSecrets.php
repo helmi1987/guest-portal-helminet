@@ -3,6 +3,7 @@
 namespace App\Federation;
 
 use App\Auth\Oidc\OidcSettings;
+use App\Auth\Social\SocialSettings;
 use App\Models\CertificateSource;
 use App\Models\Channel;
 use App\Models\NasClient;
@@ -62,6 +63,6 @@ class FederatedSecrets
             $count += $site->reencryptWifiPassword() ? 1 : 0;
         }
 
-        return $count + (OidcSettings::reencryptSecret() ? 1 : 0);
+        return $count + (OidcSettings::reencryptSecret() ? 1 : 0) + SocialSettings::reencryptSecrets();
     }
 }

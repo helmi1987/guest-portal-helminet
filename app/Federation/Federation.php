@@ -70,6 +70,12 @@ final class Federation
         'oidc_client_secret',          // OidcSettings::SECRET_SETTING
         'admin_url',                   // approval links and OIDC redirect URI
         'telegram_owner',              // instance trusted to forward Telegram approval decisions
+        'login_methods',               // LoginMethods::KEY: which guest login methods are offered
+        'social_login',                // SocialSettings::KEY: social login providers and duration
+        'social_secret_google',        // SocialSettings::secretSetting(): provider secrets
+        'social_secret_apple',
+        'social_secret_facebook',
+        'social_secret_github',
     ];
 
     /**
