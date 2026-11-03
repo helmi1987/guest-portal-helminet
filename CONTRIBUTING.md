@@ -1,7 +1,7 @@
 # Contributing
 
 Contributions are welcome: bug reports, documentation fixes, drivers for other captive portals and
-code changes.
+code changes. Writing a driver for another captive portal: [docs/nas-driver.md](docs/nas-driver.md).
 
 ## Before you start
 

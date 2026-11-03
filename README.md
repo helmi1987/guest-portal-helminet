@@ -18,7 +18,7 @@ federation so access grants are valid at every site.
 > hotspot profile may have received `ssl-certificate`/`login-by`: check `/ip hotspot profile print`.
 
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
-can be supported via drivers (contributions welcome).
+can be supported via drivers (contributions welcome, see [docs/nas-driver.md](docs/nas-driver.md)).
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
