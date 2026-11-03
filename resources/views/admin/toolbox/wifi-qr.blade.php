@@ -63,6 +63,11 @@
                 },
                 async update(form) {
                     const n = ++this.seq;
+                    // No request while the SSID is empty: the server would only answer 422.
+                    if (!(form.elements.ssid && form.elements.ssid.value.trim())) {
+                        this.data = null; this.$refs.qr.innerHTML = '';
+                        return;
+                    }
                     try {
                         const r = await fetch(cfg.url, { method: 'POST', credentials: 'same-origin', cache: 'no-store', body: new FormData(form),
                             headers: { 'X-CSRF-TOKEN': cfg.csrf, 'Accept': 'application/json', 'X-Requested-With': 'XMLHttpRequest' } });
