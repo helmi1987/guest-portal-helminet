@@ -12,6 +12,7 @@
     "license": "AGPL-3.0-or-later",
     "require": {
         "php": "^8.3",
+        "ext-ldap": "*",
         "bacon/bacon-qr-code": "^3.0",
         "firebase/php-jwt": "^7.2",
         "giggsey/libphonenumber-for-php-lite": "^9.0",
