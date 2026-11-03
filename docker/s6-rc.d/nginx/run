@@ -1,2 +1,4 @@
 #!/bin/sh
+# Log timestamps in UTC like the app (Laravel logs in UTC; TZ is only the display time zone).
+export TZ=UTC
 exec nginx -g 'daemon off;'

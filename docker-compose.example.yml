@@ -1,6 +1,7 @@
 # Example for a regular Docker host. Copy to docker-compose.yml and adjust.
-# Port mapping: guest portal 443, admin UI 8443 (restrict to admin/VPN networks), RADIUS 1812/1813 UDP,
-# federation API 9443 (only with several instances; reachable from the other instances only, e.g. WireGuard).
+# Port mapping: guest portal 443, admin UI 8443 (bind it to an admin/VPN address of the host, not to all
+# interfaces), RADIUS 1812/1813 UDP, federation API 9443 (only with several instances; reachable from the
+# other instances only, e.g. WireGuard).
 services:
   portal:
     image: ghcr.io/helmi1987/mikrotik-guest-portal:edge   # pin to a release tag (X.Y.Z) once the first release is published
@@ -8,7 +9,8 @@ services:
     restart: unless-stopped
     ports:
       - "443:443"
-      - "8443:8443"
+      - "8443:8443"                 # admin UI: better bound to an admin/VPN address of the host,
+                                    # e.g. "10.0.0.5:8443:8443", or "127.0.0.1:8443:8443" behind a local reverse proxy
       - "1812:1812/udp"
       - "1813:1813/udp"
       # - "9443:9443"               # federation (FEDERATION_PORT), between instances only
@@ -19,7 +21,8 @@ services:
       APP_URL: https://portal.example.com
       PORTAL_HOSTNAME: portal.example.com
       TZ: UTC                       # display time zone, e.g. Europe/Zurich (APP_TIMEZONE overrides); data stays UTC
-      # TRUSTED_PROXIES: 10.0.0.2   # when the admin UI is behind a reverse proxy
+      # TRUSTED_PROXIES: 10.0.0.2   # when the admin UI is behind a reverse proxy; only affects the admin UI's
+                                    # client IP, the routers' source-IP check stays on
       # Federation (several instances): name and URL under which the other instances reach this one.
       # PORTAL_INSTANCE_NAME: Site A
       # PORTAL_FEDERATION_URL: https://10.8.0.2:9443

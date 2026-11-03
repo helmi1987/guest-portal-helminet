@@ -25,6 +25,8 @@ if [ ! -f "$ENV_FILE" ]; then
 fi
 grep -q '^INTERNAL_API_TOKEN=' "$ENV_FILE" || \
     echo "INTERNAL_API_TOKEN=$(head -c 32 /dev/urandom | base64 | tr -dc 'A-Za-z0-9')" >> "$ENV_FILE"
+# Application name (artisan about, mail sender name, cookie and cache prefixes); change it in this file.
+grep -q '^APP_NAME=' "$ENV_FILE" || echo 'APP_NAME="Guest Portal"' >> "$ENV_FILE"
 ln -sf "$ENV_FILE" "$APP_DIR/.env"
 
 # Values needed by non-PHP services (FreeRADIUS) are exported to a root-only file.
@@ -36,7 +38,8 @@ umask 022
 # --- Database ----------------------------------------------------------------
 if [ "${DB_CONNECTION:-sqlite}" = "sqlite" ]; then
     DB_FILE="${DB_DATABASE:-$DATA_DIR/db/database.sqlite}"
-    [ -f "$DB_FILE" ] || { log "creating SQLite database"; touch "$DB_FILE"; }
+    # SQLite creates its -wal/-shm/-journal files with the mode of the database file.
+    [ -f "$DB_FILE" ] || { log "creating SQLite database"; (umask 027 && touch "$DB_FILE"); }
 fi
 
 # --- TLS certificates (portal + router), see portal-certs ---------------------
@@ -63,6 +66,12 @@ fi
 
 # --- Permissions -------------------------------------------------------------
 chown -R portal:portal "$DATA_DIR/db" "$DATA_DIR/radius" "$DATA_DIR/branding"
+# The database is readable by the app user only (also fixes data created by older images).
+chmod 750 "$DATA_DIR/db"
+find "$DATA_DIR/db" -type f -exec chmod 640 {} +
+if [ "${DB_CONNECTION:-sqlite}" = "sqlite" ] && [ -f "$DB_FILE" ]; then
+    chown portal:portal "$DB_FILE" && chmod 640 "$DB_FILE"
+fi
 # Backups contain secrets. The folder may be a bind mount (e.g. NAS share) that refuses chown/chmod.
 { chown -R portal:portal "$DATA_DIR/backups" && chmod 700 "$DATA_DIR/backups"; } 2>/dev/null \
     || log "WARNING: cannot set owner/mode of $DATA_DIR/backups (the app user portal must be able to write)"

@@ -65,12 +65,31 @@ elif [ "$WATCH" = 1 ]; then
 else
     { [ -e "$CERTS/portal.crt" ] || [ -L "$CERTS/portal.crt" ]; } \
         && log "WARNING: $CERTS/portal.crt/.key invalid or not matching, using self-signed"
+    # PORTAL_HOSTNAME may be a name or an IP address (IPv6 with or without brackets): IP SAN entries
+    # for addresses, DNS entries for names. A certificate for another name (PORTAL_HOSTNAME changed,
+    # or an address stored as DNS name by older images) is replaced.
+    host="${PORTAL_HOSTNAME:-portal.local}"
+    host="${host#[}"; host="${host%]}"
+    if printf '%s' "$host" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
+        san="IP:$host"; want="IP Address:$host"
+    elif printf '%s' "$host" | grep -Eq '^[0-9A-Fa-f:.]+$' && case "$host" in *:*) true ;; *) false ;; esac; then
+        san="IP:$host"; want=""   # OpenSSL prints IPv6 expanded: any IPv6 entry is accepted
+    else
+        san="DNS:$host"; want="DNS:$host"
+    fi
+    if valid_pair "$CERTS/selfsigned.crt" "$CERTS/selfsigned.key" \
+        && ! openssl x509 -noout -ext subjectAltName -in "$CERTS/selfsigned.crt" 2>/dev/null \
+            | tr ',' '\n' | sed 's/^[[:space:]]*//' \
+            | if [ -n "$want" ]; then grep -qxF "$want"; else grep -q '^IP Address:.*:'; fi; then
+        log "self-signed certificate does not match PORTAL_HOSTNAME ($san), generating a new one"
+        rm -f "$CERTS/selfsigned.crt" "$CERTS/selfsigned.key"
+    fi
     if ! valid_pair "$CERTS/selfsigned.crt" "$CERTS/selfsigned.key"; then
-        log "generating self-signed fallback certificate"
+        log "generating self-signed fallback certificate ($san)"
         rm -f "$CERTS/selfsigned.crt" "$CERTS/selfsigned.key"
         openssl req -x509 -newkey rsa:2048 -nodes -days 3650 \
-            -subj "/CN=${PORTAL_HOSTNAME:-portal.local}" \
-            -addext "subjectAltName=DNS:${PORTAL_HOSTNAME:-portal.local}" \
+            -subj "/CN=$host" \
+            -addext "subjectAltName=$san" \
             -keyout "$CERTS/selfsigned.key" -out "$CERTS/selfsigned.crt" 2>/dev/null
     fi
     crt="$CERTS/selfsigned.crt"; key="$CERTS/selfsigned.key"

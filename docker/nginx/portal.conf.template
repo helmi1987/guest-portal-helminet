@@ -6,6 +6,34 @@ map $http_upgrade $connection_upgrade {
     '' close;
 }
 
+# Per-listener security headers (used by portal-headers.conf; an empty value sends no header).
+# Guest pages: plain HTML with a few inline scripts (login handoff auto-submit, WebOTP, "sign in
+# again" link), no inline styles (branding CSS is a same-origin stylesheet), images and fonts from
+# the portal or embedded data: URLs (custom CSS). The handoff form posts to the router's hotspot
+# login URL (https, host from the site's hotspot host names), so form-action allows any https: host.
+# Admin UI: Livewire 3 with Alpine evaluates expressions at runtime ('unsafe-eval'), inline
+# onsubmit/onclick handlers and Livewire's injected styles need 'unsafe-inline'.
+# HSTS only on the browser-facing TLS listeners (no includeSubDomains, no preload).
+map $portal_zone $portal_csp_zone {
+    guest "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https:; frame-ancestors 'none'";
+    admin "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+    default "";
+}
+# The app's own policy wins (uploaded branding files are served with a stricter one).
+map $upstream_http_content_security_policy $portal_csp {
+    "" $portal_csp_zone;
+    default "";
+}
+map $upstream_http_x_content_type_options $portal_nosniff {
+    "" "nosniff";
+    default "";
+}
+map $portal_zone $portal_hsts {
+    guest "max-age=31536000";
+    admin "max-age=31536000";
+    default "";
+}
+
 # Guest portal
 server {
     listen __GUEST_PORT__ ssl;
