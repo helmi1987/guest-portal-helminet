@@ -30,7 +30,7 @@ Allow guests to reach only the guest port (TCP 443) of the instance; allow the a
 /container/mounts add list=portal-data src=usb1/portal-data dst=/data
 /container/envs add list=portal key=APP_URL value=https://portal.example.com
 # :edge = main; pin to a release tag (X.Y.Z) once the first release is published
-/container add remote-image=ghcr.io/helmi1987/mikrotik-guest-portal:edge interface=veth-portal \
+/container add remote-image=ghcr.io/helmi1987/guest-portal-helminet:edge interface=veth-portal \
     root-dir=usb1/portal-root mountlists=portal-data envlist=portal start-on-boot=yes logging=yes
 ```
 

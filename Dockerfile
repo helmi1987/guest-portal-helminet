@@ -33,7 +33,7 @@ RUN npm run build && chmod -R go-w public/build
 # --- Runtime ---------------------------------------------------------------------------
 FROM ${ALPINE_IMAGE}
 ARG VERSION=dev
-LABEL org.opencontainers.image.title="mikrotik-guest-portal" \
+LABEL org.opencontainers.image.title="guest-portal-helminet" \
       org.opencontainers.image.description="Captive portal with RADIUS for MikroTik RouterOS 7 hotspots" \
       org.opencontainers.image.licenses="AGPL-3.0-or-later" \
       org.opencontainers.image.version="${VERSION}"

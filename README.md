@@ -86,7 +86,7 @@ docker run -d --name guest-portal --restart unless-stopped \
   -p 443:443 -p 8443:8443 -p 1812:1812/udp -p 1813:1813/udp \
   -v "$PWD/data:/data" \
   -e APP_URL=https://portal.example.com \
-  ghcr.io/helmi1987/mikrotik-guest-portal:edge
+  ghcr.io/helmi1987/guest-portal-helminet:edge
 docker exec -it guest-portal artisan portal:admin   # create the first admin
 ```
 
@@ -192,7 +192,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as desc
   "License" section is the only personal identifier allowed. No other personal names, locations or site
   names, real domains, IP addresses, hostnames, email addresses, usernames or descriptions of any
   real infrastructure. Use generic examples only (`portal.example.com`, `10.0.0.0/24`, "site A").
-  Approved exception: the container image URL `ghcr.io/helmi1987/mikrotik-guest-portal` (GitHub
+  Approved exception: the container image URL `ghcr.io/helmi1987/guest-portal-helminet` (GitHub
   user name in the registry path) in the README, docs and compose example; nothing else.
 - **No secrets** in code, docs, examples, tests, CI or commit messages.
 - **Language:** everything in the repository is English (code, comments, docs, commits, logs).

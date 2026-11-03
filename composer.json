@@ -1,6 +1,6 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
-    "name": "mikrotik-guest-portal/app",
+    "name": "helminet/guest-portal",
     "type": "project",
     "description": "Captive portal with RADIUS for MikroTik RouterOS 7 hotspots.",
     "keywords": [
