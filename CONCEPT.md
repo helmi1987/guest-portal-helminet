@@ -187,6 +187,7 @@ vendor-neutral. Vendor-specific parts sit behind a `NasDriver` interface; each s
 Only the MikroTik RouterOS 7 driver ships. Other drivers (e.g. UniFi, Omada, OPNsense,
 CoovaChilli) are future/community work.
 Guide: [docs/nas-driver.md](docs/nas-driver.md).
+UniFi: see [docs/unifi-feasibility.md](docs/unifi-feasibility.md) (study 2026-11-03).
 
 ## 6. TLS
 

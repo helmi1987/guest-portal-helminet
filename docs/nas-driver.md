@@ -279,6 +279,9 @@ interface AuthorizesViaController
 
 Open an issue first to agree on the approach; such a change touches decisions recorded in CONCEPT.md §5 and §7.
 
+A researched study of what UniFi offers, what the portal would have to change, the test setup and the effort:
+[unifi-feasibility.md](unifi-feasibility.md) (2026-11-03).
+
 ## 4. Testing and contributing
 
 ### 4.1 Unit tests
