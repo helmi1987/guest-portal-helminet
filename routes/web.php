@@ -22,9 +22,9 @@ use App\Http\Controllers\Admin\ToolboxController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WizardController;
 use App\Http\Controllers\ApprovalLinkController;
-use App\Http\Controllers\Guest\LocaleController;
 use App\Http\Controllers\Guest\PortalController;
 use App\Http\Controllers\Guest\SocialLoginController;
+use App\Http\Controllers\LocaleController;
 use App\Livewire\Admin\Login;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Session\Middleware\StartSession;
@@ -92,6 +92,8 @@ Route::middleware(['zone:admin', 'signed:relative', 'throttle:30,1,approval-link
     });
 
 Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () {
+    Route::get('/lang/{locale}', LocaleController::class)->name('admin.locale');
+
     Route::middleware('guest')->group(function () {
         Route::get('/login', Login::class)->name('login');
         Route::get('/oidc/redirect', [OidcController::class, 'redirect'])->name('oidc.redirect')->middleware('throttle:10,1,oidc-redirect');

@@ -279,6 +279,9 @@ CoovaChilli) are future/community work.
   terms page has "Publish default texts in all languages" (only languages without a version) and loads
   the default text into a language's form on request. Guests should never accept a blank statement.
 - Languages DE, IT, FR, EN (Laravel lang files); auto-detect via `Accept-Language`, switcher.
+  Decision 2026-11-03 (v0.22.1, admin language): the admin UI has the same switcher (login page and
+  header). Guest and admin sessions are separate cookies, so each zone has its own route (`/lang/{locale}`,
+  `/admin/lang/{locale}`) storing the locale in its own session; no per-user language column.
 - After success: one-time RADIUS credentials → auto-submit to router → status page (implemented M3:
   router `dst` = signed portal URL valid until grant expiry + 1 h, no cookie needed; remaining time, waiting page until RADIUS
   accepted the token). `link-orig` is not used. Friendly error pages: no hotspot redirect,

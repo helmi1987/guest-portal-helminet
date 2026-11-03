@@ -132,7 +132,7 @@ and the HTML structure around them are **not** stable; do not target them.
 | Class | Marks |
 |---|---|
 | `gp-container` | Guest page column (max. width, padding) |
-| `gp-header` | Header (guest: logo, title, language switch; admin: top bar) |
+| `gp-header` | Header (guest: logo, title, language switch; admin: top bar, or the language switch alone on the login page) |
 | `gp-logo` | The logo (`img` for an upload, inline `svg` for the default) |
 | `gp-logo-default` | Additionally on the built-in default logo |
 | `gp-title` | Title text next to the logo ("Guest Wi-Fi"; admin: "Guest Portal" link) |
@@ -140,7 +140,7 @@ and the HTML structure around them are **not** stable; do not target them.
 | `gp-lang-link` | One language link; `gp-lang-active` on the current language |
 | `gp-main` | Main content area |
 | `gp-nav` | Admin navigation |
-| `gp-user-menu` | Admin user name + logout |
+| `gp-user-menu` | Admin language switch, user name + logout |
 | `gp-footer` | Admin footer (version) |
 
 ### Guest content

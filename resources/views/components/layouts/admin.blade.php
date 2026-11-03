@@ -45,7 +45,8 @@
                         <a href="{{ route('admin.toolbox.index') }}">{{ __('portal.nav.toolbox') }}</a>
                     @endif
                 </nav>
-                <div class="gp-user-menu flex items-center gap-4 text-sm">
+                <div class="gp-user-menu flex flex-wrap items-center justify-end gap-x-4 gap-y-2 text-sm">
+                    <x-language-switcher route="admin.locale" :home="route('admin.dashboard', absolute: false)" />
                     <a href="{{ route('admin.profile') }}" class="underline">{{ auth()->user()->name }} ({{ auth()->user()->role->label() }})</a>
                     <form method="POST" action="{{ route('logout') }}">
                         @csrf
@@ -55,6 +56,11 @@
             </div>
         </header>
     @endauth
+    @guest
+        <header class="gp-header mx-auto flex max-w-5xl justify-end px-6 pt-4">
+            <x-language-switcher route="admin.locale" :home="route('login', absolute: false)" />
+        </header>
+    @endguest
     <main class="gp-main mx-auto max-w-5xl p-6">
         <x-admin.flash />
         {{ $slot }}

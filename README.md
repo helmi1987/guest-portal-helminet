@@ -28,7 +28,8 @@ can be supported via drivers (contributions welcome).
   `social`, access duration setting), default terms of use in all four languages (shown until published,
   published on the first site or by button), codes list shows current codes by default and ended codes can be
   deleted. Custom guest CSS: the hooks `gp-alt-login`, `gp-alt-sms` and `gp-alt-approval` are gone, the login
-  pages use `gp-step-portal-<page>` and `gp-method-*` (docs/branding.md).
+  pages use `gp-step-portal-<page>` and `gp-method-*` (docs/branding.md). Language switcher in the admin
+  UI (login page and header, 0.22.1).
 - v0.21: security fixes (0.21.0): admins (creation, promotion, passwords, 2FA, demotion, deletion) and
   security settings only from the federation hub, router IP check kept behind proxies
   (`PORTAL_ROUTER_IP_CHECK`), trust-all `TRUSTED_PROXIES` refused, clients file validated, SMS host line

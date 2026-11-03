@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
 
@@ -36,6 +37,27 @@ class ZoneTest extends TestCase
         $this->onZone('guest')->get('/lang/fr')->assertRedirect()->assertSessionHas('locale', 'fr');
         $this->onZone('guest')->withSession(['locale' => 'fr'])->withHeader('Accept-Language', 'de')
             ->get('/')->assertSee('Bienvenue sur le Wi-Fi invités');
+    }
+
+    public function test_admin_locale_is_switchable_on_the_login_page_and_in_the_header(): void
+    {
+        $this->onZone('admin')->withHeader('Accept-Language', 'de')
+            ->get('/admin/login')->assertOk()->assertSee('admin/lang/fr')->assertSee('Anmelden');
+
+        $this->onZone('admin')->get('/admin/lang/fr?r=/admin/login')
+            ->assertRedirect('/admin/login')->assertSessionHas('locale', 'fr');
+        $this->onZone('admin')->withSession(['locale' => 'fr'])->withHeader('Accept-Language', 'de')
+            ->get('/admin/login')->assertSee('Connexion');
+
+        $admin = User::factory()->admin()->create();
+        $this->onZone('admin')->actingAs($admin)->withHeader('Accept-Language', 'de')
+            ->get('/admin')->assertOk()->assertSee('admin/lang/it');
+        $this->onZone('admin')->actingAs($admin)->get('/admin/lang/it')
+            ->assertRedirect(route('admin.dashboard'))->assertSessionHas('locale', 'it');
+
+        $this->onZone('admin')->get('/admin/lang/xx')->assertNotFound();
+        $this->onZone('guest')->get('/admin/lang/fr')->assertNotFound();
+        $this->onZone('admin')->get('/lang/fr')->assertNotFound();
     }
 
     public function test_internal_radius_endpoint_requires_token_and_rejects(): void

@@ -1,11 +1,15 @@
 <?php
 
-namespace App\Http\Controllers\Guest;
+namespace App\Http\Controllers;
 
-use App\Http\Controllers\Controller;
+use App\Support\Zone;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 
+/**
+ * Language switcher of both zones: stores the locale in the zone's own session (the guest and the
+ * admin session are separate cookies, so each zone has its own route and switch).
+ */
 class LocaleController extends Controller
 {
     public function __invoke(Request $request, string $locale): RedirectResponse
@@ -20,6 +24,8 @@ class LocaleController extends Controller
             return redirect()->to($to);
         }
 
-        return redirect()->back(fallback: route('guest.portal'));
+        $home = Zone::of($request) === Zone::ADMIN ? route('admin.dashboard') : route('guest.portal');
+
+        return redirect()->back(fallback: $home);
     }
 }
