@@ -58,7 +58,9 @@ trait MikrotikRos7RouterState
         '/ip dns static' => ['name', 'address', 'type', 'cname', 'comment', 'dynamic'],
         '/ip hotspot' => ['name', 'interface', 'address-pool', 'profile', 'disabled'],
         '/ip hotspot profile' => ['name', 'html-directory', 'dns-name', 'hotspot-address', 'login-by', 'ssl-certificate', 'default'],
-        '/ip hotspot walled-garden' => ['dst-host', 'action', 'comment', 'dynamic'],
+        // dst-address: only the dynamic copies of the IP walled-garden entries have one (isDynamic())
+        '/ip hotspot walled-garden' => ['dst-host', 'dst-address', 'action', 'comment', 'dynamic'],
+        // No "dynamic" property on RouterOS 7.24.5 (asked for anyway, the answer leaves it out), see DYNAMIC_MENUS
         '/ip hotspot walled-garden ip' => ['dst-address', 'protocol', 'dst-port', 'action', 'comment', 'dynamic'],
         '/ip firewall filter' => ['chain', 'action', 'comment', 'dynamic', 'disabled'],
         '/ip firewall address-list' => ['list', 'address', 'comment'],
@@ -96,9 +98,23 @@ trait MikrotikRos7RouterState
 
     /**
      * Menus with dynamic entries of the hotspot (decision 2026-11-02): those rows are never own, legacy,
-     * foreign or unmanaged (filtered before the comparison; the adopt command skips them too).
+     * foreign or unmanaged (filtered before the comparison; the adopt command skips them too). Verified on
+     * the CHR (RouterOS 7.24.5, decision 2026-11-03): RouterOS lists every /ip hotspot walled-garden ip entry
+     * also in /ip hotspot walled-garden as a dynamic copy (flag D, read-only) with its comment and its
+     * dst-address/dst-port; the ip menu itself has no dynamic rows and no "dynamic" property at all.
      */
     private const DYNAMIC_MENUS = ['/ip hotspot walled-garden', '/ip hotspot walled-garden ip', '/ip dns static'];
+
+    /**
+     * Command blocks of each state block, for the links of the state cards (decision 2026-11-03): keys of the
+     * setup page's command blocks (anchor "block-<key>"), the first one holds most of the objects. "router" =
+     * the router script of that router (RADIUS, walled garden, certificate script), "api" = its access block.
+     */
+    public const STATE_COMMANDS = [
+        'radius' => ['router'], 'walled' => ['router'], 'cert' => ['router'], 'api' => ['api'],
+        'container' => ['container_network', 'container_add'], 'net' => ['vlan', 'vlan_filtering', 'dhcp', 'captive_option'],
+        'wifi' => ['wifi'], 'fw' => ['firewall'], 'dns' => ['dns'], 'hotspot' => ['hotspot'],
+    ];
 
     /** Filter rules with action drop (all others accept). */
     private const FW_DROP = ['in-drop-mgmt', 'fwd-drop-lan', 'fwd-drop-new'];
@@ -209,6 +225,14 @@ trait MikrotikRos7RouterState
                 $out['walled'][$key] = ['path' => '/ip hotspot walled-garden', 'name' => null, 'status' => 'differs',
                     'diff' => ['dst-host' => ['–', $host]]];
             }
+        }
+        // The own IP walled-garden entry also shows up in /ip hotspot walled-garden as a dynamic copy with its
+        // comment (read-only there, decision 2026-11-03): hint while the router script still has to replace it
+        $ipKey = self::key('walled', 'portal-ip');
+        $hostRows = (array) ($all['/ip hotspot walled-garden']['rows'] ?? []);
+        if (in_array($out['walled'][$ipKey]['status'] ?? null, ['legacy', 'differs'], true)
+            && collect($hostRows)->contains(fn ($r) => self::isDynamic($r, '/ip hotspot walled-garden') && self::ownComment((string) ($r['comment'] ?? ''), $ipKey))) {
+            $out['walled'][$ipKey]['info'] = 'dynamic_copy';
         }
         $g = $this->guestValues($site);
         // Own provisioning rule per CAP: present only while it lists cfg-guest
@@ -367,16 +391,32 @@ trait MikrotikRos7RouterState
     {
         foreach (self::DYNAMIC_MENUS as $path) {
             if (isset($menus[$path]['rows']) && is_array($menus[$path]['rows'])) {
-                $menus[$path]['rows'] = array_values(array_filter($menus[$path]['rows'], fn ($r) => ! self::isDynamic($r)));
+                $menus[$path]['rows'] = array_values(array_filter($menus[$path]['rows'], fn ($r) => ! self::isDynamic($r, $path)));
             }
         }
 
         return $menus;
     }
 
-    private static function isDynamic(mixed $row): bool
+    /**
+     * Dynamic row: the "dynamic" flag, or in /ip hotspot walled-garden a row with a dst-address. That menu
+     * refuses dst-address for its own entries ("bad parameter", RouterOS 7.24.5): only the dynamic copies of
+     * the IP walled-garden entries carry one, so they are recognised also when an answer lacks the flag.
+     */
+    private static function isDynamic(mixed $row, ?string $path = null): bool
     {
-        return is_array($row) && in_array($row['dynamic'] ?? null, [true, 'true', 'yes'], true);
+        if (! is_array($row)) {
+            return false;
+        }
+
+        return in_array($row['dynamic'] ?? null, [true, 'true', 'yes'], true)
+            || ($path === '/ip hotspot walled-garden' && trim((string) ($row['dst-address'] ?? '')) !== '');
+    }
+
+    /** Comment of an own object: its key or a legacy comment of scripts before the keys ("guest-portal", "guest-portal: ..."). */
+    private static function ownComment(string $comment, string $key): bool
+    {
+        return $comment === $key || $comment === self::NAME || str_starts_with($comment, self::NAME.': ');
     }
 
     /**

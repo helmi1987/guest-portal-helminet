@@ -241,7 +241,7 @@ class RouterStateTest extends TestCase
         $this->assertMatchesRegularExpression('/<div x-data="gpScript\([^"]*\)" class="mb-4 opacity-50 select-none"\s+aria-disabled="true" data-cli-disabled/', $before);
         $this->assertMatchesRegularExpression('/<button type="button" class="btn-light" disabled\s+aria-disabled="true"/', $before);
         // The access block itself is never greyed out
-        $this->assertMatchesRegularExpression('/<div x-data="gpScript\([^"]*\)" class="mb-4"\s*>\s*<div[^>]*>\s*<span class="text-sm font-medium">'
+        $this->assertMatchesRegularExpression('/<div x-data="gpScript\([^"]*\)" class="mb-4"\s*(?:id="block-api-[0-9a-z]+"\s*)?>\s*<div[^>]*>\s*<span class="text-sm font-medium">'
             .preg_quote(e(__('portal.router_api.access_block', ['name' => 'Router A'])), '/').'/', $before);
 
         $this->fakeRest($this->routerMenus());
@@ -771,6 +771,115 @@ class RouterStateTest extends TestCase
         $this->assertSame('missing', $site->driver()->compareState($site, $state)['dns']['dns:hotspot-name']['status']);
         unset($state['menus']['/ip dns static']);
         $this->assertSame('unknown', $site->driver()->compareState($site, $state)['dns']['dns:hotspot-name']['status']);
+    }
+
+    public function test_walled_garden_dynamic_copies_are_never_own_and_legacy_entries_are_replaced(): void
+    {
+        $this->saveNetwork();
+        $site = Site::with('nasClients')->find($this->site->id);
+        $driver = $site->driver();
+        $k = MikrotikRos7Driver::key(...);
+        [$kHost, $kIp] = [$k('walled', 'portal-host'), $k('walled', 'portal-ip')];
+        // Rows as the REST API of RouterOS 7.24.5 returns them (CHR, decision 2026-11-03): the ip menu has no
+        // "dynamic" property; RouterOS lists every ip entry also in the host menu as a dynamic copy with its
+        // comment, dst-address and dst-port (the host menu refuses dst-address for its own entries)
+        $ipRow = fn (string $comment) => ['.id' => '*3', 'action' => 'accept', 'comment' => $comment, 'dst-address' => '10.0.0.10', 'dst-port' => '443', 'protocol' => 'tcp'];
+        $copy = fn (string $comment, bool $flag = true) => ['.id' => '*8', 'action' => 'allow', 'comment' => $comment, 'dst-address' => '10.0.0.10', 'dst-port' => '443']
+            + ($flag ? ['dynamic' => 'true'] : []);
+        $hostRow = fn (string $comment, bool $flag = true) => ['.id' => '*5', 'action' => 'allow', 'comment' => $comment, 'dst-host' => 'portal.example.com']
+            + ($flag ? ['dynamic' => 'false'] : []);
+        $walled = fn (array $hostRows, array $ipRows) => $driver->compareState($site, ['menus' => [
+            '/ip hotspot walled-garden' => ['rows' => $hostRows], '/ip hotspot walled-garden ip' => ['rows' => $ipRows]]])['walled'];
+
+        // Current entries: present, the dynamic copy of the ip entry (with its key) is not counted anywhere
+        $state = $walled([$copy($kIp), $hostRow($kHost)], [$ipRow($kIp)]);
+        $this->assertSame('present', $state[$kHost]['status']);
+        $this->assertSame('present', $state[$kIp]['status']);
+        $this->assertArrayNotHasKey('info', $state[$kIp]);
+
+        // Static ip entry with the comment of earlier versions (the reported case): legacy, no differences, hint
+        // on the read-only dynamic copy the admin sees in /ip hotspot walled-garden
+        $state = $walled([$copy('guest-portal: walled garden'), $hostRow($kHost)], [$ipRow('guest-portal: walled garden')]);
+        $this->assertSame('present', $state[$kHost]['status']);
+        $this->assertSame(['path' => '/ip hotspot walled-garden ip', 'name' => null, 'status' => 'legacy', 'diff' => [], 'info' => 'dynamic_copy'], $state[$kIp]);
+
+        // A dynamic copy with a legacy comment alone is never own: nothing legacy, both missing
+        $state = $walled([$copy('guest-portal')], []);
+        $this->assertSame('missing', $state[$kHost]['status']);
+        $this->assertSame('missing', $state[$kIp]['status']);
+        $this->assertArrayNotHasKey('info', $state[$kIp]);
+
+        // Without the "dynamic" property: a host-menu row with dst-address is still the dynamic copy, a row with
+        // dst-host is static (here a legacy host entry)
+        $state = $walled([$copy('guest-portal', false), $hostRow('guest-portal', false)], [$ipRow('guest-portal')]);
+        $this->assertSame('legacy', $state[$kHost]['status']);
+        $this->assertSame('legacy', $state[$kIp]['status']);
+        $this->assertSame('dynamic_copy', $state[$kIp]['info']);
+        $state = $walled([$copy($kIp, false)], [$ipRow($kIp)]);
+        $this->assertSame('present', $state[$kIp]['status']);
+        $this->assertSame('missing', $state[$kHost]['status']);
+
+        // The router script removes the own entries of both menus, also with the comment of earlier versions, but
+        // never dynamic rows (the copies follow their ip entry), before it adds the keyed ones; the uninstall too
+        $script = $driver->configScript($site, $this->nas);
+        $owned = fn (string $key) => '((comment="'.$key.'" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)';
+        $this->assertStringContainsString("/ip hotspot walled-garden\nremove [find where {$owned($kHost)}]\nadd dst-host=portal.example.com action=allow comment=\"{$kHost}\"", $script);
+        $this->assertStringContainsString("/ip hotspot walled-garden ip\nremove [find where {$owned($kIp)}]\nadd dst-address=10.0.0.10 protocol=tcp dst-port=443 action=accept comment=\"{$kIp}\"", $script);
+        $uninstall = $driver->setupCommands($site, [])['uninstall']['uninstall'];
+        $this->assertStringContainsString("/ip hotspot walled-garden remove [find where {$owned($kHost)}]", $uninstall);
+        $this->assertStringContainsString("/ip hotspot walled-garden ip remove [find where {$owned($kIp)}]", $uninstall);
+        // The legacy entry colours the add line of the script ("update": replaced by the next run)
+        $lines = $driver->lineStatuses($script, [$kHost => 'present', $kIp => 'legacy']);
+        $at = array_search('add dst-address=10.0.0.10 protocol=tcp dst-port=443 action=accept comment="'.$kIp.'"', explode("\n", $script), true);
+        $this->assertSame('update', $lines[$at]);
+
+        // Through the query: the hint is shown on the card
+        $this->configureApi();
+        $this->fakeRest(['/ip hotspot walled-garden' => [$copy('guest-portal'), $hostRow($kHost)], '/ip hotspot walled-garden ip' => [$ipRow('guest-portal')]]
+            + $this->routerMenus());
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/rest/ip/hotspot/walled-garden/print') && in_array('dst-address', $r->data()['.proplist'], true));
+        $page = $this->page();
+        $this->assertStringContainsString('data-state-item="'.$kIp.'" data-status="legacy"', $page);
+        $this->assertStringContainsString('data-state-info="dynamic_copy">'.e(__('portal.router_api.info.dynamic_copy')).'</span>', $page);
+        $this->assertStringContainsString('data-state-item="'.$kHost.'" data-status="present"', $page);
+    }
+
+    public function test_state_cards_link_to_the_command_blocks(): void
+    {
+        $this->saveNetwork();
+        $this->configureApi();
+        $this->fakeRest($this->routerMenus());
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+        $page = $this->page();
+        foreach (['device_mode', 'container_network', 'container_add', 'vlan', 'vlan_filtering', 'wifi', 'dhcp', 'captive_option', 'firewall',
+            'dns', 'hotspot', 'uninstall', 'uninstall_container', 'uninstall_network', 'api-'.$this->nas->id] as $block) {
+            $this->assertSame(1, substr_count($page, 'id="block-'.$block.'"'), $block);
+        }
+        $link = fn (string $block) => preg_match('/<a href="([^"]+)"[^>]*data-state-link="'.$block.'"/', $page, $m) ? html_entity_decode($m[1]) : null;
+        $this->assertSame('#block-vlan', $link('net'));
+        $this->assertSame('#block-wifi', $link('wifi'));
+        $this->assertSame('#block-firewall', $link('fw'));
+        $this->assertSame('#block-dns', $link('dns'));
+        $this->assertSame('#block-hotspot', $link('hotspot'));
+        $this->assertSame('#block-container_network', $link('container'));
+        $this->assertSame('#block-api-'.$this->nas->id, $link('api'));
+        // RADIUS, walled garden and certificate script: the router script of that router
+        $config = route('admin.sites.routers.config', [$this->site, $this->nas]).'#block-router';
+        foreach (['radius', 'walled', 'cert'] as $block) {
+            $this->assertSame($config, $link($block), $block);
+        }
+        // A state block spanning several command blocks lists all of them
+        $this->assertMatchesRegularExpression('/data-state-links="net">[^<]*<a href="#block-vlan"[^>]*data-state-target="vlan">.*?'
+            .'<a href="#block-vlan_filtering".*?<a href="#block-dhcp".*?<a href="#block-captive_option"[^>]*>'.preg_quote(e(__('portal.setup.blocks.captive_option')), '/').'<\/a>\s*<\/p>/s', $page);
+        $this->assertStringContainsString('data-state-links="container">', $page);
+        $this->assertStringNotContainsString('data-state-links="walled"', $page);
+        // The link sits in the summary of the card (a link there does not toggle the <details>)
+        $this->assertMatchesRegularExpression('/<summary class="cursor-pointer">\s*<span class="font-medium">'.preg_quote(e(__('portal.router_api.blocks.walled')), '/')
+            .'<\/span>.*?data-state-link="walled">'.preg_quote(e(__('portal.router_api.to_commands')), '/').'<\/a>\s*<\/summary>/s', $page);
+        // Targets in closed <details> (container step, access commands) are opened by the admin layout on the hash
+        $this->assertStringContainsString("t.closest('details')", $page);
+        $this->admin()->get("/admin/sites/{$this->site->id}/routers/{$this->nas->id}/config")->assertOk()->assertSee('id="block-router"', false);
     }
 
     public function test_placeholders_get_inputs_with_suggestions_from_the_router_state(): void

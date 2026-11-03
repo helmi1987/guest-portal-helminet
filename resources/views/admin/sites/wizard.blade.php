@@ -25,6 +25,14 @@
         'labels' => $labels,
         'badges' => $badges,
     ];
+    // State card links: the step holding the command block (the router script page for "router")
+    $commandSteps = \App\Http\Controllers\Admin\WizardController::COMMAND_STEPS;
+    $blockHref = fn (string $command, $router) => match (true) {
+        $command === 'router' => route('admin.sites.routers.config', [$site, $router]).'#block-router',
+        isset($steps[$commandSteps[$command] ?? '']) => route('admin.sites.wizard', ['site' => $site, 'step' => $steps[$commandSteps[$command]]['number']])
+            .'#block-'.($command === 'api' ? 'api-'.$router->id : $command),
+        default => null,
+    };
     $hotspotHost = ((array) $site->setting('hotspot_hosts', []))[0] ?? '<HOTSPOT_DNS_NAME>';
     $portalHostName = parse_url((string) ($site->setting('portal_url') ?: config('app.url')), PHP_URL_HOST) ?: '<PORTAL_HOST>';
 @endphp
@@ -118,7 +126,7 @@
                                 <a href="{{ route('admin.sites.edit', $site) }}#router-api-{{ $router->id }}" class="font-normal underline">{{ __('portal.router_api.configure') }}</a></p>
                             @if ($apiAccess->has($router->id))
                                 <p class="mb-2 text-xs text-slate-500">{{ __('portal.router_api.access_help') }}</p>
-                                <x-admin.code :title="__('portal.router_api.access_block', ['name' => $router->name])" :code="$apiAccess[$router->id]"
+                                <x-admin.code :anchor="'block-api-'.$router->id" :title="__('portal.router_api.access_block', ['name' => $router->name])" :code="$apiAccess[$router->id]"
                                     :lines="$lineStatus($apiAccess[$router->id], $router->id)" :placeholders="$placeholders" :secrets-url="$secretsUrl" :scope="$router->id" />
                             @endif
                         </div>
@@ -159,7 +167,7 @@
                         <div class="md:col-span-3"><button class="btn">{{ __('portal.save') }}</button></div>
                     </form>
                     @foreach (['device_mode', 'container_network', 'container_add'] as $block)
-                        <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.'.$block)" :code="$commands['container'][$block]" :placeholders="$placeholders" :lines="$lineStatus($commands['container'][$block])" />
+                        <x-admin.code :anchor="'block-'.$block" :disabled="$cliDisabled" :title="__('portal.setup.blocks.'.$block)" :code="$commands['container'][$block]" :placeholders="$placeholders" :lines="$lineStatus($commands['container'][$block])" />
                     @endforeach
                     <p class="text-sm text-slate-600">{{ __('portal.setup.container.registry') }}</p>
                     </div>
@@ -168,10 +176,10 @@
                 @case('network')
                     @include('admin.sites.partials.wizard-setup-form', ['group' => 'network', 'stepNumber' => $n])
                     <p class="mb-2 text-sm text-amber-800">{{ __('portal.setup.network.bridge_warning') }}</p>
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan')" :code="$commands['network']['vlan']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan'])" />
+                    <x-admin.code anchor="block-vlan" :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan')" :code="$commands['network']['vlan']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan'])" />
                     <p class="mb-2 text-sm text-slate-600">{{ __('portal.setup.network.vlan_filtering_help') }}</p>
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan_filtering')" :code="$commands['network']['vlan_filtering']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan_filtering'])" />
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.dhcp')" :code="$commands['network']['dhcp']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['dhcp'])" />
+                    <x-admin.code anchor="block-vlan_filtering" :disabled="$cliDisabled" :title="__('portal.setup.blocks.vlan_filtering')" :code="$commands['network']['vlan_filtering']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['vlan_filtering'])" />
+                    <x-admin.code anchor="block-dhcp" :disabled="$cliDisabled" :title="__('portal.setup.blocks.dhcp')" :code="$commands['network']['dhcp']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['dhcp'])" />
                     <p class="text-sm text-slate-600">{{ __('portal.setup.network.guide') }}</p>
                     @break
 
@@ -186,7 +194,7 @@
                             <x-admin.code :title="__('portal.setup.network.wifi_leftover_title', ['router' => $leftoverRouter?->name])" :code="$leftoverScript" />
                         </div>
                     @endforeach
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.wifi')" :code="$commands['network']['wifi']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['wifi'])" :secrets-url="$secretsUrl" />
+                    <x-admin.code anchor="block-wifi" :disabled="$cliDisabled" :title="__('portal.setup.blocks.wifi')" :code="$commands['network']['wifi']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['wifi'])" :secrets-url="$secretsUrl" />
                     @if (array_intersect($wifiModes, \App\Models\Site::CAPSMAN_MODES) !== []) <p class="mb-4 text-sm text-amber-800">{{ __('portal.setup.network.slaves_help') }}</p> @endif
                     @foreach ($routers as $router)
                         @if (! empty($provisioning[$router->id]))
@@ -196,9 +204,9 @@
                     @break
 
                 @case('firewall')
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.captive_option')" :code="$commands['network']['captive_option']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['captive_option'])" />
+                    <x-admin.code anchor="block-captive_option" :disabled="$cliDisabled" :title="__('portal.setup.blocks.captive_option')" :code="$commands['network']['captive_option']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['captive_option'])" />
                     <p class="mb-4 text-sm text-slate-600">{{ __('portal.setup.network.captive_help') }}</p>
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.firewall')" :code="$commands['network']['firewall']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['firewall'])" />
+                    <x-admin.code anchor="block-firewall" :disabled="$cliDisabled" :title="__('portal.setup.blocks.firewall')" :code="$commands['network']['firewall']" :placeholders="$placeholders" :lines="$lineStatus($commands['network']['firewall'])" />
                     @break
 
                 @case('hotspot')
@@ -214,8 +222,8 @@
                         <p class="mb-3 text-sm font-semibold text-amber-800">{{ __('portal.setup.hotspot.portal_address_warning') }} {{ $portalAddressProblem }}
                             <a href="{{ route('admin.sites.edit', $site) }}" class="underline">{{ __('portal.sites.portal_address') }}</a></p>
                     @endif
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.dns')" :code="$commands['hotspot']['dns']" :placeholders="$placeholders" :lines="$lineStatus($commands['hotspot']['dns'])" />
-                    <x-admin.code :disabled="$cliDisabled" :title="__('portal.setup.blocks.hotspot')" :code="$commands['hotspot']['hotspot']" :placeholders="$placeholders" :lines="$lineStatus($commands['hotspot']['hotspot'])" />
+                    <x-admin.code anchor="block-dns" :disabled="$cliDisabled" :title="__('portal.setup.blocks.dns')" :code="$commands['hotspot']['dns']" :placeholders="$placeholders" :lines="$lineStatus($commands['hotspot']['dns'])" />
+                    <x-admin.code anchor="block-hotspot" :disabled="$cliDisabled" :title="__('portal.setup.blocks.hotspot')" :code="$commands['hotspot']['hotspot']" :placeholders="$placeholders" :lines="$lineStatus($commands['hotspot']['hotspot'])" />
                     <p class="mb-2 text-sm text-slate-600">{{ __('portal.wizard.walled_garden') }}</p>
                     <p class="text-sm text-amber-800">{{ __('portal.setup.hotspot.captive_hosts') }}</p>
                     @break
@@ -325,14 +333,14 @@
                                 @if ($scoped !== null)
                                     <div class="grid gap-2 md:grid-cols-2">
                                         @foreach ($scoped['required'] as $block => $items)
-                                            @include('admin.sites.partials.state-block', ['block' => $block, 'items' => $items])
+                                            @include('admin.sites.partials.state-block', ['block' => $block, 'items' => $items, 'router' => $router, 'blockHref' => fn ($command) => $blockHref($command, $router)])
                                         @endforeach
                                     </div>
                                     @if ($scoped['info'] !== [])
                                         <p class="mt-2 text-xs text-slate-600">{{ __('portal.wizard.info_objects') }}</p>
                                         <div class="grid gap-2 md:grid-cols-2" data-wizard-info>
                                             @foreach ($scoped['info'] as $block => $items)
-                                                @include('admin.sites.partials.state-block', ['block' => $block, 'items' => $items])
+                                                @include('admin.sites.partials.state-block', ['block' => $block, 'items' => $items, 'router' => $router, 'blockHref' => fn ($command) => $blockHref($command, $router)])
                                             @endforeach
                                         </div>
                                     @endif

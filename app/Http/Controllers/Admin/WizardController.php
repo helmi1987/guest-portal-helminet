@@ -46,6 +46,16 @@ class WizardController extends Controller
         'status' => ['scope' => []],
     ];
 
+    /**
+     * Step holding each command block (keys of MikrotikRos7Driver::STATE_COMMANDS; "router" is the router
+     * script page, not a step): the state cards link to "<step URL>#block-<key>".
+     *
+     * @var array<string, string>
+     */
+    public const COMMAND_STEPS = ['api' => 'access', 'device_mode' => 'container', 'container_network' => 'container',
+        'container_add' => 'container', 'vlan' => 'network', 'vlan_filtering' => 'network', 'dhcp' => 'network', 'wifi' => 'wifi',
+        'captive_option' => 'firewall', 'firewall' => 'firewall', 'dns' => 'hotspot', 'hotspot' => 'hotspot'];
+
     /** 1-based step number of a request value, null when it is no valid step. */
     public static function stepNumber(mixed $value): ?int
     {

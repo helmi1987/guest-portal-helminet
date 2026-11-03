@@ -192,7 +192,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
      * owned() for the menus with dynamic entries of the hotspot (decision 2026-11-02): /ip hotspot
      * walled-garden (and ip) and /ip dns static. RouterOS adds dynamic entries there itself (a
      * walled-garden copy of every walled-garden ip entry with its comment, e.g. "guest-portal" of a legacy
-     * ip entry; the A entry of the hotspot dns-name); they cannot be removed and are never ours.
+     * ip entry; the A entry of the hotspot dns-name); they cannot be removed and are never ours. The ip menu
+     * has no "dynamic" property: there "!dynamic" matches every entry (verified on the CHR, RouterOS 7.24.5).
      */
     private static function ownedStatic(string ...$keys): string
     {
@@ -359,8 +360,10 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
         remove [find where {$oHost}]
         add dst-host={$portalHost} action=allow comment="{$kHost}"
         {$this->socialWalledGarden()}
-        # IP walled garden: action=accept. Only the own entry is replaced; entries of others are never
-        # changed. An existing drop entry covering {$portalIp} (e.g. dst-address=<LAN>/24 action=drop)
+        # IP walled garden: action=accept. Only the own entry is replaced (also one with the comment of earlier
+        # versions); entries of others are never changed. RouterOS lists each entry also in /ip hotspot
+        # walled-garden as a dynamic copy (flag D) with the same comment: it cannot be edited and follows the entry.
+        # An existing drop entry covering {$portalIp} (e.g. dst-address=<LAN>/24 action=drop)
         # blocks the portal for guests: check with the print of the diagnostics block, remove it manually.
         /ip hotspot walled-garden ip
         remove [find where {$oIp}]

@@ -155,6 +155,27 @@
             hashTarget();
             window.addEventListener('hashchange', hashTarget);
         }
+
+        // Hash target inside closed <details> (setup page: container step, access commands; the state cards
+        // link there): open them, then scroll to the target.
+        var openTarget = function () {
+            if (!location.hash) return;
+            var t = null;
+            try { t = d.getElementById(decodeURIComponent(location.hash.slice(1))); } catch (e) {}
+            if (!t) return;
+            var closed = false;
+            for (var p = t.closest('details'); p; p = p.parentElement ? p.parentElement.closest('details') : null) {
+                if (!p.open) { p.open = true; closed = true; }
+            }
+            if (closed) t.scrollIntoView();
+        };
+        openTarget();
+        window.addEventListener('hashchange', openTarget);
+        // A link to the current hash fires no hashchange (the target may have been closed again meanwhile)
+        d.addEventListener('click', function (e) {
+            var a = e.target.closest && e.target.closest('a[href^="#"]');
+            if (a && a.getAttribute('href') === location.hash) setTimeout(openTarget, 0);
+        });
     })();
     </script>
 </body>

@@ -308,6 +308,38 @@ class SetupWizardTest extends TestCase
         $this->assertMatchesRegularExpression('/data-wizard-next x-show="canNext"[^>]*style="display: none"/', $this->admin()->get($this->url($network))->getContent());
     }
 
+    public function test_state_cards_link_to_the_step_holding_the_commands(): void
+    {
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup", self::NETWORK)->assertSessionHasNoErrors();
+        $this->configureApi();
+        $this->fakeRest($this->routerMenus());
+        $this->admin()->post("/admin/sites/{$this->site->id}/setup/routers/{$this->nas->id}/state")->assertRedirect();
+        $href = fn (string $page, string $block) => preg_match('/<a href="([^"]+)"[^>]*data-state-link="'.$block.'"/', $page, $m) ? html_entity_decode($m[1]) : null;
+        $stepUrl = fn (string $key, string $anchor) => route('admin.sites.wizard', ['site' => $this->site, 'step' => $this->step($key)]).'#block-'.$anchor;
+
+        // Network step: the net card links to its first block on this step, the DHCP option 114 to the firewall step
+        $page = $this->admin()->get($this->url($this->step('network')))->getContent();
+        $this->assertSame($stepUrl('network', 'vlan'), $href($page, 'net'));
+        $this->assertStringContainsString('<a href="'.e($stepUrl('firewall', 'captive_option')).'" class="underline" data-state-target="captive_option">', $page);
+        foreach (['vlan', 'vlan_filtering', 'dhcp'] as $block) {
+            $this->assertStringContainsString('id="block-'.$block.'"', $page);
+        }
+        // Each block anchor exists on the step it links to
+        $this->assertStringContainsString('id="block-captive_option"', $this->admin()->get($this->url($this->step('firewall')))->getContent());
+        $page = $this->admin()->get($this->url($this->step('hotspot')))->getContent();
+        $this->assertSame($stepUrl('hotspot', 'dns'), $href($page, 'dns'));
+        $this->assertSame($stepUrl('hotspot', 'hotspot'), $href($page, 'hotspot'));
+        $this->assertStringContainsString('id="block-dns"', $page);
+        // Router script step: RADIUS, walled garden and certificate script live in the router script of the router
+        $page = $this->admin()->get($this->url($this->step('router')))->getContent();
+        foreach (['radius', 'walled', 'cert'] as $block) {
+            $this->assertSame(route('admin.sites.routers.config', [$this->site, $this->nas]).'#block-router', $href($page, $block), $block);
+        }
+        $page = $this->admin()->get($this->url($this->step('access')))->getContent();
+        $this->assertSame($stepUrl('access', 'api-'.$this->nas->id), $href($page, 'api'));
+        $this->assertStringContainsString('id="block-api-'.$this->nas->id.'"', $page);
+    }
+
     public function test_routers_without_api_access_are_confirmed_by_hand(): void
     {
         $this->admin()->post("/admin/sites/{$this->site->id}/setup", self::NETWORK)->assertSessionHasNoErrors();

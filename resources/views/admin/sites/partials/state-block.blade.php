@@ -1,5 +1,7 @@
 {{-- Router state of one block (one router): status counts and the items with their differences and adopt
-     commands. Used by the setup page and the wizard. Needs: $block, $items (compareState() block). --}}
+     commands. Used by the setup page and the wizard. Needs: $block, $items (compareState() block); optional
+     $router and $blockHref (command block key => URL or null): links to the block's commands (decision
+     2026-11-03), the first one in the summary (a link there does not toggle the card), all of them below. --}}
 @php
     // Solid badges (WCAG AA in both schemes); legacy/differs = will be updated by the next run,
     // unmanaged = name taken by an object without comment (adopt command once, decision 2026-11-01),
@@ -7,7 +9,20 @@
     $statusClass = ['present' => 'gp-badge gp-badge-ok', 'foreign' => 'gp-badge gp-badge-ok', 'legacy' => 'gp-badge gp-badge-warn', 'differs' => 'gp-badge gp-badge-warn',
         'missing' => 'gp-badge gp-badge-error', 'unmanaged' => 'gp-badge gp-badge-unmanaged', 'leftover' => 'gp-badge gp-badge-error', 'unknown' => 'gp-badge gp-badge-neutral'];
 @endphp
-@php($counts = collect($items)->countBy('status'))
+@php
+    $counts = collect($items)->countBy('status');
+    $targets = [];
+    foreach (\App\Nas\MikrotikRos7Driver::STATE_COMMANDS[$block] ?? [] as $command) {
+        $href = isset($blockHref) ? $blockHref($command) : null;
+        if ($href !== null) {
+            $targets[] = ['href' => $href, 'command' => $command, 'label' => match ($command) {
+                'router' => __('portal.router_api.router_script_block', ['name' => $router->name ?? '']),
+                'api' => __('portal.router_api.access_commands'),
+                default => __('portal.setup.blocks.'.$command),
+            }];
+        }
+    }
+@endphp
 <details class="rounded border border-slate-300 p-2 text-sm" data-state-block="{{ $block }}">
     <summary class="cursor-pointer">
         <span class="font-medium">{{ __('portal.router_api.blocks.'.$block) }}</span>
@@ -16,7 +31,14 @@
                 <span class="{{ $statusClass[$status] }}">{{ $counts->get($status) }} {{ __('portal.router_api.status.'.$status) }}</span>
             @endif
         @endforeach
+        @if ($targets !== [])
+            <a href="{{ $targets[0]['href'] }}" class="ml-1 text-xs underline" title="{{ $targets[0]['label'] }}" data-state-link="{{ $block }}">{{ __('portal.router_api.to_commands') }}</a>
+        @endif
     </summary>
+    @if (count($targets) > 1)
+        <p class="mt-1 text-xs" data-state-links="{{ $block }}">{{ __('portal.router_api.command_blocks') }}:
+            @foreach ($targets as $target)<a href="{{ $target['href'] }}" class="underline" data-state-target="{{ $target['command'] }}">{{ $target['label'] }}</a>@if (! $loop->last), @endif @endforeach</p>
+    @endif
     <ul class="mt-1 space-y-1">
         @foreach ($items as $key => $item)
             <li data-state-item="{{ $key }}" data-status="{{ $item['status'] }}">

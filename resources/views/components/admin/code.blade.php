@@ -1,11 +1,12 @@
-@props(['code', 'title' => null, 'disabled' => false, 'lines' => null, 'placeholders' => null, 'secretsUrl' => null, 'scope' => null])
+@props(['code', 'title' => null, 'disabled' => false, 'lines' => null, 'placeholders' => null, 'secretsUrl' => null, 'scope' => null, 'anchor' => null])
 {{-- Command block with copy button (Alpine is loaded with Livewire on admin pages). Disabled: greyed out
      (router state missing or stale, CONCEPT.md §9), not copyable, marked for assistive technology.
      lines: per-line router state (unmanaged|missing|update|ok|remove|kept|null), coloured with a legend. placeholders (opt-in,
      ['options' => [NAME => suggestions], 'values' => [NAME => prefill]]): one input per <PLACEHOLDER> of
      the code, replaced live in the shown and copied text (browser only, nothing saved). Password
      placeholders are never rendered: "Insert passwords" (off by default) fetches them from secretsUrl
-     (POST, admin only); scope picks the router of per-router passwords. --}}
+     (POST, admin only); scope picks the router of per-router passwords. anchor: id of the block ("block-<key>",
+     target of the state card links). --}}
 @php
     $secretNames = ['API_PASSWORD', 'WIFI_PASSWORD'];
     $names = [];
@@ -93,7 +94,7 @@
     };
 </script>
 @endonce
-<div x-data="gpScript(@js($cfg))" @class(['mb-4', 'opacity-50 select-none' => $disabled]) @if ($disabled) aria-disabled="true" data-cli-disabled @endif>
+<div x-data="gpScript(@js($cfg))" @class(['mb-4', 'opacity-50 select-none' => $disabled]) @if ($disabled) aria-disabled="true" data-cli-disabled @endif @if ($anchor) id="{{ $anchor }}" @endif>
     <div class="mb-1 flex flex-wrap items-center justify-between gap-2">
         <span class="text-sm font-medium">{{ $title }}</span>
         <span class="flex flex-wrap items-center gap-2">

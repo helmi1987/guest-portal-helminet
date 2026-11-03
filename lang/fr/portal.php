@@ -428,7 +428,11 @@ return [
         ],
         'info' => [
             'dynamic' => 'dynamique (hotspot)',
+            'dynamic_copy' => 'aussi listé comme copie dynamique (D) dans /ip hotspot walled-garden, non modifiable là : exécuter le script du routeur',
         ],
+        'to_commands' => 'Aller aux commandes',
+        'command_blocks' => 'Commandes',
+        'router_script_block' => 'Script du routeur (:name)',
         'expected' => 'attendu',
         'actual' => 'routeur',
         'access_commands' => 'Commandes : accès API en lecture seule',

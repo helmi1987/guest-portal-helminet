@@ -496,6 +496,10 @@ names 1700 as the default port, and `accept` defaults to `no`. Check that:
 - **RouterOS >= 7.15:** `/radius` has `require-message-auth` (default `yes-for-request-resp`). The portal's FreeRADIUS sends Message-Authenticator. If logins
   fail with RADIUS errors, check this setting first. Do not disable it except temporarily for troubleshooting.
 - Walled garden IP entries: use `/ip hotspot walled-garden ip add action=accept ...`; the docs are ambiguous (`accept` / `allow`) **(to verify)**.
+- `/ip hotspot walled-garden print` also lists every IP walled-garden entry as a dynamic copy (flag `D`, same comment, its
+  `dst-address` and `dst-port`); RouterOS refuses to edit or remove it, it follows its IP entry. An IP entry with the comment of
+  earlier versions (`guest-portal` / `guest-portal: ...`) shows as "legacy" in the router state of the assistant: run the router
+  script once, it replaces the entry with the keyed one and the copy follows (verified on a RouterOS 7.24.5 CHR).
 
 Verify:
 ```
