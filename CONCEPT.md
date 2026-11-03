@@ -943,7 +943,8 @@ provisioning rule editor and the guided setup wizard (v0.19.0); dynamic hotspot 
 SMS code in the domain-bound one-time code format, SMS text editable per locale (v0.19.2-v0.20.1); new
 default logo (v0.20.2); site code notice without the sign-in QR (v0.20.3); security review fixes (v0.21.0:
 federation security authority §10.6, proxy settings and outbound requests §12, clients file validation,
-SMS host allowlist §7.2, per-user TOTP limit and OIDC callback bounce §9). Generated scripts verified on a
+SMS host allowlist §7.2, per-user TOTP limit and OIDC callback bounce §9; container hardening with CSP and
+HSTS per listener §12). Generated scripts verified on a
 RouterOS 7.24.5 CHR (`tests/routeros`); open: Wi-Fi modes, per-CAP rules and the wizard on real routers,
 CHR run on RouterOS 7.25.
 M8 in progress (status 2026-11-02): anonymity and secrets scan of the tree and history done; install docs

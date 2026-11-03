@@ -22,9 +22,16 @@ can be supported via drivers (contributions welcome).
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
-- v0.21: security fixes: admins and security settings only from the federation hub, router IP check kept
-  behind proxies (`PORTAL_ROUTER_IP_CHECK`), trust-all `TRUSTED_PROXIES` refused, clients file validated,
-  SMS host line allowlist, per-user TOTP limit, no redirects on channels/SMS, OIDC callback bounce.
+- v0.21: security fixes (0.21.0): admins (creation, promotion, passwords, 2FA, demotion, deletion) and
+  security settings only from the federation hub, router IP check kept behind proxies
+  (`PORTAL_ROUTER_IP_CHECK`), trust-all `TRUSTED_PROXIES` refused, clients file validated, SMS host line
+  allowlist, per-user TOTP limit, no redirects on outbound requests, OIDC callback bounce; Wi-Fi objects of a
+  deselected mode (e.g. CAPsMAN to local) reported as left over with a clean-up block per router, scheduled
+  job output and logs in the container log, no federation event for saves of local columns only, container
+  step hint for a missing container package or device mode, fixes for deleted slave references, the
+  "queued" refresh badge and the Wi-Fi password labels; container hardening: CSP and HSTS per listener,
+  relative redirects, read-only app code, database permissions, IP SAN in the self-signed certificate,
+  quiet scheduler, UTC logs.
 - v0.20: SMS text editable per locale, default SMS texts in the iOS-detectable `code: 123456` form
   (0.20.1), new default logo and favicons (0.20.2), site code notice without the sign-in QR, A4/A6 on
   one page (0.20.3).
