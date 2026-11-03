@@ -8,7 +8,8 @@ are marked **(to verify)**; proposals not yet confirmed by the maintainer are ma
 
 - Guests on a hotspot network get internet access only after logging in through the portal.
 - Login methods: admin-issued code, SMS one-time password (OTP), push approval by an admin, social login
-  (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0).
+  (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0), user account of the site's Active
+  Directory / LDAP (decision 2026-11-03, v0.24.0).
 - Every login requires first name, last name and acceptance of the current terms of use.
 - Multi-site: one instance can serve several sites, or each site runs its own self-sufficient
   instance; instances can join a **federation** so grants are valid everywhere (§10).
@@ -404,6 +405,48 @@ UniFi: see [docs/unifi-feasibility.md](docs/unifi-feasibility.md) (study 2026-11
 7. Walled garden: the router script adds the sign-in hosts of the configured providers (§13; list in
    `App\Auth\Social\WalledGarden`, docs/guest-network-setup.md 6.6); limited mode does not change it.
 
+**E. Directory account (Active Directory / LDAP; decision 2026-11-03, v0.24.0)**
+1. Per site an optional directory (site setting `directory`, site page, admin only): server, port (636),
+   TLS `ldaps` (default), `starttls` or `none` (warning), certificate check (default on; system store, or a
+   CA certificate of the site in PEM, which then replaces it), base DN, service account (bind DN and password,
+   encrypted with the federation data key, §10.2; empty bind DN = anonymous search), user filter (default
+   `(&(objectClass=user)(sAMAccountName={username}))`, `{username}` escaped per RFC 4515), optional group DN
+   (direct `memberOf`, compared case-insensitively; nested groups via the AD matching rule in the filter),
+   name attributes (default `displayName`, "Last, First" or split at the last space; fallback `givenName` +
+   `sn`), email attribute (`mail`), timeout (5 s), access duration (empty = default of the login method
+   settings, 1 d; 5 min to 30 d). Method `account` is offered at a site when its switch is on, the site's
+   directory is configured (enabled, server, base DN, readable password) and not in limited mode.
+2. Guest page: user name, password, terms. `POST /portal/account` (5/min per IP) checks method, site and
+   terms version; lockout per MAC, IP and global like the other methods, plus at most
+   `PORTAL_LOGIN_MAX_PER_ACCOUNT` (5) attempts per site and user name within the login window, counted before
+   the bind (parallel guesses cannot exceed it; cleared on success), so guessing through the portal stays
+   below a typical directory lockout threshold.
+3. The portal binds with the service account, searches the user (size limit 2: none = wrong credentials, two =
+   refused), binds as the found DN with the guest's password (an empty password, an unauthenticated bind, and
+   NUL bytes are refused before), then checks the group (only after a successful bind). The password goes only
+   to the directory: never stored, logged, audited or flashed back. Wrong user name or password: one generic
+   message; AD data codes 530/531/532/533/701/773/775 (disabled, locked, expired): "locked or expired"; not in
+   the group: "not allowed"; directory unreachable, TLS error, service account rejected or search failed:
+   error page "unavailable" (503, not counted as a failed attempt). The directory is asked outside the global
+   login lock.
+4. Success like D step 6: guest (names, email), terms acceptance, grant type `account` restricted to the site
+   (label = site name, duration of the site or the default, time from login), login attempt `account`, audit
+   `guest.account_login` with site and user name only. Guest list: "User account (site)".
+5. LDAP client behind `App\Auth\Directory\DirectoryClient` (ext/ldap; tests use a fake): LDAPv3, no
+   referrals, network, operation and search time limit = timeout. ext/ldap cannot give a connection its own
+   TLS context, so all TLS options (certificate check, CA file and directory) are set globally for the PHP
+   worker right before each connect. Check button on the site page (10/min): service bind and the user search
+   with a made-up name; ok, incomplete, unreachable, TLS error, service account rejected, search failed or
+   ambiguous filter; audited `site.directory_checked`.
+6. Federation: `directory` is a security site setting (`Federation::SECURITY_SITE_SETTINGS`, it decides where
+   guest passwords go), the default duration (`account_login`) a hub-only security setting, the password is
+   re-encrypted after a key rotation. No walled-garden change: the check runs on the portal.
+Decision 2026-11-03 (v0.24.0): a guest may sign in with the user name and password of the site's directory
+(e.g. staff), verified by a bind of the portal instead of a stored hash, so the portal keeps no passwords and a
+disabled account stops working at once; configured per site since each site has its own directory, and not
+offered in limited mode, like social login. Instances older than 0.24.0 cannot read grants of type `account`:
+every instance of a federation must run 0.24.0 or later before the method is switched on.
+
 ### 7.3 Drivers
 
 | Interface | Drivers (initial) | Notes |
@@ -569,13 +612,13 @@ Features:
 
 | Area | Content |
 |---|---|
-| Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods. |
+| Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods; directory for the account login (v0.24.0, §7.2 E: server, TLS, service account, filter, group, duration, check button). |
 | Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke, delete ended codes (list shows current codes by default). |
 | Guests & sessions | Implemented M6 (admin + manager), one page: guests newest first (each login creates a guest row) with name, phone (masked for managers), login method (grant type; without grant: approval request or SMS challenge), site and accepted terms version + time of the latest acceptance, created; its grant (code/status/remaining, extend and revoke via the grant routes) and devices (MAC, online = open session summary of grant + MAC, IP, start/end, traffic from local accounting `bytes_in`/`bytes_out`). An open session without accounting update for `PORTAL_RADIUS_STALE_AFTER` (default 3 x interim interval = 900 s) is shown as "stale" (Stop probably lost; display only, data unchanged). Disconnect: Disconnect-Request job for an open session served by this instance (sessions of other instances: M7); the grant stays valid, audited `grant.disconnected`. Filters: site, method, running grants only, name (LIKE wildcards literal) or exact code; invalid filter values are ignored; 25 per page. Extend/shorten takes whole hours; a revoked grant cannot be extended (422). No new fields. |
 | MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
 | Approvals | Pending requests (approve/deny in UI as well). |
 | Channels | Notification channels and SMS provider, test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
-| Login methods | Decision 2026-11-03 (v0.22.0, admin only, Settings): switch per guest login method with prerequisite hints; social login providers (Google, Apple, Facebook, GitHub) with encrypted secrets, redirect URIs per guest origin, setup guide and check button (see the bullet above). |
+| Login methods | Decision 2026-11-03 (v0.22.0, admin only, Settings): switch per guest login method with prerequisite hints; social login providers (Google, Apple, Facebook, GitHub) with encrypted secrets, redirect URIs per guest origin, setup guide and check button (see the bullet above); switch and default access duration of the account login (v0.24.0, directory per site, §7.2 E). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login; default texts in all languages (shown until published, publishable by button). |
 | Guest texts | Decision 2026-11-03 (v0.23.0, admin only, System → Guest texts, `/admin/texts`): labels and texts of the guest pages editable per language, with a live preview. Storage: replicated setting `guest_texts` (key → locale → text), not a security setting, so any instance may edit it (like `sms_text`); global for all sites (site-specific texts are out of scope). Only an allowlist of lang keys (`App\Guest\GuestTexts::KEYS`: titles, intros, method buttons, form labels, SMS/approval/social/status texts, notices, error pages) is editable; plain text, one line, max. 500 characters; empty or equal to the default = default (only differences are stored); every placeholder of the default (`:provider`, `:phone`, `:minutes`, `:version`) must stay. Saving is per language and audited (`settings.guest_texts` with locale and changed keys). Applied by the middleware `guest.texts` of the guest routes only (`Lang::addLines` for the guest's locale, undone after the response); admin pages, voucher prints, SMS and notification texts keep their own texts. Preview: an iframe on the admin page loads `/admin/texts/preview` (admin listener, admin only), which renders the real guest views with demo data (`App\Guest\GuestPreview`: first site or the selected one for branding, demo phone and remaining time, current terms) and never creates sessions, grants, audit rows or driver calls; links and forms of the guest views lead to the next preview screen. The admin page posts its unsaved drafts to the iframe (debounced 300 ms, `POST /admin/texts/preview`, never stored); a click inside the preview asks the page by `postMessage` to re-post the drafts for the next screen. Without JS the preview shows the saved texts and its links work. Framing: §12. |
 | Retention | Retention period (default 1 year); nightly purge job. |
@@ -946,6 +989,9 @@ links) and change log events are purged after all direct peers have acknowledged
 - **Outbound requests (decision 2026-11-02):** approval channels, SMS gateways, certificate pull, OIDC and the
   guest social login (token, userinfo and JWKS requests, provider checks) follow no redirects (a redirect is an error) and use short timeouts; private address ranges are not
   blocked, since Gotify and similar services often run in the operator's LAN (only admins set these URLs).
+  Account login (v0.24.0, §7.2 E): LDAP connections only to the site's directory, timeout per site (default
+  5 s), LDAPS by default with certificate and host name verified (switching it off or `none` warns), no
+  referrals.
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
 - **Web/privacy:** CSRF, strict CSP, HSTS, signed URLs, HMAC webhooks, bundled assets; minimal data, retention + purge.

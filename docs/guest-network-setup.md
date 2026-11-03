@@ -77,6 +77,7 @@ Central instance values (once):
 | RADIUS auth/acct | site router (`src-address`) | portal instance | UDP 1812/1813 | **No** |
 | Disconnect/CoA | portal instance | site router | UDP 3799 | **No** |
 | Admin UI | admin/VPN network | portal instance | TCP 8443 | Optional |
+| Account login (optional, 6.7) | portal instance | site's directory (AD / LDAP) | TCP 636 (or 389 StartTLS) | Yes |
 | Internet | guest VLAN | WAN | any | Normal masquerade |
 
 ## 2. Per site: bridge and VLAN filtering
@@ -538,6 +539,18 @@ developer tools and extend the list **(to verify per provider on real devices)**
 does not change the entries. Re-run the router script after switching social login or a provider on or off.
 Captive-portal mini browsers may not open the provider pages at all (Google refuses embedded web views):
 the social login page tells the guest to close the mini browser and open any website in the normal browser (the hotspot redirects to the portal again).
+
+### 6.7 Account login: the portal must reach the directory
+With the account login (user name and password of the site's Active Directory / LDAP, site page →
+"User account", CONCEPT.md §7.2 E) the guest's browser only talks to the portal; the portal checks the
+password with an LDAP bind against the site's directory. The hotspot and walled garden need no change.
+The **portal instance** (container or Docker host) must reach the directory server: allow TCP 636 (LDAPS,
+recommended) or 389 (StartTLS) from the portal's address to the domain controller or LDAP server, across the
+VPN when the portal runs centrally (section 7), and nothing from the guest network. The server's certificate
+must carry the host name entered on the site page (a domain controller certificate from the AD certificate
+services usually does; paste the root CA on the site page when it is an internal CA). The service account
+needs read access only (an ordinary domain user, no administrator). The "Check" button on the site page
+tests reachability, TLS, the service account and the user search.
 
 ## 7. Central instance and inter-site connectivity
 

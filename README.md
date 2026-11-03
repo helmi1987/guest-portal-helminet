@@ -24,6 +24,9 @@ can be supported via drivers (contributions welcome, see [docs/nas-driver.md](do
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.24: guest login with the site's Active Directory / LDAP account (user name and password checked by the
+  portal with an LDAP bind, LDAPS with certificate check by default, per site on the site page with check
+  button, optional group, lockout per account, grant type `account`; docs/guest-network-setup.md 6.7).
 - v0.23: guest texts editable per language with live preview (admin System → Guest texts; the preview
   shows the real guest pages with unsaved texts and can be clicked through)
   (0.23.1: guest portal preview in the toolbox).
