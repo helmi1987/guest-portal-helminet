@@ -310,7 +310,7 @@ CoovaChilli) are future/community work.
    URL, the site's hotspot host names), otherwise the line is omitted, so a forged Host header cannot put a
    foreign domain into an SMS. The guest page `/portal/sms` additionally calls WebOTP
    (`navigator.credentials.get({otp: {transport: ['sms']}})`, feature-detected, aborted on leaving, errors
-   ignored) and fills the input; the page has no CSP, the script is inline. No length limit exists in the SMS
+   ignored) and fills the input; the script is inline (allowed by the guest CSP, §12). No length limit exists in the SMS
    code; the text stays short (about 100 characters, one GSM-7 segment for typical hosts).
    Decision 2026-11-02 (v0.20.0, own SMS text): the whole text is editable per locale in the admin settings
    (replicated setting `sms_text`, locale => template, max. 300 characters, `:code` required in a line without `:host`); placeholders
@@ -854,9 +854,21 @@ links) and change log events are purged after all direct peers have acknowledged
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
 - **Web/privacy:** CSRF, strict CSP, HSTS, signed URLs, HMAC webhooks, bundled assets; minimal data, retention + purge.
-  Status v0.10.0: no CSP header is sent for the pages yet (inline script in the login handoff,
-  Livewire, inline `onsubmit` confirms); branding keeps pages CSP-ready (theme CSS as a separate
-  same-origin stylesheet, no inline CSS); uploaded branding files carry their own strict CSP.
+  Status 2026-11-02 (v0.21.0): nginx sends a CSP per listener (docker/nginx/portal-headers.conf, maps in
+  portal.conf.template). Guest (443): `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src
+  'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri
+  'self'; form-action 'self' https:; frame-ancestors 'none'`. Admin (8443): `default-src 'self';
+  script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
+  font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';
+  frame-ancestors 'none'`. Both send `Strict-Transport-Security: max-age=31536000` (no includeSubDomains,
+  no preload); the internal and federation listeners send neither. A CSP or nosniff header set by the app
+  (uploaded branding files carry their own strict CSP) is not duplicated. Guest `form-action` allows
+  `https:` because the handoff posts to the router's `link-login-only` host. Known loosenings, accepted
+  for now: `'unsafe-inline'` guest scripts (handoff auto-submit, WebOTP, "sign in again"), and
+  `'unsafe-inline'` scripts and styles plus `'unsafe-eval'` on the admin listener for Livewire/Alpine
+  (`new Function`) and inline `onsubmit`/`onclick` handlers; nonces or hashes, handlers without inline
+  code and Livewire's CSP-safe build would allow dropping them later. Branding keeps the guest pages free of
+  inline CSS (theme CSS as a separate same-origin stylesheet).
 - **Supply chain:** pinned base image digest updated by Renovate/Dependabot **(proposal)**,
   weekly rebuild, lockfiles.
 
