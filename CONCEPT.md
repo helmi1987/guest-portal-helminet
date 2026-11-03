@@ -226,8 +226,8 @@ CoovaChilli) are future/community work.
   Implemented M3: files `/data/certs/router.crt` + `router.key`; `GET /router-cert/<router id>/
   {fingerprint|router.crt|router.key}` on the guest port, stateless (no session/cookies), with a
   per-router token in header `X-Portal-Token` (local, encrypted) and only from the router's NAS IP
-  (fetch with `src-address`; check off by default behind `TRUSTED_PROXIES`, env
-  `PORTAL_ROUTER_CERT_CHECK_IP`); denied requests are logged. Key files (decided M6): all keys in
+  (fetch with `src-address`; also behind `TRUSTED_PROXIES`, off only with `PORTAL_ROUTER_IP_CHECK=false`,
+  see §12); denied requests are logged. Key files (decided M6): all keys in
   `/data/certs` (`portal.key`, `router.key`, `selfsigned.key`, operator-provided or pulled) are set to
   `root:portal 640`, certificates `root:portal 644`, so the app can serve the router key, compare
   pulled files and include them in backups; legacy keys in `/certs` stay 600. The generated script is idempotent (removes its own entries named or
@@ -305,7 +305,10 @@ CoovaChilli) are future/community work.
    line `@<host> #<code>` (`OtpService::text()`). Host = host of the guest request that triggered the send
    (`Request::getHost()` of the start/resend request, the page the code is entered on; not APP_URL, since the
    guest zone may be reached under other names); lower case, no scheme, no port; invalid host (not a DNS name)
-   or none: the last line is omitted. The guest page `/portal/sms` additionally calls WebOTP
+   or none: the last line is omitted. Decision 2026-11-02 (v0.21.0, security review): the request host is used
+   only when it is one of the portal's own names (APP_URL host, `PORTAL_HOSTNAME`, host of the site's portal
+   URL, the site's hotspot host names), otherwise the line is omitted, so a forged Host header cannot put a
+   foreign domain into an SMS. The guest page `/portal/sms` additionally calls WebOTP
    (`navigator.credentials.get({otp: {transport: ['sms']}})`, feature-detected, aborted on leaving, errors
    ignored) and fills the input; the page has no CSP, the script is inline. No length limit exists in the SMS
    code; the text stays short (about 100 characters, one GSM-7 segment for typical hosts).
@@ -422,11 +425,13 @@ All login methods produce a **grant**; a code is a grant created in advance.
 ## 9. Admin
 
 - Admin UI on its **own port** (default 8443), guest portal on its own port (443): firewall rules
-  decide reachability. Access via VPN or reverse proxy; behind a proxy set `TRUSTED_PROXIES`.
+  decide reachability. Access via VPN or reverse proxy; behind a proxy set `TRUSTED_PROXIES` to its
+  address (§12).
 - 2FA (TOTP) strongly recommended, enforceable by setting (implemented M6: enrolment in the own
   profile with QR code, RFC 6238 ±1 step, each step accepted once, 8 hashed single-use recovery codes,
   disable with password + code; login asks for the code after the password (5 failures: start over
-  with the password; per-IP limit), no "remember me"; password or 2FA changes and deletion end the
+  with the password; per-IP limit; since v0.21.0 also 10 failures per user in 15 minutes across IPs and
+  restarts), no "remember me"; password or 2FA changes and deletion end the
   user's other sessions and rotate the remember token; failed-login audit rows capped per hour; setting
   `require_2fa` applies to all admin UI users (both roles) and sends users without 2FA to their profile;
   `artisan portal:admin --reset-2fa <email>` and the user page reset it).
@@ -444,6 +449,11 @@ All login methods produce a **grant**; a code is a grant created in advance.
   `nonce`, `sub`. Userinfo (sub must match) fills email/`email_verified`/groups when missing in the ID token. Non-string
   query parameters (code, state, error) fail with the generic error. HTTPS only,
   TLS verified, 10 s timeout, no redirects followed; redirect 10/min, callback 20/min per IP.
+  Decision 2026-11-02 (v0.21.0): the admin session cookie stays `SameSite=Strict`, so the browser does not
+  send it on the identity provider's cross-site redirect; a callback without the cookie and without
+  `bounce=1` answers (before the session starts, so no new cookie replaces the old one) a minimal page that
+  reloads the same URL plus `bounce=1` by meta refresh; that navigation is same-site and carries the
+  cookie; without the flow after the bounce the login fails as before. Not yet verified with a real IdP.
   Users: matched by `oidc_subject` (`<iss> <sub>`); first login links an existing user by email only
   when linking is enabled and `email_verified` is true (otherwise denied; audited `user.oidc_linked`;
   a linked user with TOTP always enters the portal code on that linking login, whatever the 2FA mode),
@@ -750,6 +760,13 @@ implemented, released as v0.13.0 (§14). Setup and operation: docs/federation.md
   hub (the UI allows it only there). Disallowed fields keep the local value, a disallowed registration or
   hub change is dropped (logged). An event with a missing or invalid signature is dropped and the peer
   that sent it is paused (not the origin, so a peer cannot block another origin).
+- Security authority (decision 2026-11-02): a remote event that creates, promotes or restores an admin,
+  changes a setting of `Federation::SECURITY_SETTINGS` (2FA policy, OIDC, admin URL, Telegram owner,
+  offline rule, hub) or the hotspot host names/portal URL of a site is applied only from the hub (site
+  values also from the site's home instance); otherwise it is dropped, the rest of the batch continues,
+  and it is logged and audited (`federation.event_refused`, origin and record). Such changes made on
+  another instance stay local to it, channels stay multi-master (§10.1, every instance sends with them),
+  and re-pairing with a new hub takes over its security settings like the hub setting.
 - Known limits (parts J, K): a compromised direct peer can claim own events of this instance beyond its
   sequence and so start the restore resync, which blocks replicated writes here until it delivers validly
   signed events or the admin lifts the block (`portal:federation:repair skip-resync --force`); it cannot
@@ -825,6 +842,15 @@ links) and change log events are purged after all direct peers have acknowledged
   `https` and a host listed in the site's hotspot host names; the post-login target (`dst`) is the
   portal status page (M3); the portal never redirects to `link-orig`.
 - **NAS addresses:** IPv4 only for now; IPv6 NAS addresses later.
+- **Proxies (decision 2026-11-02):** `TRUSTED_PROXIES` takes only specific proxy addresses or networks;
+  a value that trusts every client (`*`, a `/0` network) is ignored and logged as an error at container
+  start, since X-Forwarded-For would then choose the IP of every per-IP limit. The source-IP check of
+  router downloads no longer depends on it: always on, only `PORTAL_ROUTER_IP_CHECK=false` switches it
+  off (warning at start; the former `PORTAL_ROUTER_CERT_CHECK_IP` is no longer read). A deployment whose
+  routers reach the guest port through the same proxy as the admin UI (discouraged) must set it.
+- **Outbound requests (decision 2026-11-02):** approval channels, SMS gateways, certificate pull and OIDC
+  follow no redirects (a redirect is an error) and use short timeouts; private address ranges are not
+  blocked, since Gotify and similar services often run in the operator's LAN (only admins set these URLs).
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
 - **Web/privacy:** CSRF, strict CSP, HSTS, signed URLs, HMAC webhooks, bundled assets; minimal data, retention + purge.
@@ -885,7 +911,7 @@ v0.13.0, checked with three containers on one Docker host (pairing, relay, offli
 restore resync, branding files, hub takeover with re-pairing); v0.13.1: admin login during the restore
 resync, skip-resync not undone by heartbeats, branding download size limit without Content-Length. Open: test across real sites (WireGuard, WAN outages), Telegram forwarding with a real
 group.
-After M7 (v0.14.0-v0.20.3, no new milestone; decisions in §7.2, §8 and the §9 rows "Setup assistant" and
+After M7 (v0.14.0-v0.21.0, no new milestone; decisions in §7.2, §8 and the §9 rows "Setup assistant" and
 "Toolbox"): read-only router state query per router (REST or API-SSL, access local to the instance) with
 commands derived from it and coloured by it (v0.14.0); optional guest Wi-Fi password, shared or local to
 the instance (v0.14.1); guarded Wi-Fi block with placeholder inputs (v0.15.0); guest Wi-Fi on several
@@ -893,7 +919,9 @@ masters (v0.16.0); detection of unmanaged guest objects, `cfg-guest` removed fro
 uninstall (v0.17.0); toolbox with the Wi-Fi QR sheet (v0.18.0); combinable Wi-Fi modes, guest SSID per CAP,
 provisioning rule editor and the guided setup wizard (v0.19.0); dynamic hotspot entries ignored (v0.19.1);
 SMS code in the domain-bound one-time code format, SMS text editable per locale (v0.19.2-v0.20.1); new
-default logo (v0.20.2); site code notice without the sign-in QR (v0.20.3). Generated scripts verified on a
+default logo (v0.20.2); site code notice without the sign-in QR (v0.20.3); security review fixes (v0.21.0:
+federation security authority §10.6, proxy settings and outbound requests §12, clients file validation,
+SMS host allowlist §7.2, per-user TOTP limit and OIDC callback bounce §9). Generated scripts verified on a
 RouterOS 7.24.5 CHR (`tests/routeros`); open: Wi-Fi modes, per-CAP rules and the wizard on real routers,
 CHR run on RouterOS 7.25.
 M8 in progress (status 2026-11-02): anonymity and secrets scan of the tree and history done; install docs

@@ -384,7 +384,8 @@ that downloads the certificate from the instance with a per-router token, import
 - The download (`https://<PORTAL_HOST>/router-cert/...`, TCP 443) is sent with `src-address=<router IP>`; the instance accepts it
   only from the router IP registered for that router (plus the token). So TCP 443 from the router's router IP to the portal must be
   routed without NAT and allowed on the central firewall (section 7.2/7.3). Denied downloads are logged by the instance.
-  Behind a reverse proxy (`TRUSTED_PROXIES` set) the IP check is off by default (`PORTAL_ROUTER_CERT_CHECK_IP`).
+  The IP check stays on with a reverse proxy (`TRUSTED_PROXIES`); only `PORTAL_ROUTER_IP_CHECK=false` switches it off
+  (needed only if the routers reach the guest port through a proxy or NAT, which is not recommended).
 - The portal certificate must be publicly trusted: the fetch uses `check-certificate=yes`.
 
 > **Critical fix in v0.12.5:** v0.12.5 fixes a critical bug in the router certificate script of

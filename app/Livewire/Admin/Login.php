@@ -37,6 +37,14 @@ class Login extends Component
     /** Code failures per IP within 5 minutes (across users). */
     private const CODE_TRIES_PER_IP = 10;
 
+    /**
+     * Code failures per user within 15 minutes, across IPs and restarts with the password (not cleared
+     * by a restart or a success; kept in the cache store, the database in the container).
+     */
+    private const CODE_TRIES_PER_USER = 10;
+
+    private const CODE_USER_WINDOW = 900;
+
     /** Max. login_failed audit rows per hour (instance-wide); beyond that only one log warning. */
     private const FAILED_AUDIT_PER_HOUR = 100;
 
@@ -97,12 +105,15 @@ class Login extends Component
 
         $ipKey = 'admin-2fa-ip|'.request()->ip();
         $userKey = 'admin-2fa|'.$user->id;
+        $userTotalKey = 'admin-2fa-user|'.$user->id;
         $this->throttle($ipKey, 'code', self::CODE_TRIES_PER_IP);
+        $this->throttle($userTotalKey, 'code', self::CODE_TRIES_PER_USER);
         if (! $twoFactor->verify($user, $this->code)) {
             // Not a 6-digit TOTP code: a recovery code, which cannot be consumed during the restore resync.
             $recoveryBlocked = Resync::required() && ! preg_match('/^\d{6}$/', (string) preg_replace('/\s+/', '', $this->code));
             RateLimiter::hit($ipKey, 300);
             RateLimiter::hit($userKey, self::PENDING_TTL);
+            RateLimiter::hit($userTotalKey, self::CODE_USER_WINDOW);
             Audit::log('auth.two_factor_failed', $user, [], $user);
             $this->code = '';
 

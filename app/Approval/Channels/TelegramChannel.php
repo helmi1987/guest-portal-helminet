@@ -6,9 +6,9 @@ use App\Approval\ApprovalMessage;
 use App\Approval\ApprovalSettings;
 use App\Models\ApprovalRequest;
 use App\Models\Channel;
+use App\Support\OutboundHttp;
 use App\Support\Redact;
 use Illuminate\Http\Client\Response;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
 
@@ -74,9 +74,9 @@ class TelegramChannel implements NotificationChannel
     public function call(Channel $channel, string $method, array $params, int $timeout = 10): Response
     {
         try {
-            return Http::asJson()->timeout($timeout)
+            return OutboundHttp::rejectRedirect(OutboundHttp::client($timeout)->asJson()
                 ->post(self::API.'/bot'.$channel->conf('bot_token').'/'.$method, $params)
-                ->throw();
+                ->throw());
         } catch (Throwable $e) {
             throw new RuntimeException('Telegram '.$method.' failed: '.str_replace((string) $channel->conf('bot_token'), '***',
                 Redact::secrets($e->getMessage())));

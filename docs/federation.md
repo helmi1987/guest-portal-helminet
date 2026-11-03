@@ -166,6 +166,11 @@ Check: create a code on site B, it appears on site A within about 30 seconds (re
 - **Sessions:** the guest list shows sessions of other instances live (unreachable instances are named);
   the disconnect button goes to the serving instance through the hub.
 - **Routers:** replicated for recovery, but only the site's home instance serves them.
+- **Changes only the hub shares** (since v0.21.0): new admins or promotions to admin, and the settings
+  2FA requirement, OIDC, admin URL, Telegram owner and "offline: SMS only". Made on another instance they
+  stay local to it (the others drop them and list `federation.event_refused` in the audit log), so make
+  them on the hub. Hotspot host names and portal URL of a site are shared from the hub or the site's home
+  instance.
 
 ## 8. Branding files
 

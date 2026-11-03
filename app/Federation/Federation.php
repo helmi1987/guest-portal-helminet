@@ -57,6 +57,27 @@ final class Federation
             'api_host', 'api_type', 'api_port', 'api_user', 'api_password', 'api_pin'],
     ];
 
+    /**
+     * Settings that control login or trust (CONCEPT.md §10.6, decision 2026-11-02): a remote event
+     * changes them only when it comes from the hub; the hub setting itself has its own rule
+     * (Applier::authorized(), hub takeover).
+     */
+    public const SECURITY_SETTINGS = [
+        'federation_hub',              // Topology::HUB_SETTING
+        'federation_offline_sms_only', // Topology::OFFLINE_SMS_ONLY_SETTING: logins while the hub is unreachable
+        'require_2fa',                 // TwoFactor::REQUIRED_SETTING
+        'oidc',                        // OidcSettings::KEY: issuer, client, role mapping, TOTP policy
+        'oidc_client_secret',          // OidcSettings::SECRET_SETTING
+        'admin_url',                   // approval links and OIDC redirect URI
+        'telegram_owner',              // instance trusted to forward Telegram approval decisions
+    ];
+
+    /**
+     * Keys of `sites.settings` that decide where guest credentials go and which portal guests see: a
+     * remote event changes them only from the hub or from the site's home instance.
+     */
+    public const SECURITY_SITE_SETTINGS = ['hotspot_hosts', 'portal_url'];
+
     /** @return list<string> */
     public static function localColumns(string $table): array
     {

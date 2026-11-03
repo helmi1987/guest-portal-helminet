@@ -66,9 +66,10 @@ return [
     'router_cert' => [
         'cert' => env('PORTAL_ROUTER_CERT', $dataDir.'/certs/router.crt'),
         'key' => env('PORTAL_ROUTER_KEY', $dataDir.'/certs/router.key'),
-        // Download only from the router's NAS IP. Default: on unless the instance is behind trusted
-        // proxies (TRUSTED_PROXIES), where the source address is the proxy's.
-        'check_source_ip' => (bool) env('PORTAL_ROUTER_CERT_CHECK_IP', ! env('TRUSTED_PROXIES')),
+        // Router downloads (certificate, login.html) only from the router's NAS IP. Always on, also with
+        // TRUSTED_PROXIES (routers reach the guest port directly); PORTAL_ROUTER_IP_CHECK=false is the only
+        // way to switch it off (portal:init then logs a warning at container start).
+        'check_source_ip' => (bool) env('PORTAL_ROUTER_IP_CHECK', true),
         // RouterOS scheduler interval for fetching the certificate.
         'fetch_interval' => env('PORTAL_ROUTER_CERT_INTERVAL', '1d'),
     ],

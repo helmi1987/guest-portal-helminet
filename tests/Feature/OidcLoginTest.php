@@ -96,6 +96,39 @@ class OidcLoginTest extends TestCase
         $this->assertSame('oidc', $login->data['method']);
     }
 
+    public function test_cross_site_callback_without_cookie_bounces_once_on_the_same_origin(): void
+    {
+        [$state, $nonce] = $this->startLogin();
+        $this->claims = $this->baseClaims($nonce, ['groups' => ['portal-admin']]);
+
+        // The IdP's cross-site redirect carries no SameSite=Strict cookie: a page that reloads the URL here.
+        $response = $this->onZone('admin')->get('/admin/oidc/callback?'.http_build_query(['code' => self::CODE, 'state' => $state]))
+            ->assertOk()->assertCookieMissing('portal_admin_session')->assertHeader('Cache-Control', 'no-store, private')
+            ->assertHeader('Referrer-Policy', 'no-referrer');
+        $url = '/admin/oidc/callback?'.http_build_query(['bounce' => '1', 'code' => self::CODE, 'state' => $state]);
+        $response->assertSee('<meta http-equiv="refresh" content="0;url='.e($url).'">', false)->assertDontSee('<script', false);
+        $this->assertSame([], $this->tokenRequests);
+        $this->assertGuest();
+        $this->assertNotNull(session('oidc.flow'), 'the flow is not consumed by the bounce');
+
+        // The reload is same-site and carries the cookie: the login completes.
+        $this->onZone('admin')->withCookie('portal_admin_session', session()->getId())->get($url)->assertRedirect(route('admin.dashboard'));
+        $this->assertAuthenticatedAs(User::where('email', 'alice@example.com')->sole());
+    }
+
+    public function test_bounced_callback_without_the_flow_fails_as_before(): void
+    {
+        [$state, $nonce] = $this->startLogin();
+        $this->claims = $this->baseClaims($nonce, ['groups' => ['portal-admin']]);
+        session()->forget('oidc.flow'); // the cookie did not come back after the bounce either
+
+        $this->onZone('admin')->get('/admin/oidc/callback?'.http_build_query(['bounce' => '1', 'code' => self::CODE, 'state' => $state]))
+            ->assertRedirect(route('login'))->assertSessionHas('oidc_error', __('portal.oidc.failed'));
+        $this->assertGuest();
+        $this->assertFailure('state');
+        $this->assertSame([], $this->tokenRequests);
+    }
+
     public function test_manager_is_provisioned_and_disabled_oidc_is_hidden(): void
     {
         [$state, $nonce] = $this->startLogin();
@@ -438,7 +471,7 @@ class OidcLoginTest extends TestCase
             [$state, $nonce] = $this->startLogin();
             $this->claims = $this->baseClaims($nonce, ['groups' => ['portal-admin']]);
             $query = array_merge(['code' => self::CODE, 'state' => $state], [$param => $value]);
-            $this->onZone('admin')->get('/admin/oidc/callback?'.http_build_query($query))
+            $this->callbackWithCookie($query)
                 ->assertRedirect(route('login'))->assertSessionHas('oidc_error', __('portal.oidc.failed'));
             $this->assertGuest();
         }
@@ -565,7 +598,14 @@ class OidcLoginTest extends TestCase
 
     private function finishLogin(string $state)
     {
-        return $this->onZone('admin')->get('/admin/oidc/callback?'.http_build_query(['code' => self::CODE, 'state' => $state]));
+        return $this->callbackWithCookie(['code' => self::CODE, 'state' => $state]);
+    }
+
+    /** Callback with the admin session cookie (sent when the browser comes back same-site or after the bounce). */
+    private function callbackWithCookie(array $query)
+    {
+        return $this->onZone('admin')->withCookie('portal_admin_session', session()->getId())
+            ->get('/admin/oidc/callback?'.http_build_query($query));
     }
 
     private function baseClaims(string $nonce, array $override): array

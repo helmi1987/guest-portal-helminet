@@ -273,7 +273,7 @@ class PortalController extends Controller
             return $this->error('locked', 429);
         }
         // Over a cost cap nothing is stored; the guest is asked to try later.
-        $challenge = $otp->start($data, $terms, $site, $context->mac, $phone, $request->getHost());
+        $challenge = $otp->start($data, $terms, $site, $context->mac, $phone, $this->smsHost($request, $site));
         if ($challenge === null) {
             return $this->error('sms_busy', 429);
         }
@@ -332,12 +332,12 @@ class PortalController extends Controller
 
     public function resendSms(Request $request, OtpService $otp): Response|RedirectResponse
     {
-        [$challenge] = $this->currentChallenge($request);
+        [$challenge, $site] = $this->currentChallenge($request);
         if ($challenge === null || ! $challenge->isOpen()) {
             return redirect()->route('guest.sms');
         }
 
-        return match ($otp->resend($challenge, $request->getHost())) {
+        return match ($otp->resend($challenge, $this->smsHost($request, $site))) {
             'sent' => redirect()->route('guest.sms')->with('status', __('portal.guest.sms_resent')),
             'closed' => redirect()->route('guest.sms'),
             'wait' => redirect()->route('guest.sms')->withErrors(['otp' => __('portal.guest.errors.sms_wait',
@@ -345,6 +345,26 @@ class PortalController extends Controller
             'limit' => redirect()->route('guest.sms')->withErrors(['otp' => __('portal.guest.errors.sms_limit')]),
             default => $this->error('sms_busy', 429),
         };
+    }
+
+    /**
+     * Host for the `@host #code` line of the SMS (OtpService::text()): the request host only when it is
+     * one of the portal's own names (APP_URL, PORTAL_HOSTNAME, the site's portal URL and hotspot host
+     * names), so a forged Host header never puts a foreign domain into an SMS paid by the operator;
+     * otherwise the line is left out.
+     */
+    private function smsHost(Request $request, ?Site $site): ?string
+    {
+        $normalise = fn (mixed $host) => is_string($host) ? strtolower(rtrim(trim($host), '.')) : '';
+        $allowed = array_filter(array_map($normalise, [
+            parse_url((string) config('app.url'), PHP_URL_HOST),
+            config('portal.hostname'),
+            parse_url((string) $site?->setting('portal_url'), PHP_URL_HOST),
+            ...(array) $site?->setting('hotspot_hosts', []),
+        ]));
+        $host = $normalise($request->getHost());
+
+        return $host !== '' && in_array($host, $allowed, true) ? $host : null;
     }
 
     /** @return array{0: ?OtpChallenge, 1: ?Site, 2: HotspotContext} challenge of this session, site and device */

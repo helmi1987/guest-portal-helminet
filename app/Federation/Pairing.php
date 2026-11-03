@@ -301,7 +301,7 @@ class Pairing
     /**
      * Hub side of POST /federation/repair: an instance known here (pin of its TLS client certificate =
      * its registered pin) presents a join token; a removed instance (e.g. the former hub) is restored.
-     * Answers the membership state: instance rows, hub setting, data key ring.
+     * Answers the membership state: instance rows, hub setting, security settings, data key ring.
      *
      * @throws PairingException
      */
@@ -332,6 +332,9 @@ class Pairing
                 'data_keys' => $this->keys->export(),
                 'instances' => DB::table('instances')->get()->map(fn ($row) => (array) $row)->all(),
                 'hub_setting' => (array) DB::table('settings')->where('key', Topology::HUB_SETTING)->first(),
+                // Changed here between takeover and re-pairing, the other instances dropped them (hub only).
+                'security_settings' => DB::table('settings')->whereIn('key', Federation::SECURITY_SETTINGS)
+                    ->where('key', '!=', Topology::HUB_SETTING)->get()->map(fn ($row) => (array) $row)->all(),
             ];
         });
     }
@@ -369,7 +372,9 @@ class Pairing
         DB::transaction(function () use ($data, $hub, $hubRow, $url, $actor) {
             $this->keys->importRing($data['data_keys']);
             $this->applier->applyTrusted('instances', $data['instances']);
-            $this->applier->applyTrusted('settings', [$hubRow]);
+            $security = array_filter((array) ($data['security_settings'] ?? []), fn ($row) => is_array($row)
+                && in_array($row['key'] ?? null, Federation::SECURITY_SETTINGS, true) && ($row['key'] ?? null) !== Topology::HUB_SETTING);
+            $this->applier->applyTrusted('settings', [$hubRow, ...array_values($security)]);
             FederationPeer::query()->whereKeyNot($hub)->delete();
             FederationPeer::query()->whereKey($hub)->update(['paused_at' => null, 'pause_reason' => null]);
             $this->applier->unpause($hub);

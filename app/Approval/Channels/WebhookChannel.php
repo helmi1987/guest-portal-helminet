@@ -5,7 +5,7 @@ namespace App\Approval\Channels;
 use App\Approval\ApprovalLinks;
 use App\Models\ApprovalRequest;
 use App\Models\Channel;
-use Illuminate\Support\Facades\Http;
+use App\Support\OutboundHttp;
 
 /**
  * Generic webhook: JSON POST signed with HMAC-SHA256 over "<timestamp>.<body>"
@@ -66,13 +66,13 @@ class WebhookChannel implements NotificationChannel
         $body = json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         $timestamp = (string) now()->getTimestamp();
 
-        Http::timeout(10)
+        OutboundHttp::rejectRedirect(OutboundHttp::client(10)
             ->withHeaders([
                 'X-Timestamp' => $timestamp,
                 'X-Signature' => self::signature($channel->conf('secret'), $timestamp, $body),
             ])
             ->withBody($body, 'application/json')
             ->post($channel->conf('url'))
-            ->throw();
+            ->throw());
     }
 }

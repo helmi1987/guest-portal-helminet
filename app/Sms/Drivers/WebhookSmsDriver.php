@@ -4,8 +4,8 @@ namespace App\Sms\Drivers;
 
 use App\Approval\Channels\WebhookChannel;
 use App\Models\Channel;
+use App\Support\OutboundHttp;
 use App\Support\Redact;
-use Illuminate\Support\Facades\Http;
 use RuntimeException;
 use Throwable;
 
@@ -31,7 +31,7 @@ class WebhookSmsDriver implements SmsDriver
 
         // Errors carry the HTTP status only: the gateway response may echo the number or the request.
         try {
-            $response = Http::timeout(15)
+            $response = OutboundHttp::client(15)
                 ->withHeaders([
                     'X-Timestamp' => $timestamp,
                     'X-Signature' => WebhookChannel::signature($channel->conf('secret'), $timestamp, $body),
@@ -41,7 +41,7 @@ class WebhookSmsDriver implements SmsDriver
         } catch (Throwable $e) {
             throw new RuntimeException('SMS webhook failed: '.Redact::secrets($e->getMessage(), $channel->secretValues()));
         }
-        if ($response->failed()) {
+        if ($response->failed() || $response->redirect()) {
             throw new RuntimeException('SMS webhook failed: HTTP '.$response->status());
         }
 

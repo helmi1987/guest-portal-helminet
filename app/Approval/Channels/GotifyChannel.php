@@ -6,7 +6,7 @@ use App\Approval\ApprovalLinks;
 use App\Approval\ApprovalMessage;
 use App\Models\ApprovalRequest;
 use App\Models\Channel;
-use Illuminate\Support\Facades\Http;
+use App\Support\OutboundHttp;
 
 /**
  * Gotify message with signed approve/deny links; a click opens the confirmation page.
@@ -33,7 +33,7 @@ class GotifyChannel implements NotificationChannel
             }
         }
 
-        Http::asJson()->timeout(10)
+        OutboundHttp::rejectRedirect(OutboundHttp::client(10)->asJson()
             ->withHeaders(['X-Gotify-Key' => $channel->conf('app_token')])
             ->post(rtrim($channel->conf('url'), '/').'/message', [
                 'title' => ApprovalMessage::title(),
@@ -43,20 +43,20 @@ class GotifyChannel implements NotificationChannel
                     'client::display' => ['contentType' => 'text/markdown'],
                     'client::notification' => ['click' => ['url' => $links['confirm']]],
                 ],
-            ])->throw();
+            ])->throw());
 
         return null;
     }
 
     public function test(Channel $channel, string $text): void
     {
-        Http::asJson()->timeout(10)
+        OutboundHttp::rejectRedirect(OutboundHttp::client(10)->asJson()
             ->withHeaders(['X-Gotify-Key' => $channel->conf('app_token')])
             ->post(rtrim($channel->conf('url'), '/').'/message', [
                 'title' => ApprovalMessage::title(),
                 'message' => $text,
                 'priority' => (int) $channel->conf('priority', 8),
-            ])->throw();
+            ])->throw());
     }
 
     /** Gotify messages cannot be edited. */

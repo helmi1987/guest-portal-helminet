@@ -52,6 +52,25 @@ class ChannelTestButtonTest extends TestCase
         $this->onZone('admin')->actingAs(User::factory()->create())->post("/admin/channels/{$telegram->id}/test")->assertForbidden();
     }
 
+    public function test_redirects_are_not_followed(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $webhook = $this->channel('webhook', ['url' => 'https://hooks.example.com/in', 'secret' => 'hook-secret']);
+        $gotify = $this->channel('gotify', ['url' => 'https://gotify.example.com', 'app_token' => 'app-token']);
+        Http::fake([
+            'hooks.example.com/*' => Http::response('', 302, ['Location' => 'http://169.254.169.254/latest']),
+            'gotify.example.com/*' => Http::response('', 307, ['Location' => 'https://elsewhere.example.net/message']),
+            '*' => Http::response('ok'),
+        ]);
+
+        foreach ([$webhook, $gotify] as $channel) {
+            $this->onZone('admin')->actingAs($admin)->post("/admin/channels/{$channel->id}/test")
+                ->assertSessionHasErrors(['test' => __('portal.channels.test_notify_failed', ['error' => 'HTTP '.($channel->is($webhook) ? 302 : 307)])]);
+        }
+        Http::assertSentCount(2);
+        Http::assertNotSent(fn (Request $r) => str_contains($r->url(), '169.254.169.254') || str_contains($r->url(), 'elsewhere.example.net'));
+    }
+
     private function channel(string $driver, array $config): Channel
     {
         return Channel::create(['kind' => 'notification', 'driver' => $driver, 'name' => ucfirst($driver), 'enabled' => true, 'config' => $config]);

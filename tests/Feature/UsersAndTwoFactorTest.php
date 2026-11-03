@@ -12,6 +12,7 @@ use App\Models\User;
 use App\Services\GrantManager;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\RateLimiter;
 use Livewire\Livewire;
 use Tests\TestCase;
 
@@ -145,6 +146,39 @@ class UsersAndTwoFactorTest extends TestCase
             ->set('code', $twoFactor->currentCode($users[2]->totp_secret))->call('verify')
             ->assertHasErrors(['code' => __('portal.auth.throttle', ['seconds' => 300])]);
         $this->assertGuest();
+    }
+
+    public function test_code_failures_are_limited_per_user_across_ips_and_restarts(): void
+    {
+        $this->freezeTime();
+        $twoFactor = app(TwoFactor::class);
+        $user = $this->userWithTwoFactor();
+        $other = $this->userWithTwoFactor();
+        $fresh = fn () => Livewire::test(Login::class)->set('email', $user->email)->set('password', 'password')->call('login');
+        // Two rounds of five failures, each from another IP (IP limiter cleared) and restarted with the password.
+        for ($round = 0; $round < 2; $round++) {
+            RateLimiter::clear('admin-2fa-ip|127.0.0.1');
+            $login = $fresh();
+            for ($i = 0; $i < 4; $i++) {
+                $login->set('code', '000000')->call('verify')->assertHasErrors(['code' => __('portal.auth.two_factor_failed')]);
+            }
+            $login->set('code', '000000')->call('verify')->assertHasErrors(['email' => __('portal.auth.two_factor_restart')]);
+        }
+
+        // Even the correct code from a fresh IP is refused now, with the generic throttle message.
+        RateLimiter::clear('admin-2fa-ip|127.0.0.1');
+        $fresh()->set('code', $twoFactor->currentCode($user->totp_secret))->call('verify')
+            ->assertHasErrors(['code' => __('portal.auth.throttle', ['seconds' => 900])]);
+        $this->assertGuest();
+
+        // Other users are not affected; after 15 minutes the user can sign in again.
+        Livewire::test(Login::class)->set('email', $other->email)->set('password', 'password')->call('login')
+            ->set('code', $twoFactor->currentCode($other->totp_secret))->call('verify')->assertHasNoErrors();
+        $this->assertAuthenticatedAs($other);
+        auth()->logout();
+        $this->travel(16)->minutes();
+        $fresh()->set('code', $twoFactor->currentCode($user->totp_secret))->call('verify')->assertHasNoErrors();
+        $this->assertAuthenticatedAs($user);
     }
 
     public function test_no_remember_cookie_and_security_changes_end_other_sessions(): void
