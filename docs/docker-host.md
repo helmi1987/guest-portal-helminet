@@ -59,8 +59,8 @@ services:
       APP_URL: https://portal.example.com     # name the guests/routers use (must match the certificate)
       PORTAL_HOSTNAME: portal.example.com
       TZ: Europe/Zurich                       # display time zone (admin UI, notifications, backup names); data stays UTC
-      # TRUSTED_PROXIES: 192.168.1.10       # only if the admin UI is published through a reverse proxy
-                                              # (affects the admin UI's client IP only)
+      # TRUSTED_PROXIES: 192.168.1.10       # only if the admin UI is published through a reverse proxy:
+                                              # its address only, affects the admin UI's client IP only (see below)
 
 networks:
   lan:
@@ -80,7 +80,11 @@ address of the host (`10.0.0.5:8443:8443`), or to `127.0.0.1:8443:8443` when onl
 on the host publishes the admin UI.
 
 `TRUSTED_PROXIES` (reverse proxy in front of the admin UI) only changes which client IP the admin
-UI sees; the routers' source-IP check (router certificate and `login.html` downloads) stays on.
+UI sees. Set `TRUSTED_PROXIES` only to the address of your reverse proxy (never `*` or a `/0` network;
+such values are ignored and logged as an error at start). The router source-IP check (router
+certificate and `login.html` downloads) stays on with a proxy; set `PORTAL_ROUTER_IP_CHECK: "false"`
+only if the routers reach the guest port through that proxy or NAT (not recommended), and
+`PORTAL_ROUTER_CERT_CHECK_IP` is no longer read.
 
 Then `docker compose up -d` (Unraid: "Compose Up"). First start fills the data folder (`.env` with
 generated secrets, SQLite database, self-signed certificate).

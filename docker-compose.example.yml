@@ -21,8 +21,11 @@ services:
       APP_URL: https://portal.example.com
       PORTAL_HOSTNAME: portal.example.com
       TZ: UTC                       # display time zone, e.g. Europe/Zurich (APP_TIMEZONE overrides); data stays UTC
-      # TRUSTED_PROXIES: 10.0.0.2   # when the admin UI is behind a reverse proxy; only affects the admin UI's
-                                    # client IP, the routers' source-IP check stays on
+      # TRUSTED_PROXIES: 10.0.0.2   # when the admin UI is behind a reverse proxy: only the proxy's address (never *
+                                    # or a /0 network; ignored and logged as an error at start). Only affects the admin
+                                    # UI's client IP; the routers' source-IP check stays on with a proxy.
+      # PORTAL_ROUTER_IP_CHECK: "false"   # only if the routers reach the guest port through that proxy or NAT
+                                    # (not recommended); PORTAL_ROUTER_CERT_CHECK_IP is no longer read
       # Federation (several instances): name and URL under which the other instances reach this one.
       # PORTAL_INSTANCE_NAME: Site A
       # PORTAL_FEDERATION_URL: https://10.8.0.2:9443
