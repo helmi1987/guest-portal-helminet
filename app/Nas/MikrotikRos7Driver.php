@@ -225,7 +225,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
             mac: Mac::normalize($request->query('mac')),
             ip: filter_var($request->query('ip'), FILTER_VALIDATE_IP) ?: null,
             loginUrl: $login,
-            // Only passed to the router as post-login target (dst); the portal never redirects to it.
+            // Kept for completeness only: the portal never redirects to it, and the handoff sends the status page as dst.
             origUrl: self::httpUrl($request->query('link-orig')),
         );
     }
