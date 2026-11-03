@@ -14,9 +14,24 @@ map $http_upgrade $connection_upgrade {
 # Admin UI: Livewire 3 with Alpine evaluates expressions at runtime ('unsafe-eval'), inline
 # onsubmit/onclick handlers and Livewire's injected styles need 'unsafe-inline'.
 # HSTS only on the browser-facing TLS listeners (no includeSubDomains, no preload).
+# Framing: no page may be framed, except the guest text preview of the admin UI, which the admin page
+# itself shows in an iframe (CONCEPT.md §9 "Guest texts", §12). Matched on the original request URI, so
+# the internal redirect to index.php does not change the decision.
+map "$portal_zone:$request_uri" $portal_frame_self {
+    "~^admin:/admin/texts/preview(\?|$)" 1;
+    default 0;
+}
+map $portal_frame_self $portal_frame_ancestors {
+    1 "'self'";
+    default "'none'";
+}
+map $portal_frame_self $portal_frame_options {
+    1 "SAMEORIGIN";
+    default "DENY";
+}
 map $portal_zone $portal_csp_zone {
     guest "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https:; frame-ancestors 'none'";
-    admin "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'";
+    admin "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors $portal_frame_ancestors";
     default "";
 }
 # The app's own policy wins (uploaded branding files are served with a stricter one).
