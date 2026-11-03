@@ -129,6 +129,10 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('settings.sms');
                 Route::post('/settings/security', [SettingsController::class, 'updateSecurity'])->name('settings.security');
                 Route::post('/settings/oidc', [SettingsController::class, 'updateOidc'])->name('settings.oidc');
+                Route::post('/settings/login-methods', [SettingsController::class, 'updateLoginMethods'])->name('settings.login-methods');
+                Route::post('/settings/social', [SettingsController::class, 'updateSocial'])->name('settings.social');
+                Route::post('/settings/social/{provider}/check', [SettingsController::class, 'checkSocial'])->name('settings.social.check')
+                    ->middleware('throttle:10,1,social-check');
                 Route::post('/settings/branding', [BrandingController::class, 'updateGlobal'])->name('settings.branding');
                 Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('channels.test')
                     ->middleware('throttle:5,1,channel-test');
