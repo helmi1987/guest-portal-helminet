@@ -18,6 +18,7 @@ use App\Models\Site;
 use App\Models\SiteCode;
 use App\Models\TermsVersion;
 use App\Models\User;
+use App\Services\GrantManager;
 use App\Support\Hlc;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -322,6 +323,29 @@ class ApplierTest extends TestCase
         $this->assertSame(1, $result->lastSeq);
         $this->assertNull($this->rowOn('c', 'guests', '01JGUEST000000000000000000'));
         $this->assertNotNull($grant->id);
+    }
+
+    public function test_grant_tombstone_applies_cleanly_and_keeps_the_device_binding(): void
+    {
+        $grant = $this->grantOn('a', ['first_login_at' => now(), 'expires_at' => now()->addHour()]);
+        $device = $this->on('a', fn () => Device::create(['grant_id' => $grant->id, 'mac' => 'AA:AA:AA:AA:AA:07', 'bound_at' => now()]));
+        $this->syncAll('a', 'b');
+
+        // Deleted after it ended (CONCEPT.md §8): revoke, then tombstone.
+        $this->at('2026-10-30 10:05:00');
+        $this->on('a', function () use ($grant) {
+            $g = Grant::find($grant->id);
+            $g->update(['revoked_at' => now()]);
+            app(GrantManager::class)->delete($g);
+        });
+        $this->syncAll('a', 'b');
+
+        foreach (['a', 'b'] as $name) {
+            $this->assertSame('2026-10-30 10:05:00', $this->rowOn($name, 'grants', $grant->id)['deleted_at']);
+            $this->assertNull($this->on($name, fn () => Grant::find($grant->id)));
+            $this->assertNotNull($this->rowOn($name, 'devices', $device->id));
+        }
+        $this->assertSameRowOn('grants', $grant->id, 'a', 'b');
     }
 
     public function test_out_of_order_batch_is_sorted_and_gaps_wait(): void

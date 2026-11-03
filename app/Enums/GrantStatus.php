@@ -11,6 +11,18 @@ enum GrantStatus: string
     case Expired = 'expired';
     case Revoked = 'revoked';
 
+    /** Statuses of the default codes list: the grant can still be (or is being) used. */
+    public static function current(): array
+    {
+        return [self::Pending, self::Unused, self::Active];
+    }
+
+    /** Over for good (never redeemed in time, time over, revoked): such a grant may be deleted. */
+    public function isEnded(): bool
+    {
+        return ! in_array($this, self::current(), true);
+    }
+
     public function label(): string
     {
         return __('portal.grants.statuses.'.$this->value);

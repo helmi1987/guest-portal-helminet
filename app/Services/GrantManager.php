@@ -12,12 +12,15 @@ use App\Models\Guest;
 use App\Models\RadiusToken;
 use App\Models\Site;
 use App\Models\User;
+use App\Support\Audit;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 /**
- * Grant lifecycle: create, redeem, bind, edit, revoke (CONCEPT.md §5, §7.2 A, §8).
+ * Grant lifecycle: create, redeem, bind, edit, revoke, delete (CONCEPT.md §5, §7.2 A, §8).
  */
 class GrantManager
 {
@@ -154,6 +157,46 @@ class GrantManager
     {
         $grant->revoked_at ??= now();
         $this->saveAndEnforce($grant);
+    }
+
+    /**
+     * Delete an ended grant (lapsed, expired or revoked): soft delete = federation tombstone. Device
+     * bindings, tokens and session summaries stay until the retention purge removes the tombstone and
+     * the foreign keys cascade. Grants that can still be used are refused.
+     *
+     * @throws ValidationException
+     */
+    public function delete(Grant $grant): void
+    {
+        if (! $grant->isEnded()) {
+            throw ValidationException::withMessages(['grant' => __('portal.grants.delete_not_ended')]);
+        }
+
+        DB::transaction(function () use ($grant) {
+            // Never the code itself (CONCEPT.md §9).
+            Audit::log('grant.deleted', $grant, ['label' => $grant->label, 'type' => $grant->type->value, 'status' => $grant->status()->value]);
+            $grant->delete();
+        });
+    }
+
+    /**
+     * Delete the ended grants among the given ones; the others are skipped.
+     *
+     * @param  Collection<int, Grant>  $grants
+     * @return array{deleted: int, skipped: int}
+     */
+    public function deleteEnded(Collection $grants): array
+    {
+        [$ended, $current] = $grants->partition(fn (Grant $g) => $g->isEnded());
+
+        DB::transaction(function () use ($ended, $current) {
+            $ended->each(fn (Grant $g) => $g->delete());
+            if ($ended->isNotEmpty()) {
+                Audit::log('grant.bulk_deleted', null, ['count' => $ended->count(), 'skipped' => $current->count()]);
+            }
+        });
+
+        return ['deleted' => $ended->count(), 'skipped' => $current->count()];
     }
 
     /** Disconnect sessions of the grant served by this instance (except one MAC, e.g. after rebind). */

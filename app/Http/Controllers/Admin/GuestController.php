@@ -32,7 +32,8 @@ class GuestController extends Controller
         $filters = $this->filters($request);
 
         $guests = Guest::query()
-            ->with(['latestAcceptance.termsVersion', 'latestAcceptance.grant.siteLinks', 'devices'])
+            // Deleted grants (tombstones) included: the list shows them as "deleted" (CONCEPT.md §8).
+            ->with(['latestAcceptance.termsVersion', 'latestAcceptance.grant' => fn ($q) => $q->withTrashed()->with('siteLinks'), 'devices'])
             ->withExists(['approvalRequests', 'otpChallenges'])
             ->when($filters['site'] ?? null, fn ($q, $site) => $q->whereHas('acceptances', fn ($a) => $a->where('site_id', $site)))
             ->when($filters['method'] ?? null, fn ($q, $method) => match (GrantType::from($method)) {

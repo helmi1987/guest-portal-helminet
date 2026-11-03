@@ -88,6 +88,12 @@ class Grant extends Model
         };
     }
 
+    /** Lapsed, expired or revoked: may be deleted (CONCEPT.md §8). */
+    public function isEnded(?Carbon $now = null): bool
+    {
+        return $this->status($now)->isEnded();
+    }
+
     public function isUsable(?Carbon $now = null): bool
     {
         return in_array($this->status($now), [GrantStatus::Unused, GrantStatus::Active], true);
@@ -125,6 +131,16 @@ class Grant extends Model
             GrantStatus::Unused => $started($query)->whereNull('first_login_at')
                 ->where(fn ($q) => $q->whereNull('redeem_until')->orWhere('redeem_until', '>', $now)),
         };
+    }
+
+    /** Grants having one of the statuses (OR of withStatus()). */
+    public function scopeWithStatuses(Builder $query, array $statuses): void
+    {
+        $query->where(function (Builder $q) use ($statuses) {
+            foreach ($statuses as $status) {
+                $q->orWhere(fn (Builder $s) => $s->withStatus($status));
+            }
+        });
     }
 
     /** Grants whose time is over or which were revoked. */
