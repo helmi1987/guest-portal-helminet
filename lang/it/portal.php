@@ -830,6 +830,7 @@ return [
         'social' => [
             'title' => 'Accesso social',
             'help' => 'Gli ospiti accedono con il loro account presso uno di questi provider. Registrare il portale presso il provider (guida per ogni provider), inserire client ID e secret, salvare e poi premere «Verifica». I secret vengono salvati cifrati e non vengono più mostrati.',
+            'federation_hint' => 'In una federazione tutte le istanze devono avere almeno la versione 0.22.0 prima di attivare il login social (nuove colonne ospite e nuovo tipo di accesso).',
             'duration' => 'Durata dell\'accesso (ore, dall\'accesso)',
             'origins_help' => 'Ogni indirizzo ospite richiede il proprio URI di reindirizzamento presso il provider: APP_URL e l\'URL del portale di ogni sede (attualmente :count). Gli elenchi qui sotto li contengono tutti.',
             'walled_garden' => 'Il walled garden del router deve consentire gli host del provider; lo script RouterOS generato li contiene non appena il provider è attivato.',

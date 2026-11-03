@@ -22,6 +22,13 @@ can be supported via drivers (contributions welcome).
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.22: guest login method chooser (code, SMS, social login, push approval; one method is shown directly),
+  switch per method and social login with Google, Apple, Facebook and GitHub (settings with setup guide,
+  encrypted secrets, configuration check, walled-garden hosts in the generated RouterOS script, grant type
+  `social`, access duration setting), default terms of use in all four languages (shown until published,
+  published on the first site or by button), codes list shows current codes by default and ended codes can be
+  deleted. Custom guest CSS: the hooks `gp-alt-login`, `gp-alt-sms` and `gp-alt-approval` are gone, the login
+  pages use `gp-step-portal-<page>` and `gp-method-*` (docs/branding.md).
 - v0.21: security fixes (0.21.0): admins (creation, promotion, passwords, 2FA, demotion, deletion) and
   security settings only from the federation hub, router IP check kept behind proxies
   (`PORTAL_ROUTER_IP_CHECK`), trust-all `TRUSTED_PROXIES` refused, clients file validated, SMS host line

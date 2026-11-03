@@ -830,6 +830,7 @@ return [
         'social' => [
             'title' => 'Social login',
             'help' => 'Guests log in with their account at one of these providers. Register the portal at the provider (setup guide per provider), enter client ID and secret, save, then press “Check”. Secrets are stored encrypted and never shown again.',
+            'federation_hint' => 'In a federation every instance must run version 0.22.0 or later before social login is switched on (new guest columns and grant type).',
             'duration' => 'Access duration (hours, from login)',
             'origins_help' => 'Every guest address needs its own redirect URI at the provider: APP_URL and the portal URL of each site (currently :count). The lists below contain all of them.',
             'walled_garden' => 'The router’s walled garden must allow the provider’s hosts; the generated RouterOS script contains them once the provider is enabled.',

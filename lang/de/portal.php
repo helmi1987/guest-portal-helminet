@@ -830,6 +830,7 @@ return [
         'social' => [
             'title' => 'Social Login',
             'help' => 'Gäste melden sich mit ihrem Konto bei einem dieser Anbieter an. Das Portal beim Anbieter registrieren (Anleitung pro Anbieter), Client-ID und Secret eintragen, speichern und dann «Prüfen» drücken. Secrets werden verschlüsselt gespeichert und nie mehr angezeigt.',
+            'federation_hint' => 'In einer Föderation müssen alle Instanzen mindestens Version 0.22.0 haben, bevor Social Login eingeschaltet wird (neue Gast-Spalten und Grant-Typ).',
             'duration' => 'Zugangsdauer (Stunden, ab Anmeldung)',
             'origins_help' => 'Jede Gast-Adresse braucht beim Anbieter eine eigene Redirect-URI: APP_URL und die Portal-URL jedes Standorts (zurzeit :count). Die Listen unten enthalten alle.',
             'walled_garden' => 'Der Walled Garden des Routers muss die Hosts des Anbieters erlauben; das generierte RouterOS-Skript enthält sie, sobald der Anbieter aktiviert ist.',

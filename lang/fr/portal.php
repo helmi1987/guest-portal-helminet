@@ -830,6 +830,7 @@ return [
         'social' => [
             'title' => 'Connexion sociale',
             'help' => 'Les invités se connectent avec leur compte chez l\'un de ces fournisseurs. Enregistrer le portail chez le fournisseur (guide par fournisseur), saisir l\'ID client et le secret, enregistrer puis cliquer sur « Vérifier ». Les secrets sont stockés chiffrés et ne sont plus jamais affichés.',
+            'federation_hint' => "Dans une fédération, toutes les instances doivent avoir au moins la version 0.22.0 avant d'activer la connexion sociale (nouvelles colonnes invité et nouveau type d'accès).",
             'duration' => 'Durée d\'accès (heures, à partir de la connexion)',
             'origins_help' => 'Chaque adresse invité nécessite sa propre URI de redirection chez le fournisseur : APP_URL et l\'URL du portail de chaque site (actuellement :count). Les listes ci-dessous les contiennent toutes.',
             'walled_garden' => 'Le walled garden du routeur doit autoriser les hôtes du fournisseur ; le script RouterOS généré les contient dès que le fournisseur est activé.',

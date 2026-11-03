@@ -22,7 +22,7 @@
 <form method="POST" action="{{ route('admin.settings.social') }}" class="card mb-6 grid gap-4" id="social-login">
     @csrf
     <h2 class="text-lg font-semibold">{{ __('portal.settings.social.title') }}</h2>
-    <p class="text-xs text-slate-500">{{ __('portal.settings.social.help') }}</p>
+    <p class="text-xs text-slate-500">{{ __('portal.settings.social.help') }} {{ __('portal.settings.social.federation_hint') }}</p>
     <label class="label md:max-w-xs">{{ __('portal.settings.social.duration') }}
         <input name="social_duration_hours" type="number" step="0.25" min="0.25" max="8760" value="{{ old('social_duration_hours', $socialDurationHours) }}" required class="field">
         @error('social_duration_hours')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
