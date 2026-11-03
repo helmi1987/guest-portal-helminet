@@ -142,7 +142,7 @@ return [
             The guest Wi-Fi is a publicly accessible network in which third parties may intercept the traffic. Encrypt your connections (for example with HTTPS or a VPN). The operator is not liable for damage, data loss or costs caused by the use, except where mandatory law provides otherwise.
 
             5. Data
-            For operation, abuse prevention and legal obligations, the portal stores first and last name, the device address (MAC), the IP address, time and duration of the login, the traffic volume, the accepted version of these terms, for access code login the e-mail address and, for SMS login, the phone number. For login with an account of an external provider, the provider, the account identifier and the e-mail address are stored as well. The data is kept for the retention period set by the operator (one year by default) and is only passed on where the law requires it.
+            For operation, abuse prevention and legal obligations, the portal stores first and last name, the device address (MAC), the IP address, time and duration of the login, the traffic volume, the accepted version of these terms, for access code and account login the e-mail address and, for SMS login, the phone number. For login with an account of an external provider, the provider, the account identifier and the e-mail address are stored as well. The data is kept for the retention period set by the operator (one year by default) and is only passed on where the law requires it.
 
             6. Ending and blocking
             The operator may end, block or limit access at any time without giving reasons, in particular in case of misuse.
