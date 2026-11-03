@@ -76,13 +76,15 @@ final class Federation
         'social_secret_apple',
         'social_secret_facebook',
         'social_secret_github',
+        'account_login',               // DirectorySettings::KEY: default duration of a directory account login
     ];
 
     /**
      * Keys of `sites.settings` that decide where guest credentials go and which portal guests see: a
-     * remote event changes them only from the hub or from the site's home instance.
+     * remote event changes them only from the hub or from the site's home instance. `directory`: the
+     * server that receives the passwords of the account login (CONCEPT.md §7.2 E).
      */
-    public const SECURITY_SITE_SETTINGS = ['hotspot_hosts', 'portal_url'];
+    public const SECURITY_SITE_SETTINGS = ['hotspot_hosts', 'portal_url', 'directory'];
 
     /**
      * Columns of an active admin's user row that decide who can log in as that admin, or whether the

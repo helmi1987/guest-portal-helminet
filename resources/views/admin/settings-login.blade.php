@@ -16,6 +16,13 @@
         </label>
     @endforeach
     @error('methods')<p class="text-xs text-red-700">{{ $message }}</p>@enderror
+    {{-- Account login (v0.24.0): directory per site on the site page; this is the default duration. --}}
+    <div class="grid gap-2 rounded border border-slate-300 p-4" id="account-login">
+        <label class="label md:max-w-xs">{{ __('portal.settings.login_methods.account_duration') }}
+            <input name="account_duration_hours" type="number" step="any" min="0.0833" max="720" value="{{ old('account_duration_hours', $accountDurationHours) }}" class="field">
+            @error('account_duration_hours')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
+        <p class="text-xs text-slate-500">{{ __('portal.settings.login_methods.account_help') }} {{ __('portal.settings.login_methods.account_federation_hint') }}</p>
+    </div>
     <div><button class="btn">{{ __('portal.save') }}</button></div>
 </form>
 

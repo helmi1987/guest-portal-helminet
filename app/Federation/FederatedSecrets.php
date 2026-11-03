@@ -2,6 +2,7 @@
 
 namespace App\Federation;
 
+use App\Auth\Directory\DirectorySettings;
 use App\Auth\Oidc\OidcSettings;
 use App\Auth\Social\SocialSettings;
 use App\Models\CertificateSource;
@@ -62,6 +63,9 @@ class FederatedSecrets
         foreach (Site::withTrashed()->get() as $site) {
             $count += $site->reencryptWifiPassword() ? 1 : 0;
         }
+
+        // Service account passwords of the site directories (account login)
+        $count += DirectorySettings::reencryptPasswords();
 
         return $count + (OidcSettings::reencryptSecret() ? 1 : 0) + SocialSettings::reencryptSecrets();
     }

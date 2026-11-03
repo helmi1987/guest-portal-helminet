@@ -18,11 +18,13 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SetupController;
 use App\Http\Controllers\Admin\SiteCodeController;
 use App\Http\Controllers\Admin\SiteController;
+use App\Http\Controllers\Admin\SiteDirectoryController;
 use App\Http\Controllers\Admin\TermsController;
 use App\Http\Controllers\Admin\ToolboxController;
 use App\Http\Controllers\Admin\UserController;
 use App\Http\Controllers\Admin\WizardController;
 use App\Http\Controllers\ApprovalLinkController;
+use App\Http\Controllers\Guest\AccountLoginController;
 use App\Http\Controllers\Guest\PortalController;
 use App\Http\Controllers\Guest\SocialLoginController;
 use App\Http\Controllers\LocaleController;
@@ -49,6 +51,9 @@ Route::middleware(['zone:guest', 'locale', 'guest.texts'])->group(function () {
     Route::get('/portal', [PortalController::class, 'show'])->name('guest.portal');
     Route::post('/portal/code', [PortalController::class, 'redeem'])->name('guest.redeem')
         ->middleware('throttle:20,1,guest-code');
+    // Directory account login (CONCEPT.md §7.2 E): user name and password of the site's AD / LDAP.
+    Route::post('/portal/account', [AccountLoginController::class, 'login'])->name('guest.account')
+        ->middleware('throttle:5,1,guest-account');
     Route::post('/portal/approval', [PortalController::class, 'requestApproval'])->name('guest.approval.request')
         ->middleware('throttle:5,1,guest-approval');
     Route::get('/portal/approval', [PortalController::class, 'approval'])->name('guest.approval');
@@ -195,6 +200,10 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/sites/{site}/login.html', [SiteController::class, 'loginPage'])->name('sites.login-page');
                 Route::post('/sites/{site}/branding', [BrandingController::class, 'updateSite'])->name('sites.branding');
                 Route::post('/sites/{site}/take-over', [SiteController::class, 'takeOver'])->name('sites.take-over');
+                // Directory for the account login (CONCEPT.md §7.2 E): settings and check button.
+                Route::put('/sites/{site}/directory', [SiteDirectoryController::class, 'update'])->name('sites.directory');
+                Route::post('/sites/{site}/directory/check', [SiteDirectoryController::class, 'check'])->name('sites.directory.check')
+                    ->middleware('throttle:10,1,directory-check');
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');

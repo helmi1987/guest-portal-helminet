@@ -534,8 +534,8 @@ class Applier
      * Security authority (CONCEPT.md §10.6, decisions 2026-11-02 and 2026-11-03) for events of a non-hub
      * origin: only the hub creates, promotes, restores, demotes or deletes admins and changes the login
      * columns of an admin (Federation::ADMIN_LOGIN_COLUMNS) and the settings that control login or trust
-     * (Federation::SECURITY_SETTINGS); hotspot host names and portal URL of a site change only by the hub
-     * or the site's home instance.
+     * (Federation::SECURITY_SETTINGS); hotspot host names, portal URL and directory of a site change only by
+     * the hub or the site's home instance.
      *
      * @param  array<string, mixed>  $row  resulting row state
      * @param  array<string, mixed>|null  $base  current own state of the row here (without conflict overlays)
@@ -571,7 +571,7 @@ class Applier
         // The home instance configures its own site (setup wizard, site page); a new site may name its creator.
         $home = $local !== null ? ($local['home_instance_id'] ?? null) : ($row['home_instance_id'] ?? null);
 
-        return $home === $origin ? null : 'hotspot host names or portal URL of a site changed by an instance that is neither hub nor home instance';
+        return $home === $origin ? null : 'hotspot host names, portal URL or directory of a site changed by an instance that is neither hub nor home instance';
     }
 
     /**

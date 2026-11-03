@@ -17,13 +17,13 @@ use Illuminate\View\View;
  * Admin preview of the guest pages (CONCEPT.md §9 "Guest texts"): renders the real guest views with demo
  * data, never touching sessions, grants, throttles, drivers or RADIUS. While a preview renders, the
  * instance is shared with the views as `$guestPreview`; links and forms of the guest views then lead to
- * the next preview screen instead of the guest routes (code → status, sms → otp → status, approval →
- * waiting, social → name → status). Without a preview `$guestPreview` is null.
+ * the next preview screen instead of the guest routes (code → status, account → status, sms → otp →
+ * status, approval → waiting, social → name → status). Without a preview `$guestPreview` is null.
  */
 final class GuestPreview
 {
     /** Screens besides the error pages ("error-<kind>", GuestTexts::ERROR_KINDS). */
-    public const SCREENS = ['chooser', 'notices', 'code', 'sms', 'sms_otp', 'sms_resent', 'approval', 'approval_waiting',
+    public const SCREENS = ['chooser', 'notices', 'code', 'account', 'sms', 'sms_otp', 'sms_resent', 'approval', 'approval_waiting',
         'social', 'social_name', 'waiting', 'status', 'landing'];
 
     /** Demo values: masked phone number of the SMS page and remaining time of the status page. */
@@ -76,7 +76,7 @@ final class GuestPreview
     public static function screensFor(string $key): array
     {
         $key = Str::after($key, 'guest.');
-        $forms = ['code', 'sms', 'approval', 'social'];
+        $forms = ['code', 'account', 'sms', 'approval', 'social'];
 
         return match (true) {
             str_starts_with($key, 'error_pages.') => ['error-'.explode('.', $key)[1]],
@@ -87,7 +87,8 @@ final class GuestPreview
             $key === 'intro' => ['landing'],
             $key === 'other_methods', str_starts_with($key, 'terms') => $forms,
             $key === 'code' => ['code'],
-            $key === 'connect' => ['code', 'sms_otp', 'sms_resent'],
+            $key === 'connect' => ['code', 'account', 'sms_otp', 'sms_resent'],
+            str_starts_with($key, 'account_') => ['account'],
             in_array($key, ['first_name', 'last_name'], true) => ['code', 'sms', 'approval', 'social_name'],
             in_array($key, ['phone', 'sms_request'], true) => ['sms'],
             $key === 'sms_resent' => ['sms_resent'],

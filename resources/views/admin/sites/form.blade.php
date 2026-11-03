@@ -69,6 +69,8 @@
             <a href="{{ route('admin.site-codes.show', $site) }}" class="btn-light">{{ __('portal.site_codes.manage') }}</a>
         </section>
 
+        @include('admin.sites.directory', ['site' => $site])
+
         @include('admin.branding.site', ['overrides' => \App\Branding\BrandingSettings::siteOverrides($site),
             'global' => \App\Branding\BrandingSettings::global()])
 

@@ -62,14 +62,14 @@ class LoginMethodSettingsTest extends TestCase
             'code' => '1', 'sms' => '0', 'approval' => '0', 'social' => '1',
         ]])->assertRedirect('/admin/settings')->assertSessionHasNoErrors()->assertSessionHas('status', __('portal.saved'));
 
-        $this->assertSame(['code' => true, 'sms' => false, 'approval' => false, 'social' => true], LoginMethods::all());
-        $this->assertSame(['enabled' => ['code', 'social'], 'disabled' => ['sms', 'approval']],
+        $this->assertSame(['code' => true, 'account' => false, 'sms' => false, 'approval' => false, 'social' => true], LoginMethods::all());
+        $this->assertSame(['enabled' => ['code', 'social'], 'disabled' => ['account', 'sms', 'approval'], 'account_duration_s' => 86400],
             AuditLog::where('action', 'settings.login_methods')->sole()->data);
 
         // Missing fields (unchecked boxes without hidden input) count as off.
         $this->onZone('admin')->actingAs($admin)->post('/admin/settings/login-methods', ['methods' => ['sms' => '1']])
             ->assertSessionHasNoErrors();
-        $this->assertSame(['code' => false, 'sms' => true, 'approval' => false, 'social' => false], LoginMethods::all());
+        $this->assertSame(['code' => false, 'account' => false, 'sms' => true, 'approval' => false, 'social' => false], LoginMethods::all());
     }
 
     public function test_at_least_one_method_stays_on(): void

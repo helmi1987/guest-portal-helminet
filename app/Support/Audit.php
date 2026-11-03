@@ -22,7 +22,7 @@ use Illuminate\Support\Str;
 final class Audit
 {
     /** Action groups shown as filter in the admin UI. */
-    public const GROUPS = ['auth', 'two_factor', 'user', 'grant', 'site_code', 'whitelist', 'approval', 'settings', 'channel', 'site', 'router', 'terms', 'backup', 'certificate', 'federation'];
+    public const GROUPS = ['auth', 'two_factor', 'user', 'grant', 'site_code', 'whitelist', 'approval', 'settings', 'channel', 'site', 'router', 'terms', 'backup', 'certificate', 'federation', 'guest'];
 
     private const SECRET_KEYS = '/pass|secret|token|totp|recovery|api_key|^code$|key$/i';
 

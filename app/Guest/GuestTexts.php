@@ -21,15 +21,17 @@ final class GuestTexts
     /** Error page kinds (guest.error_pages.<kind>.title / .text). */
     public const ERROR_KINDS = ['no_hotspot', 'misconfigured', 'expired', 'revoked', 'locked', 'router_failed',
         'approval_denied', 'approval_expired', 'approval_busy', 'sms_busy', 'sms_failed', 'site_code_full',
-        'no_login_method', 'method_disabled', 'social_failed'];
+        'no_login_method', 'method_disabled', 'social_failed', 'account_unavailable'];
 
     /** Editable keys (portal.<key>), grouped as in the admin form; errors: see ERROR_KINDS. */
     public const KEYS = [
         'general' => ['guest.title', 'guest.heading', 'guest.other_methods', 'guest.terms', 'guest.terms_show',
             'guest.terms_version', 'guest.terms_default'],
-        'methods' => ['guest.intro', 'guest.intros.chooser', 'guest.choose.code', 'guest.intros.code', 'guest.choose.sms',
+        'methods' => ['guest.intro', 'guest.intros.chooser', 'guest.choose.code', 'guest.intros.code', 'guest.choose.account',
+            'guest.intros.account', 'guest.choose.sms',
             'guest.intros.sms', 'guest.choose.approval', 'guest.intros.approval', 'guest.choose.social', 'guest.intros.social'],
         'code' => ['guest.code', 'guest.connect', 'guest.first_name', 'guest.last_name'],
+        'account' => ['guest.account_username', 'guest.account_password', 'guest.account_hint'],
         'sms' => ['guest.phone', 'guest.otp', 'guest.sms_request', 'guest.sms_title', 'guest.sms_sent', 'guest.sms_resend',
             'guest.sms_resent', 'guest.sms_change'],
         'approval' => ['guest.approval_request', 'guest.approval_waiting_title', 'guest.approval_waiting'],
@@ -54,6 +56,7 @@ final class GuestTexts
             'guest.error_pages.no_login_method.title', 'guest.error_pages.no_login_method.text',
             'guest.error_pages.method_disabled.title', 'guest.error_pages.method_disabled.text',
             'guest.error_pages.social_failed.title', 'guest.error_pages.social_failed.text',
+            'guest.error_pages.account_unavailable.title', 'guest.error_pages.account_unavailable.text',
         ],
     ];
 

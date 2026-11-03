@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Approval\ApprovalSettings;
+use App\Auth\Directory\DirectorySettings;
 use App\Auth\Oidc\OidcClient;
 use App\Auth\Oidc\OidcSettings;
 use App\Auth\Social\AppleClientSecret;
@@ -65,6 +66,7 @@ class SettingsController extends Controller
             'loginMethods' => LoginMethods::all(),
             'loginMethodHints' => $this->loginMethodHints(),
             'socialDurationHours' => round(SocialSettings::durationS() / 3600, 2),
+            'accountDurationHours' => round(DirectorySettings::durationS() / 3600, 2),
             'social' => $this->socialStatus(),
             'socialOrigins' => SocialSettings::origins(),
         ]);
@@ -89,6 +91,7 @@ class SettingsController extends Controller
                 $method === LoginMethods::SMS && ! OtpService::enabled() => 'portal.settings.login_methods.hint_sms',
                 $limited => 'portal.settings.login_methods.hint_limited',
                 $method === LoginMethods::APPROVAL => 'portal.settings.login_methods.hint_approval',
+                $method === LoginMethods::ACCOUNT => 'portal.settings.login_methods.hint_account',
                 default => 'portal.settings.login_methods.hint_social',
             };
         }
@@ -129,19 +132,27 @@ class SettingsController extends Controller
         return $out;
     }
 
-    /** Guest login methods (CONCEPT.md §9, decision 2026-11-03): one switch per method, at least one stays on. */
+    /**
+     * Guest login methods (CONCEPT.md §9, decision 2026-11-03): one switch per method, at least one stays on;
+     * default access duration of the account login (v0.24.0; a site may set its own).
+     */
     public function updateLoginMethods(Request $request): RedirectResponse
     {
-        $request->validate(collect(LoginMethods::ALL)->mapWithKeys(fn ($m) => ["methods.$m" => ['boolean']])->all());
+        $request->validate(collect(LoginMethods::ALL)->mapWithKeys(fn ($m) => ["methods.$m" => ['boolean']])->all()
+            + ['account_duration_hours' => ['nullable', 'numeric', 'between:'.round(DirectorySettings::MIN_DURATION_S / 3600, 4).','.(DirectorySettings::MAX_DURATION_S / 3600)]],
+            [], ['account_duration_hours' => __('portal.settings.login_methods.account_duration')]);
         $flags = collect(LoginMethods::ALL)->mapWithKeys(fn ($m) => [$m => $request->boolean("methods.$m")])->all();
         if (! in_array(true, $flags, true)) {
             throw ValidationException::withMessages(['methods' => __('portal.settings.login_methods.at_least_one')]);
         }
         $hostsBefore = WalledGarden::hosts();
         LoginMethods::save($flags);
+        if ($request->filled('account_duration_hours')) {
+            DirectorySettings::saveDurationS((int) round((float) $request->input('account_duration_hours') * 3600));
+        }
         // Lists, not flags by method name: Audit strips a key named "code".
         Audit::log('settings.login_methods', null, ['enabled' => array_keys(array_filter($flags)),
-            'disabled' => array_keys(array_diff_key($flags, array_filter($flags)))]);
+            'disabled' => array_keys(array_diff_key($flags, array_filter($flags))), 'account_duration_s' => DirectorySettings::durationS()]);
 
         return $this->withWalledGardenHint(back()->with('status', __('portal.saved')), $hostsBefore);
     }

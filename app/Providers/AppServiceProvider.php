@@ -2,6 +2,9 @@
 
 namespace App\Providers;
 
+use App\Auth\Directory\DirectoryClient;
+use App\Auth\Directory\DirectoryLogin;
+use App\Auth\Directory\LdapDirectoryClient;
 use App\Database\SQLiteConnection;
 use App\Federation\AppliedChange;
 use App\Federation\ApplyHooks;
@@ -30,6 +33,9 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(DataKey::class);
         $this->app->singleton(Outbox::class);
         $this->app->singleton(ApplyHooks::class);
+        // Directory account login (CONCEPT.md §7.2 E): one LDAP client per login; tests bind a fake.
+        $this->app->bind(DirectoryClient::class, LdapDirectoryClient::class);
+        $this->app->bind(DirectoryLogin::class, fn ($app) => new DirectoryLogin(fn () => $app->make(DirectoryClient::class)));
         // Disconnects of local sessions after replicated changes (CONCEPT.md §10.4).
         $this->app->afterResolving(ApplyHooks::class, function (ApplyHooks $hooks) {
             (new SessionHooks)->register($hooks);

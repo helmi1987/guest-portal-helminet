@@ -45,6 +45,8 @@
                         <td>
                             @if ($method === \App\Enums\GrantType::Social && $guest->social_provider)
                                 {{ __('portal.guests.method_social', ['provider' => \App\Auth\Social\SocialLogin::name($guest->social_provider)]) }}<br>
+                            @elseif ($method === \App\Enums\GrantType::Account)
+                                {{ __('portal.guests.method_account', ['site' => $sites[$acceptance?->site_id] ?? $grant?->label ?? '–']) }}<br>
                             @else
                                 {{ $method ? __('portal.guests.methods.'.$method->value) : '–' }}<br>
                             @endif

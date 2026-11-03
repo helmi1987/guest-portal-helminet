@@ -43,7 +43,8 @@ use Illuminate\View\View;
 
 /**
  * Guest login with a code, SMS code or push approval (CONCEPT.md §7.1, §7.2 A-C), the method chooser,
- * status page and error pages. Social login: SocialLoginController (§7.2 D).
+ * status page and error pages. Social login: SocialLoginController (§7.2 D); directory account login:
+ * AccountLoginController (§7.2 E).
  */
 class PortalController extends Controller
 {
@@ -75,7 +76,7 @@ class PortalController extends Controller
 
         // Method chooser (decision 2026-11-03): one available method is shown directly, so is the one
         // selected with ?method= and the code page for a prefilled code; otherwise the chooser.
-        $methods = LoginMethods::availableList();
+        $methods = LoginMethods::availableList($site);
         if ($methods === []) {
             return $this->error('no_login_method');
         }

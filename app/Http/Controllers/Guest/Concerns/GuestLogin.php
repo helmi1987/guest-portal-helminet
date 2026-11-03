@@ -32,10 +32,10 @@ trait GuestLogin
         return response()->view('guest.error', ['kind' => $kind], $status);
     }
 
-    /** Error page when a login method is switched off or not usable now (decision 2026-11-03). */
-    protected function methodUnavailable(string $method): ?Response
+    /** Error page when a login method is switched off or not usable now (for the site, if given; decision 2026-11-03). */
+    protected function methodUnavailable(string $method, ?Site $site = null): ?Response
     {
-        return (LoginMethods::available()[$method] ?? false) ? null : $this->error('method_disabled', 403);
+        return (LoginMethods::available($site)[$method] ?? false) ? null : $this->error('method_disabled', 403);
     }
 
     protected function handoff(Request $request, Grant $grant, Site $site, HotspotContext $context, RadiusToken $token, string $password): View

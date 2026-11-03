@@ -55,6 +55,8 @@ return [
         'per_mac' => (int) env('PORTAL_LOGIN_MAX_PER_MAC', 5),
         'per_ip' => (int) env('PORTAL_LOGIN_MAX_PER_IP', 10),
         'global' => (int) env('PORTAL_LOGIN_MAX_GLOBAL', 200),
+        // Directory account login: attempts per site and user name (CONCEPT.md §7.2 E).
+        'per_account' => (int) env('PORTAL_LOGIN_MAX_PER_ACCOUNT', 5),
     ],
 
     // Notice on the login page when a returning device's access ended (expired, revoked, disconnected)

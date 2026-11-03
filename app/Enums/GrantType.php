@@ -11,4 +11,6 @@ enum GrantType: string
     case SiteCode = 'site_code';
     /** Grant of a social login (Google, Apple, Facebook, GitHub), time from the login (CONCEPT.md §7.2 D). */
     case Social = 'social';
+    /** Grant of a login with the site's directory account (Active Directory / LDAP), time from the login (CONCEPT.md §7.2 E). */
+    case Account = 'account';
 }
