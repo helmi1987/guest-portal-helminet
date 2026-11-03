@@ -1,11 +1,13 @@
 # MikroTik Guest Portal
 
 A self-hosted captive portal ("guest login") for MikroTik RouterOS 7 hotspots across multiple sites.
-Guests authenticate with an admin-issued code, an SMS one-time password or an admin push approval;
-the router enforces access via RADIUS. Laravel web app and FreeRADIUS ship together in a single
+Guests authenticate with an admin-issued code, an SMS one-time password, a social login (Google,
+Apple, Facebook, GitHub) or an admin push approval; the router enforces access via RADIUS. Laravel web app and FreeRADIUS ship together in a single
 multi-arch container image that runs either as a RouterOS container or on any regular Docker host.
 One instance can serve several sites, or each site runs its own instance and instances form a
 federation so access grants are valid at every site.
+
+Website: https://portal.helminet.ch (overview, screenshots, demo of the guest sign-in, installation).
 
 > **Critical fix in v0.12.5:** v0.12.5 fixes a critical bug in the router certificate script of
 > v0.12.1-v0.12.4 that could delete all certificates on the router (e.g. CAPsMAN). The script of v0.12.0
