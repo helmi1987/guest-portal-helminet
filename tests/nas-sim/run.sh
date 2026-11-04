@@ -80,7 +80,8 @@ seed() {
     artisan '
 use App\Models\Site; use App\Models\NasClient; use App\Nas\Generic\GenericSettings; use App\Nas\Generic\Presets;
 $preset = "'"$preset"'"; $port = '"$port"'; $slug = "'"$SLUG"'";
-$site = Site::where("slug", $slug)->first() ?? Site::create(["slug" => $slug, "name" => "NAS simulator", "driver" => "generic_radius", "settings" => []]);
+$site = Site::withTrashed()->where("slug", $slug)->first() ?? Site::create(["slug" => $slug, "name" => "NAS simulator", "driver" => "generic_radius", "settings" => []]);
+if ($site->trashed()) { $site->restore(); } // --cleanup leaves a replicated tombstone; the slug stays taken
 $other = NasClient::where("nas_ip", "127.0.0.1")->where("site_id", "!=", $site->id)->exists();
 if ($other) { echo "SEED_ERROR another site already has a router with NAS IP 127.0.0.1\n"; return; }
 $site->driver = "generic_radius";
@@ -97,7 +98,8 @@ $variant = $preset; $preset = $preset === "opnsense_fragment" ? "opnsense" : $pr
 $site->settings = GenericSettings::mergeInto($site, ["preset" => $preset] + $overrides + Presets::PRESETS[$preset]
     + ["wispr" => true, "disconnect_attrs" => Presets::DISCONNECT[$preset] ?? GenericSettings::DEFAULT_DISCONNECT], $preset === "coovachilli" ? "'"$UAMSECRET"'" : "");
 $site->save();
-$nas = $site->nasClients()->where("nas_ip", "127.0.0.1")->first() ?? $site->nasClients()->create(["name" => "NAS simulator", "nas_ip" => "127.0.0.1", "coa_port" => 3799]);
+$nas = $site->nasClients()->withTrashed()->where("nas_ip", "127.0.0.1")->first() ?? $site->nasClients()->create(["name" => "NAS simulator", "nas_ip" => "127.0.0.1", "coa_port" => 3799]);
+if ($nas->trashed()) { $nas->restore(); }
 $written = app(App\Radius\ClientsFile::class)->write();
 $grant = app(App\Services\GrantManager::class)->createCode(["duration_s" => 3600, "expiry_mode" => App\Enums\ExpiryMode::FirstLogin,
     "rate_limit" => "1M/4M", "label" => "nas-sim ".$variant]);
