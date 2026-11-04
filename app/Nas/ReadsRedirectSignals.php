@@ -15,9 +15,10 @@ interface ReadsRedirectSignals
     /**
      * has_login_url: the redirect comes from a NAS that is configured to send a login URL (the core shows
      * the "misconfigured" error page when parseRedirect() then dropped it). prefill_code: a 6-digit code
-     * found in the original URL of the redirect (prefill only; RedirectSignals::codeFromUrl()).
+     * found in the original URL of the redirect (prefill only; RedirectSignals::codeFromUrl()). Optional
+     * login_result: the NAS sent the guest back after its own login, "success" or "failed" (else null).
      *
-     * @return array{has_login_url: bool, prefill_code: ?string}
+     * @return array{has_login_url: bool, prefill_code: ?string, login_result?: ?string}
      */
     public function redirectSignals(Request $request, Site $site): array;
 }

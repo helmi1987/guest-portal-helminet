@@ -40,12 +40,17 @@ trait GuestLogin
         return (LoginMethods::available($site)[$method] ?? false) ? null : $this->error('method_disabled', 403);
     }
 
+    /** Signed status page of one login, valid until the grant ends (plus a margin for the "expired" page). */
+    protected function statusUrl(Grant $grant, RadiusToken $token): string
+    {
+        return url(URL::temporarySignedRoute('guest.status', ($grant->expires_at ?? now())->copy()->addHour(),
+            ['grant' => $grant->id, 'token' => $token->id], absolute: false));
+    }
+
     protected function handoff(Request $request, Grant $grant, Site $site, HotspotContext $context, RadiusToken $token, string $password): View|Response|RedirectResponse
     {
         $request->session()->put('handoff_token', $token->id);
-        // Valid until the grant ends (plus a margin for the "expired" page).
-        $statusUrl = url(URL::temporarySignedRoute('guest.status', $grant->refresh()->expires_at->copy()->addHour(),
-            ['grant' => $grant->id, 'token' => $token->id], absolute: false));
+        $statusUrl = $this->statusUrl($grant->refresh(), $token);
 
         // Controller-based NAS (decision 2026-11-04, v0.27.0): the portal lets the device out through the
         // controller API, records the session itself and sends the browser to the status page.

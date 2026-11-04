@@ -97,7 +97,9 @@ Display name in the site form. Plain English product name, no translation key (i
 Redirect signals (since v0.28.0, optional interface [`ReadsRedirectSignals`](../app/Nas/ReadsRedirectSignals.php)):
 `redirectSignals(Request $request, Site $site)` returns `has_login_url` (the NAS is configured to send a login URL;
 when `parseRedirect()` then dropped it, the core shows the "misconfigured hotspot" page instead of "no hotspot") and
-`prefill_code` (a 6-digit code in the redirect's original URL, `RedirectSignals::codeFromUrl()`). The core no longer
+`prefill_code` (a 6-digit code in the redirect's original URL, `RedirectSignals::codeFromUrl()`) and optionally
+`login_result` (`success` or `failed`: the NAS sent the guest back after its own login; `success` opens the status
+page of the browser's last handoff at the site, `failed` shows the "login not completed" notice). The core no longer
 reads vendor parameter names ([`PortalController::show()`](../app/Http/Controllers/Guest/PortalController.php)).
 MikroTik: `link-login-only` / `link-orig`; UniFi: no login URL, code from `url`; generic: the mapped names. A driver
 without the interface gives no signals (guests see "no hotspot", no prefill from the original URL).

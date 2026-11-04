@@ -59,7 +59,7 @@ final class GenericSettings
         $stored = $site->setting(self::SITE_SETTING, []);
         $c = array_merge(self::DEFAULTS, is_array($stored) ? array_intersect_key($stored, self::DEFAULTS) : []);
         $name = fn (mixed $v) => is_string($v) && preg_match('/^[A-Za-z0-9_.-]{1,40}\z/', $v) === 1 ? $v : '';
-        foreach (['param_mac', 'param_ip', 'param_login_url', 'param_orig', 'field_username', 'field_password', 'field_success'] as $key) {
+        foreach (['param_mac', 'param_ip', 'param_login_url', 'param_orig', 'param_result', 'field_username', 'field_password', 'field_success'] as $key) {
             $c[$key] = $name($c[$key]);
         }
         $attrs = is_array($c['disconnect_attrs']) ? array_values(array_intersect(self::DISCONNECT_ATTRIBUTES, $c['disconnect_attrs'])) : [];
@@ -71,6 +71,7 @@ final class GenericSettings
             'param_login_url' => $c['param_login_url'],
             'login_url' => is_string($c['login_url']) && strlen($c['login_url']) <= 255 ? trim($c['login_url']) : '',
             'param_orig' => $c['param_orig'],
+            'param_result' => $c['param_result'],
             'method' => in_array($c['method'], self::METHODS, true) ? $c['method'] : 'POST',
             'field_username' => $c['field_username'] ?: 'username',
             'field_password' => $c['field_password'] ?: 'password',
@@ -122,6 +123,7 @@ final class GenericSettings
             'generic.param_login_url' => $name,
             'generic.login_url' => ['nullable', 'string', 'max:255', 'regex:#^https?://[A-Za-z0-9.{}_:\-\[\]]+(/[A-Za-z0-9._~/{}%=&?+\-]*)?$#'],
             'generic.param_orig' => $name,
+            'generic.param_result' => $name,
             'generic.method' => ['required', Rule::in(self::METHODS)],
             'generic.field_username' => ['required', 'string', self::NAME_RULE],
             'generic.field_password' => ['required', 'string', self::NAME_RULE],

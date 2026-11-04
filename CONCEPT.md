@@ -240,7 +240,14 @@ whitelist and roaming need the NAS to send the MAC as `User-Name` (unchanged RAD
 portal no longer reads MikroTik parameter names itself; the optional interface `ReadsRedirectSignals` gives
 "NAS sends a login URL" (misconfigured page) and the prefill code from the original URL, and the optional interface
 `SiteBoundDriver` binds a driver to its site so that `loginHandoff()`, `replyAttributes()` and
-`disconnectAttributes()` can use per-site settings; the handoff view also navigates by GET. A NAS simulator
+`disconnectAttributes()` can use per-site settings; the handoff view also navigates by GET. A NAS that sends the
+guest back to the portal after its own login (CoovaChilli: `res=success|already|failed…` to the UAM server; `/logon`
+takes `userurl`, not `redirurl`) is handled through the signal `login_result` (mapping field "login result"): success
+opens the status page of the browser's last handoff at the site (session, at most 10 minutes old), failed shows the
+"login not completed" notice. A Disconnect-NAK ends the disconnect job without retries for all drivers (only no
+answer is retried), so a session the NAS no longer knows does not hold up the queue; a NAS without
+Disconnect-Request support completes the job once and marks the session (`disconnect_skipped_at`), and
+`portal:enforce-grants` does not dispatch it again. A NAS simulator
 (`tests/nas-sim`, Docker and Playwright) checks the driver against the documented conventions, not against real
 devices. Guide: [docs/generic-captive-portal.md](docs/generic-captive-portal.md).
 

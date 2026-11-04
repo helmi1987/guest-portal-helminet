@@ -59,6 +59,7 @@ class SiteGenericSettingsController extends Controller
             'param_login_url' => (string) ($data['param_login_url'] ?? ''),
             'login_url' => trim((string) ($data['login_url'] ?? '')),
             'param_orig' => (string) ($data['param_orig'] ?? ''),
+            'param_result' => (string) ($data['param_result'] ?? ''),
             'method' => $data['method'],
             'field_username' => $data['field_username'],
             'field_password' => $data['field_password'],

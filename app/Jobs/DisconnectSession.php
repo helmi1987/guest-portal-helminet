@@ -59,7 +59,8 @@ class DisconnectSession implements ShouldQueue
         $failed = false;
         foreach ($summary->accounting()->with('nasClient')->get() as $acct) {
             $acct->forceFill(['disconnect_sent_at' => now()])->save();
-            $failed = ! $disconnector->disconnect($acct) || $failed;
+            // NAK (e.g. the NAS no longer knows the session): final, no retry; the Session-Timeout stays the bound.
+            $failed = $disconnector->send($acct) === Disconnector::FAILED || $failed;
         }
 
         if ($failed) {

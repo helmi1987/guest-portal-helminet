@@ -174,15 +174,15 @@ class GenericRadiusDriverTest extends TestCase
         $code = 'https://portal.example.com/portal?site=x&code=654321';
         $mikrotik = Site::create(['slug' => 'site-m', 'name' => 'Site M', 'driver' => 'mikrotik_ros7', 'settings' => []]);
         $request = Request::create('/portal', 'GET', ['site' => 'site-m', 'link-login-only' => 'https://h.example.com/login', 'link-orig' => $code]);
-        $this->assertSame(['has_login_url' => true, 'prefill_code' => '654321'], RedirectSignals::of($mikrotik->driver(), $request, $mikrotik));
+        $this->assertSame(['has_login_url' => true, 'prefill_code' => '654321', 'login_result' => null], RedirectSignals::of($mikrotik->driver(), $request, $mikrotik));
         $this->assertSame(RedirectSignals::NONE, RedirectSignals::of($mikrotik->driver(), Request::create('/portal', 'GET', ['link-orig' => 'https://example.com/?code=654321']), $mikrotik));
 
         $unifi = Site::create(['slug' => 'site-u', 'name' => 'Site U', 'driver' => 'unifi', 'settings' => []]);
-        $this->assertSame(['has_login_url' => false, 'prefill_code' => '654321'],
+        $this->assertSame(['has_login_url' => false, 'prefill_code' => '654321', 'login_result' => null],
             RedirectSignals::of($unifi->driver(), Request::create('/portal', 'GET', ['url' => $code, 'link-login-only' => 'x']), $unifi));
 
         $this->mapping(Presets::RUCKUS);
-        $this->assertSame(['has_login_url' => true, 'prefill_code' => '654321'],
+        $this->assertSame(['has_login_url' => true, 'prefill_code' => '654321', 'login_result' => null],
             RedirectSignals::of($this->driver(), $this->request(['client_mac' => 'aa:bb:cc:00:00:01', 'url' => $code]), $this->site));
         $this->assertSame(RedirectSignals::NONE, RedirectSignals::of($this->driver(), $this->request(['url' => 'http://example.com/']), $this->site));
 
@@ -240,7 +240,7 @@ class GenericRadiusDriverTest extends TestCase
             $href = html_entity_decode($m[1]);
             $this->assertStringStartsWith('http://10.1.0.1:3990/logon?', $href);
             parse_str((string) parse_url($href, PHP_URL_QUERY), $query);
-            $this->assertSame(['username', 'password', 'redirurl'], array_keys($query));
+            $this->assertSame(['username', 'password', 'userurl'], array_keys($query));
 
             // Decode as CoovaChilli does (redir.c): hex, XOR per 16-byte block with MD5(challenge + uamsecret) or the
             // raw challenge; the password is zero-padded to 16-byte blocks (24 characters: 32 bytes).
@@ -593,6 +593,65 @@ class GenericRadiusDriverTest extends TestCase
         $other->grant->update(['revoked_at' => now()]);
         $this->artisan('portal:enforce-grants')->expectsOutput('Disconnect requested for 1 session(s).')->assertSuccessful();
         Queue::assertPushed(DisconnectSession::class, 1);
+    }
+
+    public function test_coovachilli_return_with_res_opens_the_status_page_or_the_failed_notice(): void
+    {
+        $this->mapping(Presets::COOVACHILLI);
+        $chilli = ['uamip' => '10.1.0.1', 'uamport' => '3990', 'challenge' => self::CHALLENGE, 'mac' => 'AA-BB-CC-00-00-01',
+            'ip' => '10.0.0.20', 'nasid' => 'nas-a', 'sessionid' => '179382358100000001'];
+        // Without a handoff in this browser: the normal chooser/code page.
+        $this->guest()->get('/portal/g/site-g?'.http_build_query(['res' => 'success'] + $chilli))->assertRedirect();
+        $this->guest()->get('/portal?'.http_build_query(['site' => 'site-g', 'res' => 'success'] + $chilli))->assertOk()
+            ->assertSee('name="code"', false);
+
+        $grant = $this->code();
+        $this->guest()->get('/portal?'.http_build_query(['site' => 'site-g', 'res' => 'notyet', 'userurl' => 'http://example.com/'] + $chilli))
+            ->assertOk();
+        $fields = $this->guest()->post('/portal/code', $this->codeForm($grant->code))->assertOk()->viewData('fields');
+        $this->assertStringContainsString('/status/'.$grant->id.'/', $fields['userurl']);
+
+        // chilli: back to the UAM server with res=success (or already): the status page of that handoff.
+        foreach (['success', 'already'] as $res) {
+            $location = $this->guest()->get('/portal?'.http_build_query(['site' => 'site-g', 'res' => $res, 'uid' => $fields['username'],
+                'timeleft' => '3599', 'userurl' => $fields['userurl']] + $chilli))->assertRedirect()->headers->get('Location');
+            $this->assertStringContainsString('/status/'.$grant->id.'/', $location);
+            $this->guest()->get($location)->assertOk();
+        }
+
+        // res=failed&reason=reject: the code page with the "login not completed" notice; no status page.
+        $this->guest()->get('/portal?'.http_build_query(['site' => 'site-g', 'res' => 'failed', 'reason' => 'reject'] + $chilli))
+            ->assertOk()->assertSee(__('portal.guest.router_failed_notice'));
+        $this->assertSame(['has_login_url' => true, 'prefill_code' => null, 'login_result' => 'failed'],
+            RedirectSignals::of($this->driver(), $this->request(['res' => 'failed', 'reason' => 'timeout'] + $chilli), $this->site));
+        $this->assertNull(RedirectSignals::of($this->driver(), $this->request(['res' => 'logoff'] + $chilli), $this->site)['login_result']);
+
+        // The handoff of another site is never used; nor without a result parameter in the mapping.
+        $this->mapping(Presets::COOVACHILLI, ['param_result' => '']);
+        $this->guest()->get('/portal?'.http_build_query(['site' => 'site-g', 'res' => 'success'] + $chilli))->assertOk();
+        $this->mapping(Presets::COOVACHILLI);
+        Site::create(['slug' => 'site-h', 'name' => 'Site H', 'driver' => GenericRadiusDriver::KEY,
+            'settings' => ['hotspot_hosts' => ['10.1.0.1'], 'generic' => ['preset' => 'coovachilli'] + Presets::PRESETS[Presets::COOVACHILLI]]]);
+        $this->guest()->get('/portal?'.http_build_query(['site' => 'site-h', 'res' => 'success'] + $chilli))->assertOk();
+    }
+
+    public function test_disconnect_nak_ends_the_job_without_retry(): void
+    {
+        $this->mapping(Presets::CISCO_WLC);
+        $session = $this->openSession('sess-nak', '10.0.0.20');
+        Process::fake(['*' => Process::result("Received Disconnect-NAK Id 1\n\tError-Cause = Session-Context-Not-Found", '', 1)]);
+        Log::spy();
+
+        (new DisconnectSession($session->id))->handle(app(Disconnector::class)); // no exception: no retry
+
+        Process::assertRanTimes(fn (PendingProcess $p) => in_array('10.0.0.1:3799', $p->command, true), 1);
+        Log::shouldHaveReceived('log')->with('warning', 'RADIUS Disconnect-Request', \Mockery::on(fn ($c) => $c['result'] === 'nak'))->once();
+        $this->assertSame(Disconnector::NAK, app(Disconnector::class)->send($session->accounting()->sole()));
+
+        // No answer at all: retried as before.
+        Process::fake(['*' => Process::result('', 'No reply from server', 1)]);
+        $this->expectException(RuntimeException::class);
+        (new DisconnectSession($session->id))->handle(app(Disconnector::class));
     }
 
     // --- Helpers ------------------------------------------------------------------------------------

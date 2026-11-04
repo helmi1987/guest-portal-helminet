@@ -1668,6 +1668,7 @@ return [
             'param_mac' => 'Parametro: MAC del client',
             'param_ip' => 'Parametro: IP del client',
             'param_login_url' => 'Parametro: URL di accesso',
+            'param_result' => 'Parametro: risultato dell\'accesso',
             'login_url' => 'URL di accesso fisso',
             'param_orig' => 'Parametro: URL originale',
             'method' => 'Metodo',
@@ -1685,6 +1686,7 @@ return [
             'handoff_secret_clear' => 'Rimuovi il segreto di consegna',
         ],
         'param_login_url_help' => 'Se il dispositivo invia il proprio URL di accesso; la presenza di questo parametro indica anche un dispositivo configurato, e un URL fuori dai nomi host dell\'hotspot porta alla pagina «configurazione errata».',
+        'param_result_help' => 'Se il dispositivo rimanda l\'ospite al portale dopo il suo accesso (CoovaChilli: res): success o already apre la pagina di stato dell\'ultimo accesso in questo browser, failed mostra l\'avviso «accesso non completato».',
         'login_url_help' => 'Usato quando non è impostato o non arriva alcun parametro URL di accesso. {name} viene sostituito dal parametro di reindirizzamento con quel nome (es. http://{uamip}:{uamport}/logon). L\'host deve essere uno dei nomi host dell\'hotspot.',
         'extra_fields_help' => 'Un nome=valore per riga, al massimo :max; {name} riprende un parametro di reindirizzamento, {handoff_secret} il segreto di consegna.',
         'encodings' => [

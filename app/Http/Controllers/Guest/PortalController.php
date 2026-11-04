@@ -55,7 +55,7 @@ class PortalController extends Controller
     use GuestLogin;
 
     /** Entry from the router's login.html redirect; parameters are kept in the session. */
-    public function show(Request $request, LoginThrottle $throttle): View|Response
+    public function show(Request $request, LoginThrottle $throttle): View|Response|RedirectResponse
     {
         if ($request->filled('site')) {
             $site = Site::query()->where('slug', $request->query('site'))->first();
@@ -73,6 +73,12 @@ class PortalController extends Controller
         }
 
         [$site, $context] = $this->current($request);
+        // The NAS sent the guest back after its own login (generic driver, e.g. CoovaChilli res=success): the status
+        // page of this browser's last handoff at this site (decision 2026-11-04, v0.28.0).
+        $loginResult = isset($signals) ? $signals['login_result'] : null;
+        if ($loginResult === 'success' && $site !== null && ($status = $this->lastHandoffStatus($request, $site)) !== null) {
+            return redirect()->to($status);
+        }
         if ($site === null || ! $context->isComplete()) {
             return $this->error($request->session()->get('portal_misconfigured') ? 'misconfigured' : 'no_hotspot');
         }
@@ -102,7 +108,7 @@ class PortalController extends Controller
             'methods' => $methods,
             'method' => $method,
             'terms' => TermsVersion::current(app()->getLocale()),
-            'routerFailed' => $first && $this->previousHandoffFailed($request),
+            'routerFailed' => $first && ($this->previousHandoffFailed($request) || $loginResult === 'failed'),
             // Limited mode (hub unreachable, CONCEPT.md §10.1): no push approval for new logins.
             'limitedMode' => app(Topology::class)->limitedMode(),
             'prefillCode' => $request->session()->get('portal_code'),
@@ -558,6 +564,21 @@ class PortalController extends Controller
         $code = preg_replace('/\D/', '', $code);
 
         return strlen($code) === 6 ? $code : null;
+    }
+
+    /**
+     * Status page of the browser's last handoff at $site (within 10 minutes), else null. The status page itself
+     * waits for the RADIUS accept.
+     */
+    private function lastHandoffStatus(Request $request, Site $site): ?string
+    {
+        $token = ($id = $request->session()->get('handoff_token')) ? RadiusToken::find($id) : null;
+        $grant = $token?->grant_id ? Grant::find($token->grant_id) : null;
+        if ($token === null || $grant === null || $token->site_id !== $site->id || $token->created_at->lt(now()->subMinutes(10))) {
+            return null;
+        }
+
+        return $this->statusUrl($grant, $token);
     }
 
     /** True once if the last handed-off credentials were never accepted by RADIUS (router login failed). */

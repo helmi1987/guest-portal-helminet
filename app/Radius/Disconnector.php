@@ -11,11 +11,25 @@ use Illuminate\Support\Facades\Process;
  */
 class Disconnector
 {
+    public const ACK = 'ack';
+
+    /** The NAS answered Disconnect-NAK (e.g. no such session): retrying does not help (decision 2026-11-04, v0.28.0). */
+    public const NAK = 'nak';
+
+    /** No answer, or not sent (no router, not addressable safely): retried by the job. */
+    public const FAILED = 'failed';
+
     public function disconnect(RadiusAccounting $acct): bool
+    {
+        return $this->send($acct) === self::ACK;
+    }
+
+    /** Sends the Disconnect-Request; ack, nak or failed. */
+    public function send(RadiusAccounting $acct): string
     {
         $nas = $acct->nasClient;
         if ($nas === null) {
-            return false;
+            return self::FAILED;
         }
 
         // Identifying attributes depend on the router (NAS driver); null: not addressable, not sent.
@@ -26,7 +40,7 @@ class Disconnector
                 Log::warning('RADIUS Disconnect-Request not sent: router has no site', ['nas' => $nas->nas_ip]);
             }
 
-            return false;
+            return self::FAILED;
         }
         $attributes = '';
         foreach ($map as $name => $value) {
@@ -52,15 +66,17 @@ class Disconnector
             @unlink($secretFile);
         }
 
-        $ack = $result->successful() && str_contains($result->output(), 'Disconnect-ACK');
-        Log::log($ack ? 'info' : 'warning', 'RADIUS Disconnect-Request', [
+        $output = $result->output();
+        $outcome = $result->successful() && str_contains($output, 'Disconnect-ACK') ? self::ACK
+            : (str_contains($output, 'Disconnect-NAK') ? self::NAK : self::FAILED);
+        Log::log($outcome === self::ACK ? 'info' : 'warning', 'RADIUS Disconnect-Request', [
             'nas' => $nas->nas_ip,
             'acct_session_id' => $acct->acct_session_id,
             'attributes' => array_keys($map),
-            'result' => $ack ? 'ack' : 'failed',
-            'output' => $ack ? null : trim($result->errorOutput()."\n".$result->output()),
+            'result' => $outcome,
+            'output' => $outcome === self::ACK ? null : trim($result->errorOutput()."\n".$output),
         ]);
 
-        return $ack;
+        return $outcome;
     }
 }

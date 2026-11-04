@@ -8,9 +8,11 @@ use Illuminate\Http\Request;
 /** Helpers around ReadsRedirectSignals (decision 2026-11-04, v0.28.0). */
 final class RedirectSignals
 {
-    public const NONE = ['has_login_url' => false, 'prefill_code' => null];
+    public const NONE = ['has_login_url' => false, 'prefill_code' => null, 'login_result' => null];
 
-    /** @return array{has_login_url: bool, prefill_code: ?string} */
+    public const LOGIN_RESULTS = ['success', 'failed'];
+
+    /** @return array{has_login_url: bool, prefill_code: ?string, login_result: ?string} */
     public static function of(NasDriver $driver, Request $request, Site $site): array
     {
         if (! $driver instanceof ReadsRedirectSignals) {
@@ -18,9 +20,11 @@ final class RedirectSignals
         }
         $signals = $driver->redirectSignals($request, $site);
         $code = $signals['prefill_code'] ?? null;
+        $result = $signals['login_result'] ?? null;
 
         return ['has_login_url' => ($signals['has_login_url'] ?? false) === true,
-            'prefill_code' => is_string($code) && preg_match('/^\d{6}\z/', $code) === 1 ? $code : null];
+            'prefill_code' => is_string($code) && preg_match('/^\d{6}\z/', $code) === 1 ? $code : null,
+            'login_result' => in_array($result, self::LOGIN_RESULTS, true) ? $result : null];
     }
 
     /**

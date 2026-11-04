@@ -1668,6 +1668,7 @@ return [
             'param_mac' => 'Parameter: Client-MAC',
             'param_ip' => 'Parameter: Client-IP',
             'param_login_url' => 'Parameter: Login-URL',
+            'param_result' => 'Parameter: Login-Ergebnis',
             'login_url' => 'Feste Login-URL',
             'param_orig' => 'Parameter: ursprüngliche URL',
             'method' => 'Methode',
@@ -1685,6 +1686,7 @@ return [
             'handoff_secret_clear' => 'Handoff-Geheimnis entfernen',
         ],
         'param_login_url_help' => 'Falls das Gerät seine Login-URL mitschickt; ist dieser Parameter vorhanden, gilt das Gerät als eingerichtet, und eine Login-URL ausserhalb der Hotspot-Hostnamen führt zur Fehlerseite «falsch eingerichtet».',
+        'param_result_help' => 'Falls das Gerät den Gast nach seinem Login zurück zum Portal schickt (CoovaChilli: res): success oder already öffnet die Statusseite des letzten Logins in diesem Browser, failed zeigt den Hinweis «Login nicht abgeschlossen».',
         'login_url_help' => 'Gilt, wenn kein Login-URL-Parameter gesetzt ist oder mitkommt. {name} wird durch den gleichnamigen Umleitungsparameter ersetzt (z. B. http://{uamip}:{uamport}/logon). Der Host muss einer der Hotspot-Hostnamen sein.',
         'extra_fields_help' => 'Pro Zeile ein name=wert, höchstens :max; {name} übernimmt einen Umleitungsparameter, {handoff_secret} das Handoff-Geheimnis.',
         'encodings' => [

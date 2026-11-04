@@ -1668,6 +1668,7 @@ return [
             'param_mac' => 'Parameter: client MAC',
             'param_ip' => 'Parameter: client IP',
             'param_login_url' => 'Parameter: login URL',
+            'param_result' => 'Parameter: login result',
             'login_url' => 'Fixed login URL',
             'param_orig' => 'Parameter: original URL',
             'method' => 'Method',
@@ -1685,6 +1686,7 @@ return [
             'handoff_secret_clear' => 'Remove the handoff secret',
         ],
         'param_login_url_help' => 'If the device sends its login URL; the presence of this parameter also marks a device that is configured but sends a login URL outside the hotspot host names.',
+        'param_result_help' => 'If the device sends the guest back to the portal after its login (CoovaChilli: res): success or already opens the status page of the last login in this browser, failed shows the “login not completed” notice.',
         'login_url_help' => 'Used when no login URL parameter is set or sent. {name} is replaced by the redirect parameter of that name (e.g. http://{uamip}:{uamport}/logon). The host must be one of the hotspot host names.',
         'extra_fields_help' => 'One name=value per line, at most :max; {name} takes a redirect parameter, {handoff_secret} the handoff secret.',
         'encodings' => [

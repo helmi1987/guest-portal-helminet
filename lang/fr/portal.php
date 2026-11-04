@@ -1668,6 +1668,7 @@ return [
             'param_mac' => 'Paramètre : MAC du client',
             'param_ip' => 'Paramètre : IP du client',
             'param_login_url' => 'Paramètre : URL de connexion',
+            'param_result' => 'Paramètre : résultat de la connexion',
             'login_url' => 'URL de connexion fixe',
             'param_orig' => 'Paramètre : URL d\'origine',
             'method' => 'Méthode',
@@ -1685,6 +1686,7 @@ return [
             'handoff_secret_clear' => 'Supprimer le secret de transmission',
         ],
         'param_login_url_help' => 'Si l\'appareil transmet son URL de connexion ; la présence de ce paramètre indique aussi un appareil configuré, et une URL hors des noms d\'hôte du hotspot mène à la page « mal configuré ».',
+        'param_result_help' => 'Si l\'appareil renvoie l\'invité au portail après sa connexion (CoovaChilli : res) : success ou already ouvre la page d\'état de la dernière connexion dans ce navigateur, failed affiche l\'avis « connexion non terminée ».',
         'login_url_help' => 'Utilisée quand aucun paramètre d\'URL de connexion n\'est défini ou transmis. {name} est remplacé par le paramètre de redirection du même nom (p. ex. http://{uamip}:{uamport}/logon). L\'hôte doit être l\'un des noms d\'hôte du hotspot.',
         'extra_fields_help' => 'Un nom=valeur par ligne, au plus :max ; {name} reprend un paramètre de redirection, {handoff_secret} le secret de transmission.',
         'encodings' => [

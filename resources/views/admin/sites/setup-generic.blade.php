@@ -12,7 +12,7 @@
         <h2 class="mb-2 text-lg font-semibold">{{ __('portal.generic.mapping_title') }}</h2>
         <p class="mb-2 text-sm">{{ __('portal.generic.fields.preset') }}: {{ __('portal.generic.presets.'.$mapping['preset'].'.label') }}</p>
         <dl class="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-sm">
-            @foreach (['param_mac', 'param_ip', 'param_login_url', 'login_url', 'param_orig', 'method', 'field_username', 'field_password', 'field_success', 'password_encoding'] as $field)
+            @foreach (['param_mac', 'param_ip', 'param_login_url', 'login_url', 'param_orig', 'param_result', 'method', 'field_username', 'field_password', 'field_success', 'password_encoding'] as $field)
                 <dt>{{ __('portal.generic.fields.'.$field) }}</dt><dd class="break-all font-mono">{{ $mapping[$field] !== '' ? $mapping[$field] : '–' }}</dd>
             @endforeach
             <dt>{{ __('portal.generic.fields.extra_fields') }}</dt><dd class="whitespace-pre font-mono">{{ $mapping['extra_fields'] !== '' ? $mapping['extra_fields'] : '–' }}</dd>

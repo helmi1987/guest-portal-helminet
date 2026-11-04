@@ -177,7 +177,9 @@ def presets(a):
             entry=portal + '?' + q({'res': 'notyet', 'uamip': a.host, 'uamport': str(a.port), 'challenge': a.challenge,
                                     'called': 'AA-BB-CC-00-00-99', 'mac': dash_upper, 'ip': a.client_ip, 'nasid': a.nas_id,
                                     'sessionid': sid, 'userurl': 'http://example.com/'}),
-            path='/logon', method='GET', user='username', password='password', success='redirurl', fixed={},
+            # /logon reads userurl (not redirurl); afterwards chilli redirects to the UAM server (the portal) with res=.
+            path='/logon', method='GET', user='username', password='password', success='userurl', fixed={},
+            uam_return=portal,
             calling=dash_upper, session_id=sid,
             # CoovaChilli 1.9 (observed): Service-Type, NAS-Port(-Id), dashed MACs, Framed-IP-Address.
             radius=[attr_int(SERVICE_TYPE, 1), attr_int(NAS_PORT, 1), attr(NAS_PORT_ID, '00000001'), attr_int(NAS_PORT_TYPE, 19),
@@ -380,6 +382,15 @@ def handler(sim):
 
         def handle_login(self, fields):
             success, error = sim.login(fields)
+            if sim.p.get('uam_return'):
+                # CoovaChilli (redir.c, observed on 1.9): back to the UAM server with res=success / res=failed&reason=..
+                query = {'res': 'failed', 'reason': 'reject'} if error else {'res': 'success'}
+                query.update({'uamip': sim.a.host, 'uamport': str(sim.a.port), 'called': 'AA-BB-CC-00-00-99',
+                              'uid': fields.get(sim.p['user'], ''), 'mac': sim.p['calling'], 'ip': sim.a.client_ip,
+                              'nasid': sim.a.nas_id, 'sessionid': sim.p['session_id'], 'userurl': fields.get('userurl', '')})
+                if not error:
+                    query['timeleft'] = str((sim.state.get('access') or {}).get('session_timeout', ''))
+                return self.send(302, '', location=sim.p['uam_return'] + '?' + urllib.parse.urlencode(query))
             if sim.p.get('json'):
                 state = 'NOT_AUTHORIZED' if error else 'AUTHORIZED'
                 return self.send(200, json.dumps({'clientState': state, 'ipAddress': sim.a.client_ip}), 'application/json')

@@ -65,7 +65,8 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, ReportsDis
 
     /**
      * has_login_url: the mapped login URL parameter is present, or (fixed or template login URL) the
-     * redirect carries the MAC parameter, i.e. it comes from the NAS. Code prefill from the original URL.
+     * redirect carries the MAC parameter, i.e. it comes from the NAS. Code prefill from the original URL;
+     * login_result from the mapped result parameter.
      */
     public function redirectSignals(Request $request, Site $site): array
     {
@@ -74,8 +75,16 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, ReportsDis
             ? $request->filled($m['param_login_url'])
             : $m['login_url'] !== '' && $request->filled($m['param_mac']);
 
+        // Login result of a NAS that returns the guest to the portal (CoovaChilli: res=success|already|failed..).
+        $result = $m['param_result'] !== '' ? self::query($request, $m['param_result']) : null;
+
         return ['has_login_url' => $hasLogin,
-            'prefill_code' => $m['param_orig'] !== '' ? RedirectSignals::codeFromUrl($request->query($m['param_orig'])) : null];
+            'prefill_code' => $m['param_orig'] !== '' ? RedirectSignals::codeFromUrl($request->query($m['param_orig'])) : null,
+            'login_result' => match (true) {
+                in_array($result, ['success', 'already'], true) => 'success',
+                $result !== null && str_starts_with($result, 'failed') => 'failed',
+                default => null,
+            }];
     }
 
     /**

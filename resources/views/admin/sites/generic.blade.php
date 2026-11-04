@@ -32,10 +32,11 @@
         <input type="hidden" name="generic[preset]" value="{{ $genPreset }}">
 
         <h3 class="font-semibold md:col-span-2">{{ __('portal.generic.groups.redirect') }}</h3>
-        @foreach (['param_mac' => 'mac', 'param_ip' => 'ip', 'param_login_url' => '', 'param_orig' => ''] as $field => $placeholder)
+        @foreach (['param_mac' => 'mac', 'param_ip' => 'ip', 'param_login_url' => '', 'param_orig' => '', 'param_result' => ''] as $field => $placeholder)
             <label class="label">{{ __('portal.generic.fields.'.$field) }}
                 <input name="generic[{{ $field }}]" value="{{ $genOld($field, $gen[$field]) }}" placeholder="{{ $placeholder }}" maxlength="40" class="field font-mono text-sm">
                 @if ($field === 'param_login_url')<span class="text-xs text-slate-500">{{ __('portal.generic.param_login_url_help') }}</span>@endif
+                @if ($field === 'param_result')<span class="text-xs text-slate-500">{{ __('portal.generic.param_result_help') }}</span>@endif
                 @error('generic.'.$field)<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
         @endforeach
         <label class="label md:col-span-2">{{ __('portal.generic.fields.login_url') }}
