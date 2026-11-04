@@ -1,21 +1,35 @@
 {{-- Settings: guest login methods and social login providers (CONCEPT.md §9, decision 2026-11-03).
+     Display order (decision 2026-11-04): rows in the stored order, each with a hidden order[] input and
+     up/down buttons. Without JS a button submits the form with move=<key>:<up|down> (saved together with
+     the other fields); the script below moves the row in place instead, saved with the form.
+     The first (visually hidden) submit button keeps Enter in a field a plain save, not a move.
      Included by admin/settings.blade.php. --}}
 <form method="POST" action="{{ route('admin.settings.login-methods') }}" class="card mb-6 grid gap-4" id="login-methods">
     @csrf
+    <button type="submit" class="hidden" tabindex="-1" aria-hidden="true"></button>
     <h2 class="text-lg font-semibold">{{ __('portal.settings.login_methods.title') }}</h2>
-    <p class="text-xs text-slate-500">{{ __('portal.settings.login_methods.help') }}</p>
-    @foreach (\App\Auth\Social\LoginMethods::ALL as $method)
-        <label class="flex items-start gap-2 text-sm" data-login-method="{{ $method }}">
-            <input type="hidden" name="methods[{{ $method }}]" value="0">
-            <input type="checkbox" name="methods[{{ $method }}]" value="1" @checked(old('methods.'.$method, $loginMethods[$method])) class="mt-0.5">
-            <span>{{ __('portal.settings.login_methods.methods.'.$method) }}
-                @isset($loginMethodHints[$method])
-                    <br><span class="text-xs text-amber-700" data-login-method-hint>{{ __($loginMethodHints[$method]) }}</span>
-                @endisset
-            </span>
-        </label>
-    @endforeach
+    <p class="text-xs text-slate-500">{{ __('portal.settings.login_methods.help') }} {{ __('portal.settings.login_methods.order_help') }}</p>
+    <div class="grid gap-3" data-order-list="login-methods">
+        @foreach ($loginMethodOrder as $method)
+            <div class="flex items-start gap-2" data-order-item="{{ $method }}">
+                <input type="hidden" name="order[]" value="{{ $method }}">
+                @include('admin.partials.order-buttons', ['key' => $method, 'first' => $loop->first, 'last' => $loop->last,
+                    'label' => __('portal.settings.login_methods.methods.'.$method)])
+                <label class="flex min-w-0 flex-1 items-start gap-2 text-sm" data-login-method="{{ $method }}">
+                    <input type="hidden" name="methods[{{ $method }}]" value="0">
+                    <input type="checkbox" name="methods[{{ $method }}]" value="1" @checked(old('methods.'.$method, $loginMethods[$method])) class="mt-0.5">
+                    <span>{{ __('portal.settings.login_methods.methods.'.$method) }}
+                        @isset($loginMethodHints[$method])
+                            <br><span class="text-xs text-amber-700" data-login-method-hint>{{ __($loginMethodHints[$method]) }}</span>
+                        @endisset
+                    </span>
+                </label>
+            </div>
+        @endforeach
+    </div>
     @error('methods')<p class="text-xs text-red-700">{{ $message }}</p>@enderror
+    @error('order')<p class="text-xs text-red-700">{{ $message }}</p>@enderror
+    @error('move')<p class="text-xs text-red-700">{{ $message }}</p>@enderror
     {{-- Account login (v0.24.0): directory per site on the site page; this is the default duration. --}}
     <div class="grid gap-2 rounded border border-slate-300 p-4" id="account-login">
         <label class="label md:max-w-xs">{{ __('portal.settings.login_methods.account_duration') }}
@@ -28,6 +42,7 @@
 
 <form method="POST" action="{{ route('admin.settings.social') }}" class="card mb-6 grid gap-4" id="social-login">
     @csrf
+    <button type="submit" class="hidden" tabindex="-1" aria-hidden="true"></button>
     <h2 class="text-lg font-semibold">{{ __('portal.settings.social.title') }}</h2>
     <p class="text-xs text-slate-500">{{ __('portal.settings.social.help') }} {{ __('portal.settings.social.federation_hint') }}</p>
     <label class="label md:max-w-xs">{{ __('portal.settings.social.duration') }}
@@ -35,11 +50,20 @@
         @error('social_duration_hours')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
     <p class="text-xs text-slate-500">{{ __('portal.settings.social.origins_help', ['count' => count($socialOrigins)]) }}
         {{ __('portal.settings.social.walled_garden') }}</p>
+    <p class="text-xs text-slate-500">{{ __('portal.settings.social.order_help') }}</p>
+    @error('order')<p class="text-xs text-red-700">{{ $message }}</p>@enderror
+    @error('move')<p class="text-xs text-red-700">{{ $message }}</p>@enderror
 
     @php($check = session('social_check'))
+    <div class="grid gap-4" data-order-list="social">
     @foreach ($social as $provider => $cfg)
-        <div class="rounded border border-slate-300 p-4" id="social-{{ $provider }}" data-social-provider="{{ $provider }}">
-            <h3 class="mb-3 font-semibold">{{ __('portal.settings.social.providers.'.$provider) }}</h3>
+        <div class="rounded border border-slate-300 p-4" id="social-{{ $provider }}" data-social-provider="{{ $provider }}" data-order-item="{{ $provider }}">
+            <input type="hidden" name="order[]" value="{{ $provider }}">
+            <div class="mb-3 flex items-center gap-2">
+                @include('admin.partials.order-buttons', ['key' => $provider, 'first' => $loop->first, 'last' => $loop->last,
+                    'label' => __('portal.settings.social.providers.'.$provider)])
+                <h3 class="font-semibold">{{ __('portal.settings.social.providers.'.$provider) }}</h3>
+            </div>
 
             @if (is_array($check) && ($check['provider'] ?? null) === $provider)
                 <p role="status" data-social-check="{{ $check['status'] }}" @class(['mb-3 rounded px-4 py-2 text-sm',
@@ -130,8 +154,41 @@
             </div>
         </div>
     @endforeach
+    </div>
     <div><button class="btn">{{ __('portal.save') }}</button></div>
 </form>
 @foreach (\App\Auth\Social\SocialSettings::PROVIDERS as $provider)
     <form method="POST" action="{{ route('admin.settings.social.check', $provider) }}" id="social-check-{{ $provider }}" class="hidden">@csrf</form>
 @endforeach
+
+<script>
+(function () {
+    // Arrow buttons of the display order (decision 2026-11-04): move the row in place, saved with the form.
+    Array.prototype.forEach.call(document.querySelectorAll('[data-order-list]'), function (list) {
+        var items = function () {
+            return Array.prototype.filter.call(list.children, function (n) { return n.hasAttribute('data-order-item'); });
+        };
+        var sync = function () {
+            var all = items();
+            all.forEach(function (item, i) {
+                Array.prototype.forEach.call(item.querySelectorAll('[data-order-move]'), function (b) {
+                    if (b.closest('[data-order-item]') !== item) return;
+                    b.disabled = b.getAttribute('data-order-move') === 'up' ? i === 0 : i === all.length - 1;
+                });
+            });
+        };
+        list.addEventListener('click', function (e) {
+            var b = e.target.closest('[data-order-move]');
+            if (!b || !list.contains(b)) return;
+            e.preventDefault();
+            var item = b.closest('[data-order-item]'), all = items(), i = all.indexOf(item);
+            var up = b.getAttribute('data-order-move') === 'up';
+            if (up && i > 0) list.insertBefore(item, all[i - 1]);
+            else if (!up && i >= 0 && i < all.length - 1) list.insertBefore(all[i + 1], item);
+            sync();
+            var focus = b.disabled ? item.querySelector('[data-order-move="' + (up ? 'down' : 'up') + '"]') : b;
+            if (focus) focus.focus();
+        });
+    });
+})();
+</script>

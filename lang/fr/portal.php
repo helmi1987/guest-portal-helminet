@@ -964,6 +964,13 @@ return [
         'security' => 'Sécurité',
         'require_2fa' => 'Exiger la connexion à deux facteurs (TOTP) pour tous les utilisateurs',
         'require_2fa_help' => 'Les utilisateurs sans connexion à deux facteurs sont dirigés vers leur profil pour la configurer.',
+        'order' => [
+            'up' => 'Monter',
+            'down' => 'Descendre',
+            'up_label' => 'Monter :item',
+            'down_label' => 'Descendre :item',
+            'invalid' => 'L\'ordre n\'est pas valide : chaque entrée doit apparaître exactement une fois.',
+        ],
         'login_methods' => [
             'title' => 'Méthodes de connexion des invités',
             'help' => 'Les méthodes de connexion proposées aux invités sur le portail. Une méthode activée n\'est proposée que si ses prérequis sont remplis ; l\'indication à côté dit ce qui manque.',
@@ -983,11 +990,13 @@ return [
             'account_federation_hint' => 'Dans une fédération, toutes les instances doivent avoir au moins la version 0.24.0 avant d\'activer le compte utilisateur (nouveau type d\'accès).',
             'hint_limited' => 'Pas proposée actuellement : le hub est injoignable (mode restreint de la fédération).',
             'at_least_one' => 'Au moins une méthode de connexion doit rester activée.',
+            'order_help' => 'Les flèches définissent l\'ordre dans lequel les invités voient les méthodes ; la première disponible est mise en avant. Les déplacements s\'appliquent à l\'enregistrement.',
         ],
         'social' => [
             'title' => 'Connexion sociale',
             'help' => 'Les invités se connectent avec leur compte chez l\'un de ces fournisseurs. Enregistrer le portail chez le fournisseur (guide par fournisseur), saisir l\'ID client et le secret, enregistrer puis cliquer sur « Vérifier ». Les secrets sont stockés chiffrés et ne sont plus jamais affichés.',
             'federation_hint' => "Dans une fédération, toutes les instances doivent avoir au moins la version 0.22.0 avant d'activer la connexion sociale (nouvelles colonnes invité et nouveau type d'accès).",
+            'order_help' => 'Les flèches définissent l\'ordre des fournisseurs dans le bloc de connexion sociale des invités. Les déplacements s\'appliquent à l\'enregistrement.',
             'duration' => 'Durée d\'accès (heures, à partir de la connexion)',
             'origins_help' => 'Chaque adresse invité nécessite sa propre URI de redirection chez le fournisseur : APP_URL et l\'URL du portail de chaque site (actuellement :count). Les listes ci-dessous les contiennent toutes.',
             'walled_garden' => 'Le walled garden du routeur doit autoriser les hôtes du fournisseur ; le script RouterOS généré les contient dès que le fournisseur est activé.',

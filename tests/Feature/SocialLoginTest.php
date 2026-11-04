@@ -8,6 +8,7 @@ use App\Auth\Social\WalledGarden;
 use App\Enums\GrantType;
 use App\Federation\Topology;
 use App\Http\Controllers\Guest\SocialLoginController;
+use App\Models\Channel;
 use App\Models\Grant;
 use App\Models\Guest;
 use App\Models\Instance;
@@ -84,6 +85,38 @@ class SocialLoginTest extends TestCase
         $this->guest()->get('/portal?method=sms')->assertOk()->assertSee('id="gp-methods"', false);
         // A prefilled code (site code notice) opens the code page directly
         $this->enter(['code' => '123456'])->assertOk()->assertSee('value="123456"', false)->assertDontSee('id="gp-methods"', false);
+    }
+
+    public function test_chooser_follows_the_configured_order(): void
+    {
+        $this->configure(['google', 'github']);
+        Channel::create(['kind' => 'notification', 'driver' => 'webhook', 'name' => 'Hook', 'enabled' => true,
+            'config' => ['url' => 'https://hooks.example.com/in', 'secret' => 'hook-secret']]);
+
+        // Default order: code first (primary button), social box after approval.
+        $this->enter()->assertOk()->assertSeeInOrder(['gp-method-code', 'gp-method-approval', 'gp-method-social'], false)
+            ->assertSeeInOrder([__('portal.guest.social_with', ['provider' => 'Google']), __('portal.guest.social_with', ['provider' => 'GitHub'])])
+            ->assertSee('gp-method-code btn"', false);
+
+        LoginMethods::save(LoginMethods::all(), ['social', 'approval', 'sms', 'account', 'code']);
+        SocialSettings::save(['order' => ['github', 'facebook', 'apple', 'google']]);
+        $this->enter()->assertOk()->assertSeeInOrder(['gp-method-social', 'gp-method-approval', 'gp-method-code'], false)
+            ->assertSeeInOrder([__('portal.guest.social_with', ['provider' => 'GitHub']), __('portal.guest.social_with', ['provider' => 'Google'])])
+            ->assertSee('gp-method-code gp-button-secondary', false);
+
+        LoginMethods::save(LoginMethods::all(), ['approval', 'code', 'social', 'sms', 'account']);
+        $this->enter()->assertOk()->assertSeeInOrder(['gp-method-approval', 'gp-method-code', 'gp-method-social'], false)
+            ->assertSee('gp-method-approval btn"', false)->assertSee('gp-method-code gp-button-secondary', false);
+        $this->guest()->get('/portal?method=social')->assertOk()
+            ->assertSeeInOrder([route('guest.social.start', 'github'), route('guest.social.start', 'google')], false);
+
+        // The admin preview of the chooser uses the same order.
+        $this->onZone('admin')->actingAs(User::factory()->admin()->create())->get('/admin/texts/preview?locale=en&screen=chooser')
+            ->assertOk()->assertSeeInOrder(['gp-method-approval', 'gp-method-code', 'gp-method-social', 'gp-method-sms', 'gp-method-account'], false);
+
+        // One method left: shown directly whatever the order.
+        LoginMethods::save([LoginMethods::CODE => true, LoginMethods::SOCIAL => false, LoginMethods::APPROVAL => false, LoginMethods::SMS => false]);
+        $this->enter()->assertOk()->assertSee('gp-step-portal-code', false)->assertDontSee('id="gp-methods"', false);
     }
 
     public function test_no_available_method_shows_an_error_page(): void

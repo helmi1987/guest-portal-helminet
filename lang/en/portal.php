@@ -964,6 +964,13 @@ return [
         'security' => 'Security',
         'require_2fa' => 'Require two-factor login (TOTP) for all users',
         'require_2fa_help' => 'Users without two-factor login are sent to their profile to set it up before they can use the admin UI.',
+        'order' => [
+            'up' => 'Move up',
+            'down' => 'Move down',
+            'up_label' => 'Move :item up',
+            'down_label' => 'Move :item down',
+            'invalid' => 'The order is invalid: every entry must appear exactly once.',
+        ],
         'login_methods' => [
             'title' => 'Guest login methods',
             'help' => 'The login methods guests are offered on the portal. A method that is switched on is only offered when its prerequisites are met; the hint next to it says what is missing.',
@@ -983,11 +990,13 @@ return [
             'account_federation_hint' => 'In a federation every instance must run version 0.24.0 or later before the user account login is switched on (new grant type).',
             'hint_limited' => 'Not offered right now: the hub is not reachable (federation limited mode).',
             'at_least_one' => 'At least one login method must stay switched on.',
+            'order_help' => 'Use the arrows to set the order in which guests see the methods; the first available one is highlighted. Moves take effect when saved.',
         ],
         'social' => [
             'title' => 'Social login',
             'help' => 'Guests log in with their account at one of these providers. Register the portal at the provider (setup guide per provider), enter client ID and secret, save, then press “Check”. Secrets are stored encrypted and never shown again.',
             'federation_hint' => 'In a federation every instance must run version 0.22.0 or later before social login is switched on (new guest columns and grant type).',
+            'order_help' => 'Use the arrows to set the order of the providers in the guest\'s social login box. Moves take effect when saved.',
             'duration' => 'Access duration (hours, from login)',
             'origins_help' => 'Every guest address needs its own redirect URI at the provider: APP_URL and the portal URL of each site (currently :count). The lists below contain all of them.',
             'walled_garden' => 'The router’s walled garden must allow the provider’s hosts; the generated RouterOS script contains them once the provider is enabled.',

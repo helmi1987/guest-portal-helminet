@@ -964,6 +964,13 @@ return [
         'security' => 'Sicurezza',
         'require_2fa' => 'Richiedi l’accesso a due fattori (TOTP) per tutti gli utenti',
         'require_2fa_help' => 'Gli utenti senza accesso a due fattori vengono indirizzati al proprio profilo per configurarlo.',
+        'order' => [
+            'up' => 'Sposta su',
+            'down' => 'Sposta giù',
+            'up_label' => 'Sposta su :item',
+            'down_label' => 'Sposta giù :item',
+            'invalid' => 'L\'ordine non è valido: ogni voce deve comparire esattamente una volta.',
+        ],
         'login_methods' => [
             'title' => 'Metodi di accesso degli ospiti',
             'help' => 'I metodi di accesso offerti agli ospiti sul portale. Un metodo attivato viene offerto solo se i suoi prerequisiti sono soddisfatti; l\'indicazione accanto dice cosa manca.',
@@ -983,11 +990,13 @@ return [
             'account_federation_hint' => 'In una federazione tutte le istanze devono avere almeno la versione 0.24.0 prima di attivare l\'account utente (nuovo tipo di accesso).',
             'hint_limited' => 'Al momento non offerto: l\'hub non è raggiungibile (modalità limitata della federazione).',
             'at_least_one' => 'Almeno un metodo di accesso deve restare attivo.',
+            'order_help' => 'Con le frecce si definisce l\'ordine in cui gli ospiti vedono i metodi; il primo disponibile è evidenziato. Gli spostamenti valgono dopo il salvataggio.',
         ],
         'social' => [
             'title' => 'Accesso social',
             'help' => 'Gli ospiti accedono con il loro account presso uno di questi provider. Registrare il portale presso il provider (guida per ogni provider), inserire client ID e secret, salvare e poi premere «Verifica». I secret vengono salvati cifrati e non vengono più mostrati.',
             'federation_hint' => 'In una federazione tutte le istanze devono avere almeno la versione 0.22.0 prima di attivare il login social (nuove colonne ospite e nuovo tipo di accesso).',
+            'order_help' => 'Con le frecce si definisce l\'ordine dei provider nel riquadro di accesso social degli ospiti. Gli spostamenti valgono dopo il salvataggio.',
             'duration' => 'Durata dell\'accesso (ore, dall\'accesso)',
             'origins_help' => 'Ogni indirizzo ospite richiede il proprio URI di reindirizzamento presso il provider: APP_URL e l\'URL del portale di ogni sede (attualmente :count). Gli elenchi qui sotto li contengono tutti.',
             'walled_garden' => 'Il walled garden del router deve consentire gli host del provider; lo script RouterOS generato li contiene non appena il provider è attivato.',

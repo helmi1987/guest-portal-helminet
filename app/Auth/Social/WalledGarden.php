@@ -36,7 +36,8 @@ final class WalledGarden
             return [];
         }
         $hosts = [];
-        foreach (SocialSettings::enabledProviders() as $provider) {
+        // Fixed provider order, not the display order: reordering must not change the router configuration.
+        foreach (array_filter(SocialSettings::PROVIDERS, SocialSettings::isReady(...)) as $provider) {
             array_push($hosts, ...self::HOSTS[$provider]);
         }
 

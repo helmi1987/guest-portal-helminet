@@ -6,6 +6,7 @@ use App\Auth\Social\AppleClientSecret;
 use App\Auth\Social\LoginMethods;
 use App\Auth\Social\ProviderCheck;
 use App\Auth\Social\SocialSettings;
+use App\Auth\Social\WalledGarden;
 use App\Federation\DataKey;
 use App\Federation\FederatedSecrets;
 use App\Models\AuditLog;
@@ -186,7 +187,7 @@ class SocialSettingsTest extends TestCase
             'apple' => ['enabled' => false, 'credential_changed' => false],
             'facebook' => ['enabled' => false, 'credential_changed' => false],
             'github' => ['enabled' => false, 'credential_changed' => true],
-        ]], $audits[0]->data);
+        ], 'order' => SocialSettings::PROVIDERS], $audits[0]->data);
         $this->assertFalse($audits[1]->data['providers']['google']['credential_changed']);
         $this->assertTrue($audits[2]->data['providers']['google']['credential_changed']);
         $this->assertNoSecretsIn(json_encode($audits->pluck('data')).implode("\n", $this->logs));
@@ -406,5 +407,74 @@ class SocialSettingsTest extends TestCase
         $this->assertSame(self::GOOGLE_SECRET, SocialSettings::secret('google'));
         $this->assertSame(self::appleKey(), SocialSettings::secret('apple'));
         $this->assertSame(0, SocialSettings::reencryptSecrets());
+    }
+
+    // --- Display order (v0.25.0, decision 2026-11-04) -----------------------------------------------
+
+    public function test_provider_order_is_saved_moved_and_shown(): void
+    {
+        $admin = $this->admin();
+        $rows = function () use ($admin): array {
+            $html = $this->onZone('admin')->actingAs($admin)->get('/admin/settings')->assertOk()->getContent();
+            preg_match_all('/data-social-provider="([a-z]+)"/', $html, $m);
+
+            return $m[1];
+        };
+        $this->assertSame(SocialSettings::PROVIDERS, SocialSettings::order());
+        $this->assertSame(SocialSettings::PROVIDERS, $rows());
+
+        $order = ['github', 'facebook', 'google', 'apple'];
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form() + ['order' => $order])
+            ->assertSessionHasNoErrors();
+        $this->assertSame($order, SocialSettings::order());
+        $this->assertSame($order, $rows());
+        $this->assertSame($order, AuditLog::where('action', 'settings.social')->sole()->data['order']);
+
+        // Arrow button without JS; a save without order fields (and SocialSettings::save() without order) keeps it.
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form() + ['move' => 'google:up'])
+            ->assertSessionHasNoErrors();
+        $this->assertSame(['github', 'google', 'facebook', 'apple'], SocialSettings::order());
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form())->assertSessionHasNoErrors();
+        SocialSettings::save(['duration_s' => 3600]);
+        $this->assertSame(['github', 'google', 'facebook', 'apple'], SocialSettings::order());
+    }
+
+    public function test_invalid_provider_order_is_rejected(): void
+    {
+        $admin = $this->admin();
+        foreach ([['google', 'apple', 'facebook'], ['google', 'google', 'facebook', 'github'], ['google', 'apple', 'facebook', 'code'], 'google'] as $order) {
+            $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form() + ['order' => $order])
+                ->assertSessionHasErrors(['order' => __('portal.settings.order.invalid')]);
+        }
+        $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form() + ['move' => 'code:up'])
+            ->assertSessionHasErrors('move');
+        $this->assertSame(0, AuditLog::where('action', 'settings.social')->count());
+        $this->assertSame(SocialSettings::PROVIDERS, SocialSettings::order());
+
+        // Stored values are read leniently (older versions, replicated values).
+        Setting::put(SocialSettings::KEY, ['order' => ['apple', 'nope', 'apple']]);
+        $this->assertSame(['apple', 'google', 'facebook', 'github'], SocialSettings::order());
+        Setting::put(SocialSettings::KEY, ['order' => 'apple']);
+        $this->assertSame(SocialSettings::PROVIDERS, SocialSettings::order());
+    }
+
+    public function test_provider_order_sorts_the_offered_providers_but_not_the_walled_garden(): void
+    {
+        LoginMethods::save(['code' => true, 'social' => true]);
+        $this->configureAll();
+        $hosts = WalledGarden::hosts();
+        $this->assertSame(SocialSettings::PROVIDERS, SocialSettings::enabledProviders());
+
+        SocialSettings::save(['order' => ['facebook', 'github', 'apple', 'google']]);
+        $this->assertSame(['facebook', 'github', 'apple', 'google'], SocialSettings::enabledProviders());
+        $this->assertSame($hosts, WalledGarden::hosts());
+        // Reordering does not ask for the router script.
+        $this->onZone('admin')->actingAs($this->admin())->post('/admin/settings/social', $this->form([
+            'google' => ['enabled' => '1', 'client_id' => 'google-client.apps.example.com'],
+            'apple' => ['enabled' => '1', 'client_id' => 'com.example.portal', 'team_id' => 'TEAM123456', 'key_id' => 'KEY1234567'],
+            'facebook' => ['enabled' => '1', 'client_id' => '1234567890'],
+            'github' => ['enabled' => '1', 'client_id' => 'gh-client-id'],
+        ]) + ['move' => 'google:up'])->assertSessionHasNoErrors()->assertSessionMissing('warning');
+        $this->assertSame(['facebook', 'github', 'google', 'apple'], SocialSettings::enabledProviders());
     }
 }

@@ -24,6 +24,8 @@ can be supported via drivers (contributions welcome, see [docs/nas-driver.md](do
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.25: display order of the guest login methods and of the social login providers set by the admin
+  (up/down arrows in Settings, global, hub-only in a federation).
 - v0.24: guest login with the site's Active Directory / LDAP account (user name and password checked by the
   portal with an LDAP bind, LDAPS with certificate check by default, per site on the site page with check
   button, optional group, lockout per account, grant type `account`; docs/guest-network-setup.md 6.7)

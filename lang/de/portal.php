@@ -964,6 +964,13 @@ return [
         'security' => 'Sicherheit',
         'require_2fa' => 'Zwei-Faktor-Anmeldung (TOTP) für alle Benutzer verlangen',
         'require_2fa_help' => 'Benutzer ohne Zwei-Faktor-Anmeldung werden zuerst auf ihr Profil geleitet, um sie einzurichten.',
+        'order' => [
+            'up' => 'Nach oben',
+            'down' => 'Nach unten',
+            'up_label' => ':item nach oben verschieben',
+            'down_label' => ':item nach unten verschieben',
+            'invalid' => 'Die Reihenfolge ist ungültig: jeder Eintrag muss genau einmal vorkommen.',
+        ],
         'login_methods' => [
             'title' => 'Anmeldearten für Gäste',
             'help' => 'Welche Anmeldearten Gästen im Portal angeboten werden. Eine eingeschaltete Art wird nur angeboten, wenn ihre Voraussetzungen erfüllt sind; der Hinweis daneben sagt, was fehlt.',
@@ -983,11 +990,13 @@ return [
             'account_federation_hint' => 'In einer Föderation müssen alle Instanzen mindestens Version 0.24.0 haben, bevor das Benutzerkonto eingeschaltet wird (neuer Grant-Typ).',
             'hint_limited' => 'Zurzeit nicht angeboten: der Hub ist nicht erreichbar (eingeschränkter Modus der Föderation).',
             'at_least_one' => 'Mindestens eine Anmeldeart muss eingeschaltet bleiben.',
+            'order_help' => 'Mit den Pfeilen wird die Reihenfolge festgelegt, in der Gäste die Anmeldearten sehen; die erste verfügbare ist hervorgehoben. Verschiebungen gelten nach dem Speichern.',
         ],
         'social' => [
             'title' => 'Social Login',
             'help' => 'Gäste melden sich mit ihrem Konto bei einem dieser Anbieter an. Das Portal beim Anbieter registrieren (Anleitung pro Anbieter), Client-ID und Secret eintragen, speichern und dann «Prüfen» drücken. Secrets werden verschlüsselt gespeichert und nie mehr angezeigt.',
             'federation_hint' => 'In einer Föderation müssen alle Instanzen mindestens Version 0.22.0 haben, bevor Social Login eingeschaltet wird (neue Gast-Spalten und Grant-Typ).',
+            'order_help' => 'Mit den Pfeilen wird die Reihenfolge der Anbieter im Social-Login-Feld der Gäste festgelegt. Verschiebungen gelten nach dem Speichern.',
             'duration' => 'Zugangsdauer (Stunden, ab Anmeldung)',
             'origins_help' => 'Jede Gast-Adresse braucht beim Anbieter eine eigene Redirect-URI: APP_URL und die Portal-URL jedes Standorts (zurzeit :count). Die Listen unten enthalten alle.',
             'walled_garden' => 'Der Walled Garden des Routers muss die Hosts des Anbieters erlauben; das generierte RouterOS-Skript enthält sie, sobald der Anbieter aktiviert ist.',

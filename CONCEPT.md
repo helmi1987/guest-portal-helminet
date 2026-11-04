@@ -273,6 +273,16 @@ UniFi: see [docs/unifi-feasibility.md](docs/unifi-feasibility.md) (study 2026-11
   links `?method=<m>`, no JS); exactly one: its page directly; a prefilled code opens the code page. Each
   method page has its own form and links back to the chooser; the access-ended and router-failed notices
   appear on the first page only. None available: error page. The server refuses a disabled method (403).
+  Decision 2026-11-04 (v0.25.0): order of login methods and social providers is configurable (global,
+  hub-only). Settings → "Guest login methods" and "Social login" have up/down arrow buttons per row; the
+  order is stored in the existing replicated settings (`login_methods.order`, `social_login.order`, lists of
+  keys) and applies to the chooser (the first available method keeps the primary button), the social box, the
+  admin settings lists and the guest text preview. Default: the previous fixed order (code, account, SMS,
+  approval, social; Google, Apple, Facebook, GitHub). Stored values are read leniently (unknown and duplicate
+  entries dropped, missing keys appended in default order); form input must list every key exactly once.
+  Without JS an arrow button submits the form with `move=<key>:<up|down>` and saves it; with JS the row moves
+  in place and is saved with the form. The walled-garden host list keeps the fixed provider order (reordering
+  does not change the router script). Audited in `settings.login_methods` / `settings.social` (`order`).
 - Required for all methods: first name, last name, acceptance of current terms version.
   Decision 2026-11-03 (v0.24.1, email on the code login): the code page (normal codes and the site code) also
   requires an email address (`email:rfc`, max. 191 = column length; no DNS check, the guest has no internet yet),
@@ -577,7 +587,8 @@ All login methods produce a **grant**; a code is a grant created in advance.
   `amr`/`acr` and `email_verified` values **(to verify)**.
 - **Login methods and social login settings** (decision 2026-11-03, v0.22.0; admin only, hub-only
   in a federation via `Federation::SECURITY_SETTINGS`): Settings → "Guest login methods" has one switch
-  per method (code, SMS, push approval, social; at least one stays on, audited `settings.login_methods`);
+  per method (code, SMS, push approval, social; at least one stays on, audited `settings.login_methods`)
+  and up/down arrows for the display order (decision 2026-11-04, v0.25.0, §7.1; same for the providers);
   a switched-on method whose prerequisite is missing (enabled SMS provider, enabled notification channel,
   a ready social provider, hub reachable) shows a hint, because guests are only offered available
   methods. Settings → "Social login": access duration (hours, from login) and one card per provider

@@ -22,6 +22,7 @@ use App\Sms\OtpService;
 use App\Sms\PhoneNumber;
 use App\Sms\SmsSettings;
 use App\Support\Audit;
+use App\Support\DisplayOrder;
 use App\Support\LocalInstance;
 use App\Support\Redact;
 use Illuminate\Http\Client\ConnectionException;
@@ -64,6 +65,7 @@ class SettingsController extends Controller
             'oidcRedirectUri' => OidcSettings::redirectUri(),
             'branding' => BrandingSettings::global(),
             'loginMethods' => LoginMethods::all(),
+            'loginMethodOrder' => LoginMethods::order(),
             'loginMethodHints' => $this->loginMethodHints(),
             'socialDurationHours' => round(SocialSettings::durationS() / 3600, 2),
             'accountDurationHours' => round(DirectorySettings::durationS() / 3600, 2),
@@ -103,7 +105,9 @@ class SettingsController extends Controller
     private function socialStatus(): array
     {
         $out = [];
-        foreach (SocialSettings::all()['providers'] as $provider => $config) {
+        $providers = SocialSettings::all()['providers'];
+        foreach (SocialSettings::order() as $provider) {
+            $config = $providers[$provider];
             // secretBroken() first: secret() logs a warning for an unreadable secret on every call.
             $broken = SocialSettings::secretBroken($provider);
             $hasSecret = ! $broken && SocialSettings::hasSecret($provider);
@@ -133,33 +137,75 @@ class SettingsController extends Controller
     }
 
     /**
+     * Validation rules of the display order fields (decision 2026-11-04): "order[]" lists every key once in
+     * the new order (optional, absent keeps the stored order); "move" is an arrow button pressed without
+     * JS ("<key>:up" / "<key>:down"), applied to that order on save.
+     *
+     * @param  list<string>  $keys
+     * @return array<string, list<mixed>>
+     */
+    private static function orderRules(array $keys): array
+    {
+        return [
+            'order' => ['nullable', function (string $attribute, mixed $value, \Closure $fail) use ($keys) {
+                if (! DisplayOrder::isPermutation($value, $keys)) {
+                    $fail(__('portal.settings.order.invalid'));
+                }
+            }],
+            'move' => ['nullable', 'string', Rule::in(DisplayOrder::moveValues($keys))],
+        ];
+    }
+
+    /**
+     * New display order from the validated "order[]" and "move" fields; null when neither was sent.
+     *
+     * @param  list<string>  $current
+     * @return list<string>|null
+     */
+    private static function orderFrom(Request $request, array $current): ?array
+    {
+        $order = $request->has('order') && $request->input('order') !== null ? array_values($request->input('order')) : null;
+        $move = $request->input('move');
+        if (is_string($move) && $move !== '') {
+            [$key, $direction] = explode(':', $move, 2);
+            $order = DisplayOrder::move($order ?? $current, $key, $direction);
+        }
+
+        return $order;
+    }
+
+    /**
      * Guest login methods (CONCEPT.md §9, decision 2026-11-03): one switch per method, at least one stays on;
-     * default access duration of the account login (v0.24.0; a site may set its own).
+     * display order (decision 2026-11-04); default access duration of the account login (v0.24.0; a site
+     * may set its own).
      */
     public function updateLoginMethods(Request $request): RedirectResponse
     {
         $request->validate(collect(LoginMethods::ALL)->mapWithKeys(fn ($m) => ["methods.$m" => ['boolean']])->all()
-            + ['account_duration_hours' => ['nullable', 'numeric', 'between:'.round(DirectorySettings::MIN_DURATION_S / 3600, 4).','.(DirectorySettings::MAX_DURATION_S / 3600)]],
+            + ['account_duration_hours' => ['nullable', 'numeric', 'between:'.round(DirectorySettings::MIN_DURATION_S / 3600, 4).','.(DirectorySettings::MAX_DURATION_S / 3600)]]
+            + self::orderRules(LoginMethods::ALL),
             [], ['account_duration_hours' => __('portal.settings.login_methods.account_duration')]);
         $flags = collect(LoginMethods::ALL)->mapWithKeys(fn ($m) => [$m => $request->boolean("methods.$m")])->all();
         if (! in_array(true, $flags, true)) {
             throw ValidationException::withMessages(['methods' => __('portal.settings.login_methods.at_least_one')]);
         }
         $hostsBefore = WalledGarden::hosts();
-        LoginMethods::save($flags);
+        LoginMethods::save($flags, self::orderFrom($request, LoginMethods::order()));
         if ($request->filled('account_duration_hours')) {
             DirectorySettings::saveDurationS((int) round((float) $request->input('account_duration_hours') * 3600));
         }
         // Lists, not flags by method name: Audit strips a key named "code".
         Audit::log('settings.login_methods', null, ['enabled' => array_keys(array_filter($flags)),
-            'disabled' => array_keys(array_diff_key($flags, array_filter($flags))), 'account_duration_s' => DirectorySettings::durationS()]);
+            'disabled' => array_keys(array_diff_key($flags, array_filter($flags))), 'account_duration_s' => DirectorySettings::durationS(),
+            'order' => LoginMethods::order()]);
 
         return $this->withWalledGardenHint(back()->with('status', __('portal.saved')), $hostsBefore);
     }
 
     /**
      * Social login providers (CONCEPT.md §9, decision 2026-11-03). An empty secret field keeps the stored
-     * secret, "remove" deletes it; secrets are never logged, audited or flashed back as old input.
+     * secret, "remove" deletes it; secrets are never logged, audited or flashed back as old input. Display
+     * order of the providers: decision 2026-11-04.
      */
     public function updateSocial(Request $request): RedirectResponse
     {
@@ -176,7 +222,7 @@ class SettingsController extends Controller
         $rules += [
             'providers.apple.team_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
             'providers.apple.key_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
-        ];
+        ] + self::orderRules(SocialSettings::PROVIDERS);
         $validator = Validator::make($request->all(), $rules, [
             'providers.apple.team_id.regex' => __('portal.settings.social.apple_id_invalid'),
             'providers.apple.key_id.regex' => __('portal.settings.social.apple_id_invalid'),
@@ -191,6 +237,9 @@ class SettingsController extends Controller
         $data = $validator->validated();
 
         $config = ['duration_s' => (int) round($data['social_duration_hours'] * 3600), 'providers' => []];
+        if (($order = self::orderFrom($request, SocialSettings::order())) !== null) {
+            $config['order'] = $order;
+        }
         $secrets = [];
         foreach (SocialSettings::PROVIDERS as $provider) {
             $input = $data['providers'][$provider] ?? [];
@@ -220,6 +269,7 @@ class SettingsController extends Controller
                 'enabled' => $config['providers'][$p]['enabled'],
                 'credential_changed' => $secrets[$p] !== null,
             ]])->all(),
+            'order' => SocialSettings::order(),
         ]);
 
         return $this->withWalledGardenHint(back()->with('status', __('portal.saved')), $hostsBefore);

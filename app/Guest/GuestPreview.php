@@ -135,7 +135,7 @@ final class GuestPreview
     {
         $portal = fn (?string $method, array $extra = []) => view('guest.portal', [
             'site' => $this->site,
-            'methods' => LoginMethods::ALL,
+            'methods' => LoginMethods::order(),
             'method' => $method,
             'terms' => TermsVersion::current($this->locale),
             'routerFailed' => false,

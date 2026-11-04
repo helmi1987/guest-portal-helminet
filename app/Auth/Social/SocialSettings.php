@@ -5,6 +5,7 @@ namespace App\Auth\Social;
 use App\Federation\DataKey;
 use App\Models\Setting;
 use App\Models\Site;
+use App\Support\DisplayOrder;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -13,7 +14,8 @@ use Throwable;
  * GitHub. Public settings live in one replicated, hub-only setting (Federation::SECURITY_SETTINGS);
  * every provider secret (client secret, for Apple the private key) is stored under its own key,
  * encrypted with the federation data key (CONCEPT.md §10.2), and never leaves this class except for
- * the token request.
+ * the token request. The display order of the providers in the guest's social box is set by the admin
+ * (decision 2026-11-04, v0.25.0) and stored in the same setting under "order"; default: PROVIDERS.
  */
 final class SocialSettings
 {
@@ -27,6 +29,7 @@ final class SocialSettings
 
     public const GITHUB = 'github';
 
+    /** Known providers in default display order (admin order: order()). */
     public const PROVIDERS = [self::GOOGLE, self::APPLE, self::FACEBOOK, self::GITHUB];
 
     /** Setting key of a provider secret. */
@@ -95,10 +98,18 @@ final class SocialSettings
         return $provider !== self::APPLE || ($config['team_id'] !== '' && $config['key_id'] !== '');
     }
 
+    /** @return list<string> all providers in the display order set by the admin (DisplayOrder::normalize()) */
+    public static function order(): array
+    {
+        $stored = Setting::get(self::KEY, []);
+
+        return DisplayOrder::normalize(is_array($stored) ? ($stored['order'] ?? null) : null, self::PROVIDERS);
+    }
+
     /** @return list<string> providers offered to guests, in display order */
     public static function enabledProviders(): array
     {
-        return array_values(array_filter(self::PROVIDERS, self::isReady(...)));
+        return array_values(array_filter(self::order(), self::isReady(...)));
     }
 
     public static function hasSecret(string $provider): bool
@@ -146,12 +157,13 @@ final class SocialSettings
     }
 
     /**
-     * @param  array{duration_s?: int, providers?: array<string, array<string, mixed>>}  $config
+     * @param  array{duration_s?: int, providers?: array<string, array<string, mixed>>, order?: list<string>}  $config  no order: the stored one stays
      * @param  array<string, string|null>  $secrets  provider => new secret; null keeps the stored one, '' removes it
      */
     public static function save(array $config, array $secrets = []): void
     {
         $current = self::all();
+        $order = DisplayOrder::normalize($config['order'] ?? self::order(), self::PROVIDERS);
         $providers = [];
         foreach (self::PROVIDER_DEFAULTS as $name => $defaults) {
             $own = $config['providers'][$name] ?? [];
@@ -161,6 +173,7 @@ final class SocialSettings
         Setting::put(self::KEY, [
             'duration_s' => max(60, (int) ($config['duration_s'] ?? $current['duration_s'])),
             'providers' => $providers,
+            'order' => $order,
         ]);
         foreach (self::PROVIDERS as $name) {
             if (array_key_exists($name, $secrets) && $secrets[$name] !== null) {
