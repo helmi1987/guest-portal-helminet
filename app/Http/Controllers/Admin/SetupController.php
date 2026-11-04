@@ -11,6 +11,7 @@ use App\Nas\NasDriver;
 use App\Nas\RouterOs\ProvisioningEditor;
 use App\Nas\RouterOs\RouterStateDriver;
 use App\Nas\RouterOs\RouterStateQuery;
+use App\Nas\UnifiDriver;
 use App\Support\Audit;
 use App\Support\PortalAddress;
 use Illuminate\Http\JsonResponse;
@@ -34,6 +35,12 @@ class SetupController extends Controller
 
     public function show(Site $site): View
     {
+        // UniFi (experimental, decision 2026-11-04): a controller checklist instead of RouterOS blocks.
+        $driver = $site->driver();
+        if ($driver instanceof UnifiDriver) {
+            return view('admin.sites.setup-controller', ['site' => $site, 'checklist' => $driver->checklist($site)]);
+        }
+
         return view('admin.sites.setup', $this->viewData($site));
     }
 

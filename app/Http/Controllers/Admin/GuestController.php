@@ -12,6 +12,7 @@ use App\Models\Instance;
 use App\Models\MacWhitelist;
 use App\Models\SessionSummary;
 use App\Models\Site;
+use App\Nas\ControllerSessions;
 use App\Support\Audit;
 use App\Support\LocalInstance;
 use Illuminate\Database\Eloquent\Builder;
@@ -80,6 +81,8 @@ class GuestController extends Controller
             'instanceNames' => Instance::withTrashed()->pluck('name', 'id'),
             'unreachable' => $remoteSessions['unreachable'],
             'staleBefore' => now()->subSeconds((int) config('portal.radius.stale_after')),
+            // Sites whose driver authorizes through a controller (UniFi): "no accounting" note, no stale badge.
+            'controllerSites' => Site::query()->get()->filter(fn (Site $site) => ControllerSessions::supports($site))->modelKeys(),
         ]);
     }
 

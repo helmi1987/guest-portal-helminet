@@ -86,7 +86,9 @@
                                 @php($session = ($sessions[$device->grant_id.'|'.$device->mac] ?? collect())->first())
                                 @php($open = $session && $session->stopped_at === null)
                                 {{-- Open but without accounting update for too long: Stop probably lost. --}}
-                                @php($stale = $open && ($session->accounting_max_last_update_at ? \Illuminate\Support\Carbon::parse($session->accounting_max_last_update_at) : $session->started_at)->lt($staleBefore))
+                                {{-- Controller site (UniFi): no RADIUS accounting, the session stands for the authorization. --}}
+                                @php($viaController = $session && in_array($session->site_id, $controllerSites, true))
+                                @php($stale = $open && ! $viaController && ($session->accounting_max_last_update_at ? \Illuminate\Support\Carbon::parse($session->accounting_max_last_update_at) : $session->started_at)->lt($staleBefore))
                                 @php($online = $open && ! $stale)
                                 <div class="mb-2">
                                     <span class="font-mono">{{ $device->mac }}</span>
@@ -103,6 +105,9 @@
                                     @endif
                                     @if ($session)
                                         <div>IP {{ $session->ip ?? '–' }} · {{ __('portal.grants.started_at') }} {{ \App\Support\LocalTime::format($session->started_at, 'Y-m-d H:i') }}@if ($session->stopped_at) · {{ __('portal.grants.stopped_at') }} {{ \App\Support\LocalTime::format($session->stopped_at, 'Y-m-d H:i') }}@endif</div>
+                                        @if ($viaController)
+                                            <div class="text-slate-500" data-controller-session>{{ __('portal.guests.controller_session') }}</div>
+                                        @endif
                                         @if ($session->accounting_sum_bytes_in !== null)
                                             <div>↓ {{ \App\Support\Bytes::format($session->accounting_sum_bytes_out) }} · ↑ {{ \App\Support\Bytes::format($session->accounting_sum_bytes_in) }}</div>
                                         @endif

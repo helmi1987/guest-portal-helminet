@@ -9,6 +9,8 @@ final class NasDrivers
     /** @var array<string, class-string<NasDriver>> */
     public const DRIVERS = [
         'mikrotik_ros7' => MikrotikRos7Driver::class,
+        // Experimental, controller API instead of RADIUS (decision 2026-11-04, v0.27.0).
+        UnifiDriver::KEY => UnifiDriver::class,
     ];
 
     public static function make(string $driver): NasDriver

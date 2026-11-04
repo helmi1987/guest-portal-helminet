@@ -21,7 +21,7 @@ final class GuestTexts
     /** Error page kinds (guest.error_pages.<kind>.title / .text). */
     public const ERROR_KINDS = ['no_hotspot', 'misconfigured', 'expired', 'revoked', 'locked', 'router_failed',
         'approval_denied', 'approval_expired', 'approval_busy', 'sms_busy', 'sms_failed', 'site_code_full',
-        'no_login_method', 'method_disabled', 'social_failed', 'account_unavailable'];
+        'no_login_method', 'method_disabled', 'social_failed', 'account_unavailable', 'controller_failed'];
 
     /** Editable keys (portal.<key>), grouped as in the admin form; errors: see ERROR_KINDS. */
     public const KEYS = [
@@ -37,7 +37,8 @@ final class GuestTexts
         'approval' => ['guest.approval_request', 'guest.approval_waiting_title', 'guest.approval_waiting'],
         'social' => ['guest.social_with', 'guest.social_hint', 'guest.social_name_title', 'guest.social_name_intro'],
         'status' => ['guest.connecting', 'guest.waiting', 'guest.online', 'guest.remaining', 'guest.online_hint',
-            'guest.continue', 'guest.noscript', 'guest.try_again'],
+            'guest.continue', 'guest.noscript', 'guest.try_again', 'guest.controller_connected', 'guest.controller_unknown',
+            'guest.controller_refresh', 'guest.controller_continue'],
         'notices' => ['guest.limited_mode', 'guest.router_failed_notice', 'guest.access_ended.disconnected',
             'guest.access_ended.revoked', 'guest.access_ended.expired', 'guest.access_ended.sign_in_again'],
         'errors' => [
@@ -57,6 +58,7 @@ final class GuestTexts
             'guest.error_pages.method_disabled.title', 'guest.error_pages.method_disabled.text',
             'guest.error_pages.social_failed.title', 'guest.error_pages.social_failed.text',
             'guest.error_pages.account_unavailable.title', 'guest.error_pages.account_unavailable.text',
+            'guest.error_pages.controller_failed.title', 'guest.error_pages.controller_failed.text',
         ],
     ];
 

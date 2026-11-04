@@ -18,6 +18,7 @@ use App\Http\Controllers\Admin\SettingsController;
 use App\Http\Controllers\Admin\SetupController;
 use App\Http\Controllers\Admin\SiteCodeController;
 use App\Http\Controllers\Admin\SiteController;
+use App\Http\Controllers\Admin\SiteControllerSettingsController;
 use App\Http\Controllers\Admin\SiteDirectoryController;
 use App\Http\Controllers\Admin\TermsController;
 use App\Http\Controllers\Admin\ToolboxController;
@@ -49,6 +50,9 @@ Route::middleware(['zone:guest', 'locale', 'guest.texts'])->group(function () {
     Route::view('/', 'guest.landing')->name('guest.landing');
     Route::get('/lang/{locale}', LocaleController::class)->name('guest.locale');
     Route::get('/portal', [PortalController::class, 'show'])->name('guest.portal');
+    // UniFi external portal redirect (experimental, decision 2026-11-04): /guest/s/<UniFi site>/?ap=..&id=..
+    Route::get('/guest/s/{unifiSite}', [PortalController::class, 'unifiRedirect'])->name('guest.unifi')
+        ->where('unifiSite', '[A-Za-z0-9._-]{1,64}')->middleware('throttle:60,1,guest-unifi');
     Route::post('/portal/code', [PortalController::class, 'redeem'])->name('guest.redeem')
         ->middleware('throttle:20,1,guest-code');
     // Directory account login (CONCEPT.md §7.2 E): user name and password of the site's AD / LDAP.
@@ -206,6 +210,10 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::put('/sites/{site}/directory', [SiteDirectoryController::class, 'update'])->name('sites.directory');
                 Route::post('/sites/{site}/directory/check', [SiteDirectoryController::class, 'check'])->name('sites.directory.check')
                     ->middleware('throttle:10,1,directory-check');
+                // Controller of a UniFi site (experimental, decision 2026-11-04): settings and check button.
+                Route::put('/sites/{site}/controller', [SiteControllerSettingsController::class, 'update'])->name('sites.controller');
+                Route::post('/sites/{site}/controller/check', [SiteControllerSettingsController::class, 'check'])->name('sites.controller.check')
+                    ->middleware('throttle:10,1,controller-check');
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');

@@ -21,7 +21,9 @@ use App\Models\Site;
 use App\Models\SiteCode;
 use App\Models\TermsAcceptance;
 use App\Models\TermsVersion;
+use App\Nas\ControllerSessions;
 use App\Nas\HotspotContext;
+use App\Nas\Unifi\UnifiSettings;
 use App\Services\AccessEndedNotice;
 use App\Services\GrantManager;
 use App\Services\LoginThrottle;
@@ -104,6 +106,35 @@ class PortalController extends Controller
             // Returning device whose access ended (expired, revoked, disconnected); reason only.
             'endedNotice' => $first ? AccessEndedNotice::for($context->mac, $site) : null,
         ]);
+    }
+
+    /**
+     * Redirect of a UniFi external portal (decision 2026-11-04, v0.27.0, experimental):
+     * `/guest/s/<UniFi site>/?ap=..&id=..&t=..&url=..&ssid=..`. Resolves the portal site whose controller
+     * settings name this UniFi site (several: the one whose portal URL host is the request host) and
+     * continues at /portal with the parameters; the UniFi driver's parseRedirect() validates them.
+     */
+    public function unifiRedirect(Request $request, string $unifiSite): Response|RedirectResponse
+    {
+        $sites = UnifiSettings::sitesFor($unifiSite);
+        if ($sites->count() > 1) {
+            $host = strtolower($request->getHost());
+            $sites = $sites->filter(fn (Site $site) => strtolower((string) parse_url((string) $site->setting('portal_url'), PHP_URL_HOST)) === $host)->values();
+        }
+        if ($sites->count() !== 1) {
+            Log::warning('UniFi redirect for an unknown or ambiguous UniFi site', ['unifi_site' => $unifiSite, 'matches' => $sites->count()]);
+            $request->session()->forget('portal');
+
+            return $this->error('no_hotspot');
+        }
+        $query = ['site' => $sites->first()->slug, 'unifi_site' => $unifiSite];
+        foreach (['id', 'ap', 't', 'url', 'ssid'] as $key) {
+            if (is_string($value = $request->query($key)) && $value !== '' && strlen($value) <= 2048) {
+                $query[$key] = $value;
+            }
+        }
+
+        return redirect()->to(route('guest.portal', [], false).'?'.http_build_query($query));
     }
 
     public function redeem(Request $request, GrantManager $grants, SiteCodeManager $siteCodes, LoginThrottle $throttle): View|Response|RedirectResponse
@@ -417,13 +448,13 @@ class PortalController extends Controller
         return [$challenge, $site, $context];
     }
 
-    private function approvedHandoff(Request $request, GrantManager $grants, ApprovalRequest $approval, Site $site, HotspotContext $context): View|Response
+    private function approvedHandoff(Request $request, GrantManager $grants, ApprovalRequest $approval, Site $site, HotspotContext $context): View|Response|RedirectResponse
     {
         return $this->grantHandoff($request, $grants, $approval->grant, $approval->guest, $site, $context);
     }
 
     /** Handoff for a site-bound grant (approval, SMS); the context MAC was checked by the caller. */
-    private function grantHandoff(Request $request, GrantManager $grants, ?Grant $grant, Guest $guest, Site $site, HotspotContext $context): View|Response
+    private function grantHandoff(Request $request, GrantManager $grants, ?Grant $grant, Guest $guest, Site $site, HotspotContext $context): View|Response|RedirectResponse
     {
         if ($grant === null || ! $grant->isUsable()) {
             return $this->error($grant?->status() === GrantStatus::Revoked ? 'revoked' : 'expired', 403);
@@ -459,10 +490,17 @@ class PortalController extends Controller
         }
 
         $remaining = $grant->remainingSeconds();
+        // Controller sites (decision 2026-11-04): state from the controller on each load (no JavaScript),
+        // the original URL of the redirect only as a link.
+        $site = $token !== null ? Site::find($token->site_id) : null;
+        $controller = $token !== null && ControllerSessions::supports($site);
 
         return view('guest.status', [
             'remaining' => $remaining === null ? null : CarbonInterval::seconds(max(60, $remaining))->cascade()
                 ->locale(app()->getLocale())->forHumans(['parts' => 2, 'join' => true]),
+            'controller' => $controller,
+            'controllerStatus' => $controller ? $site->driver()->clientStatus($site, $token->mac) : null,
+            'origUrl' => $controller ? $request->session()->get('controller_orig_url') : null,
         ]);
     }
 
@@ -482,12 +520,13 @@ class PortalController extends Controller
                 ->contains(fn (SiteCode $c) => ! $c->isValid()) ? GrantStatus::Expired : null);
     }
 
-    /** 6-digit code from ?code= or from a portal URL with ?code= in the router's link-orig (prefill only). */
+    /** 6-digit code from ?code= or from a portal URL with ?code= in the router's link-orig or url (prefill only). */
     private function prefillCode(Request $request): ?string
     {
         $code = $request->query('code');
         if (! is_string($code)) {
-            $orig = $request->query('link-orig');
+            // MikroTik: link-orig; UniFi (guest.unifi route): url.
+            $orig = $request->query('link-orig') ?? $request->query('url');
             $path = is_string($orig) ? (string) parse_url($orig, PHP_URL_PATH) : '';
             parse_str(is_string($orig) && str_ends_with($path, '/portal') ? (string) parse_url($orig, PHP_URL_QUERY) : '', $query);
             $code = $query['code'] ?? null;

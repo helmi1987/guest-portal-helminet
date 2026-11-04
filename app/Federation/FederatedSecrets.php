@@ -10,6 +10,7 @@ use App\Models\Channel;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Models\User;
+use App\Nas\Unifi\UnifiSettings;
 
 /**
  * Replicated secrets encrypted with the federation data key (CONCEPT.md §10.2). After a key
@@ -66,6 +67,9 @@ class FederatedSecrets
 
         // Service account passwords of the site directories (account login)
         $count += DirectorySettings::reencryptPasswords();
+
+        // API keys and local account passwords of the UniFi controllers (site setting "controller")
+        $count += UnifiSettings::reencryptSecrets();
 
         return $count + (OidcSettings::reencryptSecret() ? 1 : 0) + SocialSettings::reencryptSecrets();
     }

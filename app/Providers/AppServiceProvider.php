@@ -14,6 +14,7 @@ use App\Federation\Outbox;
 use App\Federation\SessionHooks;
 use App\Http\Middleware\EnsureZone;
 use App\Models\Site;
+use App\Nas\UnifiDriver;
 use App\Support\Hlc;
 use App\Support\LocalInstance;
 use Illuminate\Database\Connection;
@@ -33,6 +34,8 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton(DataKey::class);
         $this->app->singleton(Outbox::class);
         $this->app->singleton(ApplyHooks::class);
+        // UniFi (experimental): one controller login per request, job or command run (UnifiDriver::client()).
+        $this->app->scoped(UnifiDriver::class);
         // Directory account login (CONCEPT.md §7.2 E): one LDAP client per login; tests bind a fake.
         $this->app->bind(DirectoryClient::class, LdapDirectoryClient::class);
         $this->app->bind(DirectoryLogin::class, fn ($app) => new DirectoryLogin(fn () => $app->make(DirectoryClient::class)));

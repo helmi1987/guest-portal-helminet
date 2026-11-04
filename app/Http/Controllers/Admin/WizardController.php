@@ -5,9 +5,11 @@ namespace App\Http\Controllers\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\NasClient;
 use App\Models\Site;
+use App\Nas\AuthorizesViaController;
 use App\Nas\MikrotikRos7Driver;
 use App\Tls\CertificateInfo;
 use App\Tls\CertificateSources;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\View\View;
@@ -67,8 +69,12 @@ class WizardController extends Controller
         return $n <= count(self::STEPS) ? $n : null;
     }
 
-    public function show(Request $request, Site $site, SetupController $setup): View
+    public function show(Request $request, Site $site, SetupController $setup): View|RedirectResponse
     {
+        // The wizard follows the RouterOS blocks; controller sites (UniFi) use the checklist of the setup page.
+        if ($site->driver() instanceof AuthorizesViaController) {
+            return redirect()->route('admin.sites.setup', $site);
+        }
         $data = $setup->viewData($site);
         $keys = array_keys(self::STEPS);
         $number = self::stepNumber($request->query('step')) ?? 1;

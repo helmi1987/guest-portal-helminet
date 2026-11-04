@@ -571,7 +571,7 @@ class Applier
         // The home instance configures its own site (setup wizard, site page); a new site may name its creator.
         $home = $local !== null ? ($local['home_instance_id'] ?? null) : ($row['home_instance_id'] ?? null);
 
-        return $home === $origin ? null : 'hotspot host names, portal URL or directory of a site changed by an instance that is neither hub nor home instance';
+        return $home === $origin ? null : 'hotspot host names, portal URL, directory or controller of a site changed by an instance that is neither hub nor home instance';
     }
 
     /**

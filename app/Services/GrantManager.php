@@ -6,12 +6,14 @@ use App\Enums\ExpiryMode;
 use App\Enums\GrantStatus;
 use App\Enums\GrantType;
 use App\Jobs\DisconnectSession;
+use App\Jobs\ReauthorizeControllerSession;
 use App\Models\Device;
 use App\Models\Grant;
 use App\Models\Guest;
 use App\Models\RadiusToken;
 use App\Models\Site;
 use App\Models\User;
+use App\Nas\ControllerSessions;
 use App\Support\Audit;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
@@ -222,6 +224,12 @@ class GrantManager
         $grant->save();
         if (! $grant->isUsable()) {
             $this->disconnectOpenSessions($grant);
+        } elseif ($grant->wasChanged('expires_at')) {
+            // Controller sites (decision 2026-11-04): the controller enforces the time limit itself, so a
+            // running authorization is renewed with the new remaining time (longer or shorter).
+            $grant->sessions()->whereNull('stopped_at')->with('site')->get()
+                ->filter(fn ($session) => ControllerSessions::supports($session->site))
+                ->each(fn ($session) => ReauthorizeControllerSession::dispatch($session->id)->afterCommit());
         }
     }
 }

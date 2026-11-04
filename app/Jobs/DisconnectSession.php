@@ -3,13 +3,15 @@
 namespace App\Jobs;
 
 use App\Models\SessionSummary;
+use App\Nas\ControllerSessions;
 use App\Radius\Disconnector;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use RuntimeException;
 
 /**
- * Ends all open RADIUS sessions of a session summary on the serving router.
+ * Ends all open RADIUS sessions of a session summary on the serving router; on a controller site
+ * (AuthorizesViaController) the controller ends the authorization instead and the summary is closed.
  */
 class DisconnectSession implements ShouldQueue
 {
@@ -25,6 +27,18 @@ class DisconnectSession implements ShouldQueue
     {
         $summary = SessionSummary::find($this->sessionSummaryId);
         if ($summary === null || $summary->stopped_at !== null) {
+            return;
+        }
+
+        // Controller site (decision 2026-11-04): end the authorization through the controller API.
+        if (ControllerSessions::supports($summary->site)) {
+            $summary->accounting()->update(['disconnect_sent_at' => now()]);
+            if (! $summary->site->driver()->deauthorizeClient($summary->site, $summary->mac)) {
+                throw new RuntimeException('Controller did not end the authorization of session '.$summary->id);
+            }
+            $summary->accounting()->whereNull('nas_client_id')->update(['terminate_cause' => 'Controller-Unauthorized']);
+            $summary->update(['stopped_at' => now()]);
+
             return;
         }
 

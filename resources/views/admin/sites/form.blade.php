@@ -3,7 +3,9 @@
         <h1 class="text-2xl font-semibold">{{ $site->exists ? $site->name : __('portal.sites.create') }}</h1>
         @if ($site->exists)
             <span class="flex flex-wrap gap-2">
-                <a href="{{ route('admin.sites.wizard', $site) }}" class="btn-light" data-wizard-link>{{ __('portal.wizard.open') }}</a>
+                @unless ($site->driver() instanceof \App\Nas\AuthorizesViaController)
+                    <a href="{{ route('admin.sites.wizard', $site) }}" class="btn-light" data-wizard-link>{{ __('portal.wizard.open') }}</a>
+                @endunless
                 <a href="{{ route('admin.sites.setup', $site) }}" class="btn">{{ __('portal.setup.open_assistant') }}</a>
             </span>
         @endif
@@ -47,7 +49,8 @@
         <div class="md:col-span-2"><button class="btn">{{ __('portal.save') }}</button></div>
     </form>
 
-    @if ($site->exists)
+    @php($viaController = $site->exists && $site->driver() instanceof \App\Nas\AuthorizesViaController)
+    @if ($site->exists && ! $viaController)
         @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $site->driver()->setupCommands($site, [], false)['diagnostics']['verify'] ?? ''])
     @endif
 
@@ -69,11 +72,16 @@
             <a href="{{ route('admin.site-codes.show', $site) }}" class="btn-light">{{ __('portal.site_codes.manage') }}</a>
         </section>
 
+        @if ($viaController)
+            @include('admin.sites.controller', ['site' => $site])
+        @endif
+
         @include('admin.sites.directory', ['site' => $site])
 
         @include('admin.branding.site', ['overrides' => \App\Branding\BrandingSettings::siteOverrides($site),
             'global' => \App\Branding\BrandingSettings::global()])
 
+        @unless ($viaController)
         <section class="card mb-6">
             <div class="mb-4 flex items-center justify-between">
                 <h2 class="text-lg font-semibold">{{ __('portal.sites.routers') }}</h2>
@@ -155,6 +163,7 @@
                 <button class="btn">{{ __('portal.sites.add_router') }}</button>
             </form>
         </section>
+        @endunless
 
         <form method="POST" action="{{ route('admin.sites.destroy', $site) }}" onsubmit="return confirm(@js(__('portal.confirm')))">
             @csrf @method('DELETE') <button class="btn-danger">{{ __('portal.sites.delete') }}</button>

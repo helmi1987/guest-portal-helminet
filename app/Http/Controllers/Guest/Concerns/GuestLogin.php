@@ -6,7 +6,9 @@ use App\Auth\Social\LoginMethods;
 use App\Models\Grant;
 use App\Models\RadiusToken;
 use App\Models\Site;
+use App\Nas\ControllerSessions;
 use App\Nas\HotspotContext;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\URL;
@@ -38,12 +40,25 @@ trait GuestLogin
         return (LoginMethods::available($site)[$method] ?? false) ? null : $this->error('method_disabled', 403);
     }
 
-    protected function handoff(Request $request, Grant $grant, Site $site, HotspotContext $context, RadiusToken $token, string $password): View
+    protected function handoff(Request $request, Grant $grant, Site $site, HotspotContext $context, RadiusToken $token, string $password): View|Response|RedirectResponse
     {
         $request->session()->put('handoff_token', $token->id);
         // Valid until the grant ends (plus a margin for the "expired" page).
         $statusUrl = url(URL::temporarySignedRoute('guest.status', $grant->refresh()->expires_at->copy()->addHour(),
             ['grant' => $grant->id, 'token' => $token->id], absolute: false));
+
+        // Controller-based NAS (decision 2026-11-04, v0.27.0): the portal lets the device out through the
+        // controller API, records the session itself and sends the browser to the status page.
+        if (ControllerSessions::supports($site)) {
+            $result = app(ControllerSessions::class)->authorize($site, $grant, $token, $context);
+            if (! $result->granted) {
+                return $this->error('controller_failed', 502);
+            }
+            // The original URL is offered only as a link on the status page (never an automatic redirect).
+            $request->session()->put('controller_orig_url', $context->origUrl);
+
+            return redirect()->to($statusUrl);
+        }
 
         return view('guest.handoff', $site->driver()->loginHandoff($context, $token->username, $password, $statusUrl));
     }
