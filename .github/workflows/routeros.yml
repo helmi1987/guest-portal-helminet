@@ -34,7 +34,7 @@ jobs:
       matrix:
         version: ${{ fromJSON(inputs.versions || '["7.24.5", "stable"]') }}
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: shivammathur/setup-php@v2
         with:
