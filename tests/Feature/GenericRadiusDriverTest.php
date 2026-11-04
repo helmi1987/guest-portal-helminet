@@ -79,9 +79,12 @@ class GenericRadiusDriverTest extends TestCase
             'aruba' => [Presets::ARUBA, ['cmd' => 'login', 'mac' => 'aa:bb:cc:00:00:01', 'essid' => 'Guest', 'ip' => '10.0.0.20',
                 'url' => 'http://example.com/'],
                 [self::MAC, '10.0.0.20', 'https://securelogin.arubanetworks.com/cgi-bin/login', 'http://example.com/']],
-            'opnsense' => [Presets::OPNSENSE, ['login_url' => 'https://hotspot.example.com:8003/index.php?zone=guest', 'zone' => 'guest',
+            'pfsense' => [Presets::PFSENSE, ['login_url' => 'https://hotspot.example.com:8003/index.php?zone=guest', 'zone' => 'guest',
                 'redirurl' => 'http://example.com/', 'mac' => 'aa-bb-cc-00-00-01', 'ip' => '10.0.0.20'],
                 [self::MAC, '10.0.0.20', 'https://hotspot.example.com:8003/index.php?zone=guest', 'http://example.com/']],
+            'opnsense' => [Presets::OPNSENSE, ['nas_host' => '10.1.0.1:8000', 'zone' => '0', 'mac' => 'aa:bb:cc:00:00:01',
+                'ip' => '10.0.0.20', 'redirurl' => 'http://example.com/'],
+                [self::MAC, '10.0.0.20', 'http://10.1.0.1:8000/api/captiveportal/access/logon/0/', 'http://example.com/']],
             'coovachilli' => [Presets::COOVACHILLI, ['res' => 'notyet', 'uamip' => '10.1.0.1', 'uamport' => '3990', 'challenge' => self::CHALLENGE,
                 'mac' => 'AA-BB-CC-00-00-01', 'ip' => '10.0.0.20', 'userurl' => 'http://example.com/'],
                 [self::MAC, '10.0.0.20', 'http://10.1.0.1:3990/logon', 'http://example.com/']],
@@ -133,11 +136,11 @@ class GenericRadiusDriverTest extends TestCase
         $this->assertSame(['uamip' => '10.1.0.1', 'uamport' => '3990', 'challenge' => self::CHALLENGE],
             $this->parse($chilli + ['uamip' => '10.1.0.1', 'ignored' => 'x'])->params);
 
-        // HTTP is only allowed for GET with the switch on.
+        // HTTP only with the switch on (any method).
         $this->mapping(Presets::COOVACHILLI, ['allow_http' => false]);
         $this->assertNull($this->parse($chilli + ['uamip' => '10.1.0.1'])->loginUrl);
         $this->mapping(Presets::COOVACHILLI, ['method' => 'POST']);
-        $this->assertNull($this->parse($chilli + ['uamip' => '10.1.0.1'])->loginUrl);
+        $this->assertSame('http://10.1.0.1:3990/logon', $this->parse($chilli + ['uamip' => '10.1.0.1'])->loginUrl);
     }
 
     public function test_portal_entry_route_signals_and_error_pages(): void
@@ -236,12 +239,16 @@ class GenericRadiusDriverTest extends TestCase
             parse_str((string) parse_url($href, PHP_URL_QUERY), $query);
             $this->assertSame(['username', 'password', 'redirurl'], array_keys($query));
 
-            // Decode as CoovaChilli does (redir.c): hex, XOR with MD5(challenge + uamsecret) or the challenge.
+            // Decode as CoovaChilli does (redir.c): hex, XOR per 16-byte block with MD5(challenge + uamsecret) or the
+            // raw challenge; the password is zero-padded to 16-byte blocks (24 characters: 32 bytes).
+            $this->assertSame(64, strlen($query['password']));
             $key = $secret !== null ? md5(hex2bin(self::CHALLENGE).$secret, true) : hex2bin(self::CHALLENGE);
             $plain = '';
             foreach (str_split(hex2bin($query['password'])) as $i => $c) {
                 $plain .= chr(ord($c) ^ ord($key[$i % 16]));
             }
+            $this->assertSame(str_repeat("\0", 8), substr($plain, 24));
+            $plain = rtrim($plain, "\0");
             $this->authorize($query['username'], $plain, 'AA-BB-CC-00-00-01')->assertOk();
             $this->assertNotSame($plain, $query['password']);
         }
@@ -309,7 +316,7 @@ class GenericRadiusDriverTest extends TestCase
         $this->assertStringContainsString('location.replace("https://portal.example.com/portal/g/site-g" + location.search)', $page);
         $this->assertStringContainsString('href="https://portal.example.com/portal/g/site-g"', $page);
 
-        $this->mapping(Presets::OPNSENSE);
+        $this->mapping(Presets::PFSENSE);
         $page = $this->driver()->loginPage($this->site);
         $this->assertStringContainsString('content="0; url=https://portal.example.com/portal?site=site-g&amp;login_url=$PORTAL_ACTION$&amp;zone=$PORTAL_ZONE$', $page);
         $this->assertStringNotContainsString('<script', $page);
@@ -432,6 +439,11 @@ class GenericRadiusDriverTest extends TestCase
         $this->save($admin, ['login_page_template' => 'a="b"'])->assertSessionHasErrors('generic.login_page_template');
         $this->save($admin, ['login_url' => 'http://{uamip}:{uamport}/logon', 'method' => 'GET', 'allow_http' => '1', 'param_login_url' => ''])
             ->assertSessionHasNoErrors()->assertSessionHas('warning', __('portal.generic.http_warning'));
+        $this->save($admin, ['login_url' => 'http://{nas_host}/api/captiveportal/access/logon/{zone}/', 'method' => 'POST', 'allow_http' => '1',
+            'param_login_url' => '', 'disconnect_attrs' => []])->assertSessionHasNoErrors();
+        $this->assertSame([], GenericSettings::forSite($this->site->fresh())['disconnect_attrs']);
+        $this->save($admin, ['method' => 'fragment'])->assertSessionHasNoErrors();
+        $this->save($admin, ['method' => 'PUT'])->assertSessionHasErrors('generic.method');
 
         // Managers have no access; other drivers have no generic section.
         $manager = User::factory()->create();
@@ -472,6 +484,60 @@ class GenericRadiusDriverTest extends TestCase
         $this->assertContains('generic', Federation::SECURITY_SITE_SETTINGS);
     }
 
+    public function test_opnsense_preset_posts_to_the_logon_api_or_hands_off_through_the_fragment(): void
+    {
+        $this->mapping(Presets::OPNSENSE);
+        $grant = $this->code();
+        $this->guest()->get('/portal/g/site-g?'.http_build_query(['nas_host' => '10.1.0.1:8000', 'zone' => '0',
+            'mac' => 'aa:bb:cc:00:00:01', 'ip' => '10.0.0.20', 'redirurl' => 'http://example.com/']))->assertRedirect();
+        $this->guest()->get('/portal?'.http_build_query(['site' => 'site-g', 'nas_host' => '10.1.0.1:8000', 'zone' => '0',
+            'mac' => 'aa:bb:cc:00:00:01', 'ip' => '10.0.0.20', 'redirurl' => 'http://example.com/']))->assertOk();
+        $response = $this->guest()->post('/portal/code', $this->codeForm($grant->code))->assertOk()
+            ->assertSee('action="http://10.1.0.1:8000/api/captiveportal/access/logon/0/"', false);
+        $this->assertSame(['user', 'password', 'redirurl'], array_keys($response->viewData('fields')));
+
+        // Fragment: the browser opens the template with the fields after "#".
+        $this->mapping(Presets::OPNSENSE, ['method' => 'fragment', 'login_url' => 'http://{nas_host}/index.html']);
+        $grant = $this->code();
+        $this->guest()->get('/portal?'.http_build_query(['site' => 'site-g', 'nas_host' => '10.1.0.1:8000', 'zone' => '0',
+            'mac' => 'aa:bb:cc:00:00:01', 'redirurl' => 'http://example.com/']));
+        $response = $this->guest()->post('/portal/code', $this->codeForm($grant->code))->assertOk()
+            ->assertSee('data-handoff-method="fragment"', false);
+        preg_match('/id="handoff" href="([^"]+)"/', $response->getContent(), $m);
+        $href = html_entity_decode($m[1]);
+        $this->assertStringStartsWith('http://10.1.0.1:8000/index.html#user=', $href);
+        parse_str((string) parse_url($href, PHP_URL_FRAGMENT), $fragment);
+        $this->assertSame(['user', 'password', 'redirurl'], array_keys($fragment));
+        $this->assertNull(parse_url($href, PHP_URL_QUERY));
+        $this->authorize($fragment['user'], $fragment['password'], 'aa:bb:cc:00:00:01')->assertOk();
+    }
+
+    public function test_opnsense_has_no_disconnect_and_the_checklist_says_so(): void
+    {
+        $admin = User::factory()->admin()->create();
+        $this->admin($admin)->post("/admin/sites/{$this->site->id}/generic/preset", ['preset' => Presets::OPNSENSE])
+            ->assertSessionHas('_old_input.generic.disconnect_attrs', [])
+            ->assertSessionHas('_old_input.generic.login_url', 'http://{nas_host}/api/captiveportal/access/logon/{zone}/');
+        $this->admin($admin)->post("/admin/sites/{$this->site->id}/generic/preset", ['preset' => Presets::CISCO_WLC])
+            ->assertSessionHas('_old_input.generic.disconnect_attrs', GenericSettings::DEFAULT_DISCONNECT);
+
+        $this->mapping(Presets::OPNSENSE, ['disconnect_attrs' => []]);
+        $this->assertNull($this->driver()->disconnectAttributes(RadiusAccounting::query()->make(['acct_session_id' => 'x', 'username' => 'u'])));
+        $text = $this->driver()->checklist($this->site->fresh(), $this->nas);
+        $this->assertStringContainsString('Not used (no attributes selected', $text);
+        $this->assertStringContainsString('Session-Timeout', $text);
+        $this->assertStringContainsString('browsers warn before posting a form', $text);
+        $this->assertStringContainsString('OPNsense: Allowed addresses', $text);
+        $this->assertStringContainsString('source address', $text);
+        $this->assertStringNotContainsString('UDP port 3799', $text);
+        $this->admin($admin)->get("/admin/sites/{$this->site->id}/edit")->assertOk(); // consumes the flashed preset input
+        $this->admin($admin)->get("/admin/sites/{$this->site->id}/edit")->assertOk()->assertSee('data-generic-disconnect-none', false);
+
+        $this->mapping(Presets::OPNSENSE, ['method' => 'fragment', 'disconnect_attrs' => []]);
+        $this->assertStringContainsString('docs/opnsense-captive-template/index.html', $this->driver()->checklist($this->site->fresh()));
+        $this->assertFileExists(base_path('docs/opnsense-captive-template/index.html'));
+    }
+
     // --- Helpers ------------------------------------------------------------------------------------
 
     private function driver(): GenericRadiusDriver
@@ -485,7 +551,8 @@ class GenericRadiusDriverTest extends TestCase
     private function mapping(string $preset, array $overrides = [], ?string $secret = null): void
     {
         $this->site->update(['settings' => GenericSettings::mergeInto($this->site->fresh(),
-            ['preset' => $preset] + $overrides + Presets::PRESETS[$preset] + ['wispr' => true, 'disconnect_attrs' => GenericSettings::DEFAULT_DISCONNECT], $secret)]);
+            ['preset' => $preset] + $overrides + Presets::PRESETS[$preset] + ['wispr' => true,
+                'disconnect_attrs' => Presets::DISCONNECT[$preset] ?? GenericSettings::DEFAULT_DISCONNECT], $secret)]);
         $this->site->refresh();
     }
 

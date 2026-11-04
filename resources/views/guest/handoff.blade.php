@@ -1,13 +1,16 @@
 <x-layouts.guest step="handoff">
-    @php($get = ($method ?? 'POST') === 'GET')
+    @php($method ??= 'POST')
+    @php($get = $method === 'GET' || $method === 'fragment')
     <section class="gp-card card">
         <h1 class="gp-card-title mb-2 text-xl font-semibold">{{ __('portal.guest.connecting') }}</h1>
         {{-- One-time credentials (valid ~60 s) are submitted to the router's login URL. GET (generic RADIUS
-             driver, decision 2026-11-04): navigation to the URL with the fields as query string. --}}
+             driver, decision 2026-11-04): navigation to the URL with the fields as query string; fragment: the
+             fields after "#" (read and posted by a page on the NAS, never sent to a server). --}}
         @if ($get)
             <noscript><p class="gp-hint mb-3 text-sm opacity-80">{{ __('portal.guest.noscript') }}</p></noscript>
-            <a id="handoff" href="{{ $url.(str_contains($url, '?') ? '&' : '?').http_build_query($fields, '', '&', PHP_QUERY_RFC3986) }}"
-                class="gp-button btn block w-full py-3 text-center text-base" data-handoff-get>{{ __('portal.guest.continue') }}</a>
+            <a id="handoff" href="{{ $method === 'fragment' ? explode('#', $url)[0].'#'.http_build_query($fields, '', '&', PHP_QUERY_RFC3986)
+                : $url.(str_contains($url, '?') ? '&' : '?').http_build_query($fields, '', '&', PHP_QUERY_RFC3986) }}"
+                class="gp-button btn block w-full py-3 text-center text-base" data-handoff-get data-handoff-method="{{ $method }}">{{ __('portal.guest.continue') }}</a>
         @else
             <form id="handoff" method="POST" action="{{ $url }}" class="gp-form">
                 @foreach ($fields as $name => $value)

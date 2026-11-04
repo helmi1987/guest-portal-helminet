@@ -47,9 +47,10 @@
         <label class="label">{{ __('portal.generic.fields.method') }}
             <select name="generic[method]" class="field">
                 @foreach (\App\Nas\Generic\GenericSettings::METHODS as $method)
-                    <option value="{{ $method }}" @selected($genOld('method', $gen['method']) === $method)>{{ $method }}</option>
+                    <option value="{{ $method }}" @selected($genOld('method', $gen['method']) === $method)>{{ __('portal.generic.methods.'.$method) }}</option>
                 @endforeach
-            </select></label>
+            </select>
+            <span class="text-xs text-slate-500">{{ __('portal.generic.method_help') }}</span></label>
         <label class="label">{{ __('portal.generic.fields.password_encoding') }}
             <select name="generic[password_encoding]" class="field">
                 @foreach (\App\Nas\Generic\GenericSettings::ENCODINGS as $encoding)
@@ -103,6 +104,9 @@
                     <span class="font-mono text-xs">{{ $attr }}</span></label>
             @endforeach
             <span class="text-xs text-slate-500">{{ __('portal.generic.disconnect_help') }}</span>
+            @if ($genAttrs === [])
+                <span class="text-xs text-amber-800" data-generic-disconnect-none>{{ __('portal.generic.disconnect_none') }}</span>
+            @endif
             @error('generic.disconnect_attrs')<span class="text-xs text-red-700">{{ $message }}</span>@enderror
         </fieldset>
         <p class="text-xs text-slate-600 md:col-span-2" data-generic-mac-auth>{{ __('portal.generic.mac_auth_note') }}</p>

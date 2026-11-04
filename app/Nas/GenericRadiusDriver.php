@@ -81,7 +81,8 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
     /**
      * Mapped form fields; extra fields first (the mapped names win), {name} placeholders filled from the
      * redirect, {handoff_secret} from the encrypted site setting. Method GET: the view navigates to the URL
-     * with the fields as query string.
+     * with the fields as query string; fragment: with the fields after "#" (never sent to a server, a page of
+     * the NAS reads and posts them).
      *
      * @return array{url: string, fields: array<string, string>, method: string}
      */
@@ -116,7 +117,8 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
     }
 
     /**
-     * The identifying attributes chosen on the site page. Never for a session that already ended. The IP
+     * The identifying attributes chosen on the site page; none chosen: the NAS does not support it (OPNsense),
+     * Session-Timeout ends access. Never for a session that already ended. The IP
      * can be reused by another guest after a DHCP lease change: Framed-IP-Address is only sent while the
      * session is open and was updated within portal.radius.stale_after (as the MikroTik driver does);
      * otherwise it is left out, and with nothing left nothing is sent.
@@ -125,6 +127,12 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
     {
         $summary = $acct->summary;
         $context = ['acct_session_id' => $acct->acct_session_id, 'session_summary_id' => $acct->session_summary_id];
+        $selected = $this->mapping($acct->nasClient?->site)['disconnect_attrs'];
+        if ($selected === []) {
+            Log::info('RADIUS Disconnect-Request not sent: not supported by this NAS (no attributes selected); Session-Timeout ends access', $context);
+
+            return null;
+        }
         if ($summary?->stopped_at !== null || $acct->terminate_cause !== null) {
             Log::warning('RADIUS Disconnect-Request not sent: accounting session already stopped', $context);
 
@@ -133,7 +141,7 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
         $staleBefore = now()->subSeconds((int) config('portal.radius.stale_after'));
         $fresh = $acct->last_update_at !== null && ! $acct->last_update_at->lt($staleBefore);
         $attrs = [];
-        foreach ($this->mapping($acct->nasClient?->site)['disconnect_attrs'] as $name) {
+        foreach ($selected as $name) {
             $value = match ($name) {
                 'User-Name' => $acct->username,
                 'Acct-Session-Id' => $acct->acct_session_id,
@@ -250,13 +258,19 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
             '1. RADIUS server (authentication and accounting)',
             '   - Server: '.$radius.'  ports 1812 (auth) and 1813 (accounting), UDP',
             '   - Shared secret: '.($nas ? self::safe($nas->radius_secret) : '<RADIUS_SECRET>'),
-            '   - Source address of the NAS: '.($nas ? self::safe($nas->nas_ip) : '<NAS_IP>').' (must match the router entry on the site page)',
+            '   - Source address of the NAS: '.($nas ? self::safe($nas->nas_ip) : '<NAS_IP>').' (the router entry\'s NAS IP is the source address',
+            '     of the RADIUS packets as the portal sees them: behind NAT or a Docker bridge the translated address)',
             $nas && $nas->nas_identifier ? '   - NAS-Identifier: '.self::safe($nas->nas_identifier) : '   - NAS-Identifier: optional; if set on the router entry it must match',
             '   - Authentication: PAP; Calling-Station-Id = the client MAC (any notation)',
             '   - Accounting: Start, Interim-Update (interval from the Acct-Interim-Interval reply), Stop',
             '2. Disconnect-Request (RFC 5176, CoA)',
-            '   - Accept Disconnect-Requests from '.$radius.' on UDP port '.($nas ? (int) $nas->coa_port : '<COA_PORT>').' with the same secret',
-            '   - Attributes sent: '.($m['disconnect_attrs'] !== [] ? implode(', ', $m['disconnect_attrs']) : '(none: switch some on in the site settings)'),
+            ...($m['disconnect_attrs'] !== [] ? [
+                '   - Accept Disconnect-Requests from '.$radius.' on UDP port '.($nas ? (int) $nas->coa_port : '<COA_PORT>').' with the same secret',
+                '   - Attributes sent: '.implode(', ', $m['disconnect_attrs']),
+            ] : [
+                '   - Not used (no attributes selected: the NAS does not support it). Revoking or shortening a grant ends',
+                '     access only when the Session-Timeout of the login runs out.',
+            ]),
             '3. Redirect of unauthenticated guests (external portal / external web authentication)',
             '   - Portal URL: '.$portalUrl.'/portal/g/'.$slug.'  (the NAS appends its parameters)',
             '   - Alternative for a NAS that hosts its own page: upload the login page (site page > Download login page)',
@@ -270,6 +284,10 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
                 .(($extra = array_keys(GenericSettings::extraFields($m['extra_fields']))) !== [] ? ', '.implode(', ', array_map(self::safe(...), $extra)) : ''),
             '   - Success URL: the portal status page (signed, per login); the NAS should send the browser there after the login.',
             '     A NAS that ignores it shows its own page; the portal works anyway.',
+            ...($m['method'] === 'fragment' ? ['   - Method "fragment": the browser opens the login URL with the fields after "#"; a page on the NAS must read',
+                '     and post them (OPNsense: docs/opnsense-captive-template/index.html).'] : []),
+            ...(str_starts_with(strtolower($m['login_url']), 'http://') ? ['   - Plain HTTP: the one-time credentials travel unencrypted over the guest network'
+                .($m['method'] === 'POST' ? '; browsers warn before posting a form from the HTTPS portal to HTTP' : '').'.'] : []),
             '5. Walled garden (allowed before login; '.self::walledGardenName($preset).')',
             '   - '.$host.'  TCP 443 (HTTPS)',
             '   - '.$portalIp.'  TCP 443 (and TCP 80 if the NAS redirects plain HTTP to the portal IP)',
@@ -341,8 +359,8 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
     }
 
     /**
-     * The login URL: from the mapped parameter, else the fixed URL (placeholders filled). HTTPS only (HTTP
-     * only for GET when the site allows it), no credentials, host one of the site's hotspot hosts.
+     * The login URL: from the mapped parameter, else the fixed URL (placeholders filled). HTTPS only (HTTP only
+     * when the site allows it), no credentials, host one of the site's hotspot hosts.
      */
     private function loginUrl(Request $request, Site $site, array $m, array $params): ?string
     {
@@ -357,7 +375,7 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
         $scheme = strtolower((string) parse_url($url, PHP_URL_SCHEME));
         $hosts = array_map('strtolower', (array) $site->setting('hotspot_hosts', []));
         $host = strtolower(trim((string) parse_url($url, PHP_URL_HOST), '[]'));
-        if (($scheme !== 'https' && ! ($scheme === 'http' && $m['allow_http'] && $m['method'] === 'GET'))
+        if (($scheme !== 'https' && ! ($scheme === 'http' && $m['allow_http']))
             || ! in_array($host, $hosts, true)) {
             Log::warning('Hotspot login URL rejected (scheme or not a configured hotspot host)', ['site' => $site->slug, 'url' => $url]);
 
@@ -387,9 +405,10 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
     }
 
     /**
-     * CoovaChilli UAM PAP (redir.c): hex(password XOR key), key = MD5(challenge bytes + uamsecret), or the
-     * challenge itself without uamsecret, repeated per 16-byte block. Plain password when the challenge is
-     * missing (the login then fails; logged).
+     * CoovaChilli UAM PAP (redir.c, observed on CoovaChilli 1.9): the password zero-padded to a multiple of 16
+     * bytes, XOR key per 16-byte block, hex encoded; key = MD5(challenge bytes + uamsecret), or the raw
+     * challenge bytes without uamsecret. Plain password when the challenge is missing (the login then fails;
+     * logged).
      */
     private function chilliPassword(string $password, ?string $challenge): string
     {
@@ -401,6 +420,7 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
         $secret = $this->site ? GenericSettings::secret($this->site) : null;
         $key = $secret !== null && $secret !== '' ? md5(hex2bin($challenge).$secret, true) : hex2bin($challenge);
         $out = '';
+        $password = str_pad($password, (int) (ceil(max(1, strlen($password)) / 16) * 16), "\0");
         foreach (str_split($password) as $i => $char) {
             $out .= chr(ord($char) ^ ord($key[$i % 16]));
         }
@@ -434,7 +454,8 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
         return match ($preset) {
             Presets::CISCO_WLC => 'Cisco: pre-authentication ACL / URL filter of the web-auth WLAN',
             Presets::ARUBA => 'Aruba: walled garden / whitelist of the external captive portal profile',
-            Presets::OPNSENSE => 'pfSense: Allowed IP Addresses and Allowed Hostnames; OPNsense: Allowed addresses',
+            Presets::PFSENSE => 'pfSense: Allowed IP Addresses and Allowed Hostnames of the zone',
+            Presets::OPNSENSE => 'OPNsense: Allowed addresses of the zone (IPs or networks, no host names)',
             Presets::COOVACHILLI => 'CoovaChilli: uamallowed / uamdomain',
             Presets::RUCKUS => 'Ruckus: Walled Garden of the hotspot (WISPr) service',
             default => 'what the vendor calls the pre-login allow list',

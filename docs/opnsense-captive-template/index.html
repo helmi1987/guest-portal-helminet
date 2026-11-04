@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<!--
+  OPNsense captive portal template for the guest portal's generic RADIUS driver, preset "OPNsense"
+  (experimental, decision 2026-11-04, v0.28.0; docs/generic-captive-portal.md).
+
+  OPNsense has no external login page: every zone redirects unauthenticated guests to its own template
+  (http://<zone address>:8000/index.html?redirurl=...). This page replaces the template's index.html:
+  1. Without "#user=" in the URL it asks OPNsense for the guest's IP and MAC
+     (POST /api/captiveportal/access/status/<zone>/) and forwards the guest to the portal with
+     nas_host, zone, mac, ip and redirurl.
+  2. With "#user=...&password=...&redirurl=..." (handoff method "fragment" of the portal) it logs the guest in
+     from this browser (POST /api/captiveportal/access/logon/<zone>/; OPNsense identifies the guest by its IP)
+     and then opens the portal's status page.
+  With the preset's default handoff (POST straight to the logon API) only step 1 is used.
+
+  Configure PORTAL (the portal URL of the site: https://<portal host>/portal/g/<site>) and ZONE (the zone id)
+  below, put this file as index.html into a copy of the zone's default template and upload it as the zone's
+  custom template (Services > Captive Portal > Templates). Add the portal host and IP to the zone's allowed
+  addresses.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Guest Wi-Fi</title>
+</head>
+<body>
+<p id="msg">Connecting to the guest login...</p>
+<p><a id="go" href="#">Continue</a></p>
+<script>
+var PORTAL = 'https://portal.example.com/portal/g/site-a';
+var ZONE = 0;
+
+(function () {
+    var msg = document.getElementById('msg');
+    var portalOrigin = new URL(PORTAL).origin;
+    function post(path, data) {
+        return fetch(path + ZONE + '/', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: new URLSearchParams(data).toString(),
+            credentials: 'same-origin'
+        }).then(function (r) { return r.json(); });
+    }
+    function failed(text) { msg.textContent = text; }
+
+    var hash = new URLSearchParams(location.hash.slice(1));
+    if (hash.get('user') && hash.get('password')) {
+        // Handoff "fragment": the one-time credentials never left the browser in a request URL.
+        var user = hash.get('user'), password = hash.get('password'), next = hash.get('redirurl') || '';
+        history.replaceState(null, '', location.pathname + location.search);
+        msg.textContent = 'Logging in...';
+        post('/api/captiveportal/access/logon/', {user: user, password: password}).then(function (s) {
+            if (s.clientState !== 'AUTHORIZED') {
+                return failed('Login failed. Please open any website and try again.');
+            }
+            // Only the portal's own status page (no open redirect).
+            if (next.indexOf(portalOrigin + '/') === 0) {
+                location.replace(next);
+            } else {
+                failed('You are online.');
+            }
+        }, function () { failed('Login failed: the captive portal does not answer.'); });
+        return;
+    }
+
+    post('/api/captiveportal/access/status/', {}).then(function (s) {
+        if (s.clientState === 'AUTHORIZED') {
+            return failed('You are online.');
+        }
+        var query = new URLSearchParams({
+            nas_host: location.host,
+            zone: String(ZONE),
+            mac: s.macAddress || '',
+            ip: s.ipAddress || '',
+            redirurl: new URLSearchParams(location.search).get('redirurl') || ''
+        });
+        var url = PORTAL + (PORTAL.indexOf('?') < 0 ? '?' : '&') + query.toString();
+        document.getElementById('go').href = url;
+        location.replace(url);
+    }, function () { failed('The captive portal does not answer.'); });
+})();
+</script>
+</body>
+</html>

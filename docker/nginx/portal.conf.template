@@ -10,7 +10,8 @@ map $http_upgrade $connection_upgrade {
 # Guest pages: plain HTML with a few inline scripts (login handoff auto-submit, WebOTP, "sign in
 # again" link), no inline styles (branding CSS is a same-origin stylesheet), images and fonts from
 # the portal or embedded data: URLs (custom CSS). The handoff form posts to the router's hotspot
-# login URL (https, host from the site's hotspot host names), so form-action allows any https: host.
+# login URL (host from the site's hotspot host names), so form-action allows any https: host, and http:
+# for generic RADIUS sites that explicitly allow an HTTP login URL (OPNsense, decision 2026-11-04).
 # Admin UI: Livewire 3 with Alpine evaluates expressions at runtime ('unsafe-eval'), inline
 # onsubmit/onclick handlers and Livewire's injected styles need 'unsafe-inline'.
 # HSTS only on the browser-facing TLS listeners (no includeSubDomains, no preload).
@@ -30,7 +31,7 @@ map $portal_frame_self $portal_frame_options {
     default "DENY";
 }
 map $portal_zone $portal_csp_zone {
-    guest "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https:; frame-ancestors 'none'";
+    guest "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self' https: http:; frame-ancestors 'none'";
     admin "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors $portal_frame_ancestors";
     default "";
 }

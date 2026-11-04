@@ -20,7 +20,8 @@ final class GenericSettings
 
     public const SECRET = 'handoff_secret';
 
-    public const METHODS = ['POST', 'GET'];
+    /** fragment: navigation to the login URL with the fields in the #fragment (a page on the NAS posts them, e.g. OPNsense). */
+    public const METHODS = ['POST', 'GET', 'fragment'];
 
     /** plain: the password as issued; chilli: CoovaChilli UAM PAP (hex, XOR with the challenge). */
     public const ENCODINGS = ['plain', 'chilli'];

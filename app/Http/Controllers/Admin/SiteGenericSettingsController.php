@@ -34,9 +34,8 @@ class SiteGenericSettingsController extends Controller
             if (trim((string) ($input['param_login_url'] ?? '')) === '' && $loginUrl === '') {
                 $v->errors()->add('generic.login_url', __('portal.generic.errors.login_url_required'));
             }
-            if (str_starts_with(strtolower($loginUrl), 'http://')
-                && (! filter_var($input['allow_http'] ?? false, FILTER_VALIDATE_BOOLEAN) || ($input['method'] ?? '') !== 'GET')) {
-                $v->errors()->add('generic.login_url', __('portal.generic.errors.http_needs_get'));
+            if (str_starts_with(strtolower($loginUrl), 'http://') && ! filter_var($input['allow_http'] ?? false, FILTER_VALIDATE_BOOLEAN)) {
+                $v->errors()->add('generic.login_url', __('portal.generic.errors.http_needs_switch'));
             }
             $lines = array_filter(array_map('trim', preg_split('/\R/', (string) ($input['extra_fields'] ?? '')) ?: []));
             if (count($lines) > GenericSettings::MAX_EXTRA_FIELDS) {
@@ -98,7 +97,7 @@ class SiteGenericSettingsController extends Controller
         abort_unless(is_string($preset) && in_array($preset, Presets::keys(), true), 422);
         $current = GenericSettings::forSite($site);
         $values = ['preset' => $preset] + Presets::PRESETS[$preset]
-            + ['wispr' => $current['wispr'], 'disconnect_attrs' => $current['disconnect_attrs']];
+            + ['wispr' => $current['wispr'], 'disconnect_attrs' => Presets::DISCONNECT[$preset] ?? GenericSettings::DEFAULT_DISCONNECT];
         // Checkbox inputs as the form posts them.
         $values['allow_http'] = $values['allow_http'] ? '1' : '0';
         $values['wispr'] = $values['wispr'] ? '1' : '0';
