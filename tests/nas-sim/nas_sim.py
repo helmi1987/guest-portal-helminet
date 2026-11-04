@@ -14,6 +14,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import socket
 import ssl
 import struct
@@ -34,6 +35,7 @@ SESSION_TIMEOUT, VENDOR_SPECIFIC, CALLED_STATION_ID, CALLING_STATION_ID, NAS_IDE
 ACCT_STATUS_TYPE, ACCT_INPUT_OCTETS, ACCT_OUTPUT_OCTETS, ACCT_SESSION_ID = 40, 42, 43, 44
 ACCT_SESSION_TIME, ACCT_TERMINATE_CAUSE, NAS_PORT_TYPE, MESSAGE_AUTHENTICATOR = 46, 49, 61, 80
 ACCT_INTERIM_INTERVAL, ERROR_CAUSE = 85, 101
+SERVICE_TYPE, NAS_PORT, NAS_PORT_ID = 6, 5, 87
 WISPR_VENDOR, WISPR_MAX_UP, WISPR_MAX_DOWN = 14122, 7, 8
 
 NAMES = {USER_NAME: 'User-Name', FRAMED_IP_ADDRESS: 'Framed-IP-Address', CALLING_STATION_ID: 'Calling-Station-Id',
@@ -136,7 +138,7 @@ class Radius:
 def presets(a):
     """Redirect query and login form per preset, after the vendor documentation cited in
     app/Nas/Generic/Presets.php. host/port: where the browser reaches this simulator."""
-    login = '%s://%s:%d' % ('http' if a.preset == 'coovachilli' else 'https', a.host, a.port)
+    login = '%s://%s:%d' % ('http' if a.preset in PLAIN_HTTP else 'https', a.host, a.port)
     mac = a.client_mac.lower()
     colon = ':'.join(mac_hex(mac)[i:i + 2] for i in range(0, 12, 2))
     dash_upper = colon.replace(':', '-').upper()
@@ -154,17 +156,30 @@ def presets(a):
             path='/cgi-bin/login', method='POST', user='user', password='password', success='url',
             fixed={'cmd': 'authenticate'}, calling=mac_hex(mac)),
         # pfSense replaces the variables of the uploaded page as raw text (no URL encoding).
-        'opnsense': dict(
+        'pfsense': dict(
             entry=a.portal.rstrip('/') + '/portal?site=' + urllib.parse.quote(a.site) + '&login_url=' + login
             + '/index.php?zone=guest&zone=guest&redirurl=http://example.com/&mac=' + colon + '&ip=' + a.client_ip,
             path='/index.php', method='POST', user='auth_user', password='auth_pass', success='redirurl',
             fixed={'accept': 'Continue', 'zone': 'guest'}, calling=colon),
+        # OPNsense 26.7 (observed): the zone redirects to its own template, which (docs/opnsense-captive-template)
+        # asks the status API and forwards to the portal; the guest's browser logs in through the logon API
+        # (POST from the portal's handoff, or from the template with method "fragment"). JSON answers, no CoA,
+        # RADIUS without Framed-IP-Address.
+        'opnsense': dict(
+            entry=login + '/index.html?' + q({'redirurl': 'http://example.com/'}),
+            path='/api/captiveportal/access/logon/0/', method='POST', user='user', password='password', success=None,
+            fixed={}, calling=colon, coa=False, json=True,
+            radius=[attr_int(SERVICE_TYPE, 1), attr_int(NAS_PORT, 0), attr_int(NAS_PORT_TYPE, 15)]),
         'coovachilli': dict(
             entry=portal + '?' + q({'res': 'notyet', 'uamip': a.host, 'uamport': str(a.port), 'challenge': a.challenge,
                                     'called': 'AA-BB-CC-00-00-99', 'mac': dash_upper, 'ip': a.client_ip, 'nasid': a.nas_id,
                                     'sessionid': '5a1b2c3d00000001', 'userurl': 'http://example.com/'}),
             path='/logon', method='GET', user='username', password='password', success='redirurl', fixed={},
-            calling=dash_upper),
+            calling=dash_upper, session_id='5a1b2c3d00000001',
+            # CoovaChilli 1.9 (observed): Service-Type, NAS-Port(-Id), dashed MACs, Framed-IP-Address.
+            radius=[attr_int(SERVICE_TYPE, 1), attr_int(NAS_PORT, 1), attr(NAS_PORT_ID, '00000001'), attr_int(NAS_PORT_TYPE, 19),
+                    attr(CALLED_STATION_ID, 'AA-BB-CC-00-00-99'),
+                    attr(ACCT_SESSION_ID, '5a1b2c3d00000001'), attr_ip(FRAMED_IP_ADDRESS, a.client_ip)]),
         'ruckus': dict(
             entry=portal + '?' + q({'client_mac': colon, 'uip': a.client_ip, 'sip': a.host, 'nbiIP': a.host,
                                     'url': 'http://example.com/', 'ssid': 'Guest'}),
@@ -175,6 +190,9 @@ def presets(a):
             path='/login', method='POST', user='username', password='password', success='dst', fixed={},
             calling=colon.upper()),
     }[a.preset]
+
+
+PLAIN_HTTP = ('coovachilli', 'opnsense')
 
 
 def chilli_decode(hex_password, challenge, uamsecret):
@@ -212,8 +230,8 @@ class Sim:
         p = self.p
         missing = [k for k in (p['user'], p['password']) if not fields.get(k)]
         wrong = {k: fields.get(k) for k, v in p['fixed'].items() if fields.get(k) != v}
-        success = fields.get(p['success'])
-        if missing or wrong or not success:
+        success = fields.get(p['success']) if p['success'] else ''
+        if missing or wrong or (p['success'] and not success):
             self.log('error', 'handoff fields do not match the preset', missing=missing, wrong=wrong, success=success)
             return None, 'handoff fields do not match the preset'
         password = fields[p['password']]
@@ -230,9 +248,9 @@ class Sim:
         if self.radius is None:
             self.log('radius', 'skipped (--no-radius): no Access-Request, the status page will keep waiting')
             return success, None
-        attrs = [attr(CALLING_STATION_ID, p['calling']), attr(CALLED_STATION_ID, 'AA-BB-CC-00-00-99:Guest'),
-                 attr_ip(NAS_IP_ADDRESS, self.a.nas_ip), attr(NAS_IDENTIFIER, self.a.nas_id),
-                 attr_ip(FRAMED_IP_ADDRESS, self.a.client_ip), attr_int(NAS_PORT_TYPE, 19)]
+        attrs = [attr(CALLING_STATION_ID, p['calling']), attr_ip(NAS_IP_ADDRESS, self.a.nas_ip), attr(NAS_IDENTIFIER, self.a.nas_id)]
+        attrs += p.get('radius', [attr(CALLED_STATION_ID, 'AA-BB-CC-00-00-99:Guest'), attr_ip(FRAMED_IP_ADDRESS, self.a.client_ip),
+                                  attr_int(NAS_PORT_TYPE, 19)])
         try:
             code, reply = self.radius.access(user, password, attrs)
         except Exception as e:  # noqa: BLE001 - logged for the test script
@@ -254,7 +272,7 @@ class Sim:
                     if st in (WISPR_MAX_UP, WISPR_MAX_DOWN):
                         info['wispr_up' if st == WISPR_MAX_UP else 'wispr_down'] = struct.unpack('!I', sv)[0]
         self.log('access', 'Access-Accept', **info)
-        session = {'user': user, 'acct_session_id': '%08X' % int(time.time()), 'start': time.time(),
+        session = {'user': user, 'acct_session_id': p.get('session_id', '%08X' % int(time.time())), 'start': time.time(),
                    'ip': self.a.client_ip, 'mac': p['calling'], 'open': True}
         with self.lock:
             self.state['access'] = info
@@ -268,8 +286,9 @@ class Sim:
         s = self.state['session']
         names = {1: 'Start', 3: 'Interim-Update', 2: 'Stop'}
         elapsed = int(time.time() - s['start'])
+        framed = [] if self.a.preset == 'opnsense' else [attr_ip(FRAMED_IP_ADDRESS, s['ip'])]
         attrs = [attr_int(ACCT_STATUS_TYPE, status), attr(ACCT_SESSION_ID, s['acct_session_id']), attr(USER_NAME, s['user']),
-                 attr(CALLING_STATION_ID, s['mac']), attr_ip(FRAMED_IP_ADDRESS, s['ip']), attr_ip(NAS_IP_ADDRESS, self.a.nas_ip),
+                 attr(CALLING_STATION_ID, s['mac'])] + framed + [attr_ip(NAS_IP_ADDRESS, self.a.nas_ip),
                  attr(NAS_IDENTIFIER, self.a.nas_id), attr_int(ACCT_SESSION_TIME, elapsed),
                  attr_int(ACCT_INPUT_OCTETS, 1000 * elapsed), attr_int(ACCT_OUTPUT_OCTETS, 5000 * elapsed)]
         if cause is not None:
@@ -358,10 +377,24 @@ def handler(sim):
 
         def handle_login(self, fields):
             success, error = sim.login(fields)
+            if sim.p.get('json'):
+                state = 'NOT_AUTHORIZED' if error else 'AUTHORIZED'
+                return self.send(200, json.dumps({'clientState': state, 'ipAddress': sim.a.client_ip}), 'application/json')
             if error:
                 self.send(403, '<h1>Login failed</h1><p>%s</p>' % error)
             else:
                 self.send(302, '', location=success)
+
+        def template(self):
+            # The documented OPNsense template with this run's portal URL (docs/opnsense-captive-template).
+            if not sim.a.template:
+                return self.send(404, 'no --template given')
+            with open(sim.a.template, encoding='utf-8') as f:
+                page = f.read()
+            portal = sim.a.portal.rstrip('/') + '/portal/g/' + urllib.parse.quote(sim.a.site)
+            page = re.sub(r"var PORTAL = '[^']*';", "var PORTAL = '%s';" % portal, page, count=1)
+            sim.log('template', 'OPNsense template served')
+            self.send(200, page)
 
         def do_GET(self):
             url = urllib.parse.urlsplit(self.path)
@@ -369,6 +402,8 @@ def handler(sim):
                 with sim.lock:
                     body = json.dumps(sim.state, indent=1)
                 return self.send(200, body, 'application/json')
+            if url.path == '/index.html' and sim.a.preset == 'opnsense':
+                return self.template()
             if url.path in ('/', '/generate_204', '/hotspot-detect.html'):
                 sim.log('redirect', 'guest captured, redirect to the portal', location=sim.p['entry'])
                 return self.send(302, '', location=sim.p['entry'])
@@ -378,12 +413,18 @@ def handler(sim):
 
         def do_POST(self):
             url = urllib.parse.urlsplit(self.path)
+            if url.path == '/api/captiveportal/access/status/0/' and sim.a.preset == 'opnsense':
+                s = sim.state['session']
+                body = {'clientState': 'AUTHORIZED' if s and s['open'] else 'NOT_AUTHORIZED', 'ipAddress': sim.a.client_ip,
+                        'macAddress': sim.p['calling'], 'authType': 'normal'}
+                sim.log('status', 'status API asked', clientState=body['clientState'])
+                return self.send(200, json.dumps(body), 'application/json')
             if url.path != sim.p['path'] or sim.p['method'] != 'POST':
                 sim.log('error', 'unexpected %s %s' % ('POST', url.path))
                 return self.send(405, 'method or path not expected for this preset')
             size = min(int(self.headers.get('Content-Length') or 0), 65536)
             fields = {k: v[-1] for k, v in urllib.parse.parse_qs(self.rfile.read(size).decode()).items()}
-            if sim.a.preset == 'opnsense':
+            if sim.a.preset == 'pfsense':
                 zone = urllib.parse.parse_qs(url.query).get('zone', [''])[-1]
                 if zone != 'guest':
                     sim.log('error', 'login action without ?zone=guest')
@@ -394,13 +435,14 @@ def handler(sim):
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument('--preset', required=True, choices=['cisco_wlc', 'aruba', 'opnsense', 'coovachilli', 'ruckus', 'custom'])
+    ap.add_argument('--preset', required=True, choices=['cisco_wlc', 'aruba', 'pfsense', 'opnsense', 'coovachilli', 'ruckus', 'custom'])
+    ap.add_argument('--template', help='OPNsense: docs/opnsense-captive-template/index.html (served as /index.html)')
     ap.add_argument('--portal', required=True, help='guest portal base URL as the browser reaches it, e.g. https://127.0.0.1:443')
     ap.add_argument('--site', required=True, help='slug of the portal site (driver generic_radius)')
     ap.add_argument('--host', default='127.0.0.1', help='host/IP under which the browser reaches this simulator')
     ap.add_argument('--port', type=int, default=8099)
     ap.add_argument('--listen', default='0.0.0.0')
-    ap.add_argument('--cert', help='TLS certificate (all presets except coovachilli)')
+    ap.add_argument('--cert', help='TLS certificate (all presets except coovachilli and opnsense)')
     ap.add_argument('--key', help='TLS key')
     ap.add_argument('--radius-host', default='127.0.0.1')
     ap.add_argument('--auth-port', type=int, default=1812)
@@ -422,15 +464,17 @@ def main():
     sim = Sim(a)
     server = ThreadingHTTPServer((a.listen, a.port), handler(sim))
     scheme = 'http'
-    if a.preset != 'coovachilli':
+    if a.preset not in PLAIN_HTTP:
         if not (a.cert and a.key):
             ap.error('--cert and --key are required for preset %s (HTTPS login form)' % a.preset)
         ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
         ctx.load_cert_chain(a.cert, a.key)
         server.socket = ctx.wrap_socket(server.socket, server_side=True)
         scheme = 'https'
-    if not a.no_radius:
+    if not a.no_radius and sim.p.get('coa', True):
         threading.Thread(target=sim.coa_loop, daemon=True).start()
+    elif not a.no_radius:
+        sim.log('coa', 'no CoA listener (the device does not support Disconnect-Request)')
     sim.log('start', 'captive portal on %s://%s:%d/ (state: /state)' % (scheme, a.host, a.port), radius=not a.no_radius)
     try:
         server.serve_forever()

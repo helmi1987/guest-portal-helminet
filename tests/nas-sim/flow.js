@@ -19,6 +19,11 @@ const NO_RADIUS = process.env.NO_RADIUS === '1';
         const page = await context.newPage();
 
         await page.goto(SIM_URL, { waitUntil: 'load' });
+        // A page on the device may forward by script (OPNsense template): wait for the portal.
+        if (!/\/portal/.test(new URL(page.url()).pathname)) {
+            await page.waitForURL((u) => /\/portal/.test(u.pathname), { timeout: 15000 }).catch(() => {});
+            await page.waitForLoadState('load');
+        }
         const portal = new URL(page.url());
         step('portal', { url: page.url() });
         if (!/\/portal/.test(portal.pathname)) throw new Error('not redirected to the portal');
@@ -34,11 +39,32 @@ const NO_RADIUS = process.env.NO_RADIUS === '1';
         await page.check('input[name=terms]');
         step('code', { code: CODE.replace(/\d{4}$/, '****') });
 
+        // Remember the success URL of the handoff (OPNsense's logon API answers JSON instead of redirecting).
+        let successUrl = null;
+        page.on('request', (r) => {
+            const data = r.method() === 'POST' ? r.postData() : null;
+            const fields = data ? new URLSearchParams(data) : null;
+            if (fields && fields.has('password')) successUrl = fields.get('redirurl') || fields.get('dst') || fields.get('url') || successUrl;
+        });
         // Submit: the handoff page posts (or navigates) to the simulator, which redirects to the status page.
-        await Promise.all([
-            page.waitForURL(/\/status\//, { timeout: 30000 }),
-            page.click('button[type=submit]'),
-        ]);
+        await page.click('button[type=submit]');
+        const deadline = Date.now() + 30000;
+        while (!/\/status\//.test(page.url())) {
+            if (Date.now() > deadline) throw new Error('no status page, at ' + page.url());
+            // Chrome's warning before a form goes from the HTTPS portal to an HTTP login URL: send anyway.
+            const proceed = page.locator('#proceed-button');
+            if (await proceed.count()) {
+                step('insecure_form_warning', { clicked: true });
+                await proceed.click();
+            }
+            const body = await page.locator('body').innerText().catch(() => '');
+            if (/"clientState"\s*:\s*"AUTHORIZED"/.test(body) && successUrl) {
+                step('logon_api', { clientState: 'AUTHORIZED' });
+                await page.goto(successUrl, { waitUntil: 'load' });
+                break;
+            }
+            await page.waitForTimeout(500);
+        }
         step('status', { url: page.url().replace(/signature=[^&]+/, 'signature=...') });
         const text = await page.locator('body').innerText();
         if (NO_RADIUS) {

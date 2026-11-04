@@ -12,12 +12,20 @@ portal's RADIUS. It is not part of `php artisan test`.
 1. **Captive entry** `GET /`: redirects the browser to the portal with the vendor's parameter names and MAC notation
    (Cisco `switch_url`/`client_mac`, Aruba `mac`/`ip`/`url`, pfSense page variables, CoovaChilli `uamip`/`uamport`/
    `challenge`, Ruckus `client_mac`/`uip`/`sip`, custom `mac`/`ip`/`login`), the login URL pointing back at itself.
+   OPNsense: redirects to its own template `/index.html?redirurl=..`, serves the real
+   [`docs/opnsense-captive-template/index.html`](../../docs/opnsense-captive-template/index.html) (portal URL filled
+   in) and the status API `POST /api/captiveportal/access/status/0/`; the template forwards to the portal.
 2. **Login form** (the portal's handoff): checks method, path, field names and fixed fields of the preset; for
-   CoovaChilli it decodes the UAM password (hex, XOR with MD5(challenge + uamsecret)).
+   CoovaChilli it decodes the UAM password (hex, XOR with MD5(challenge + uamsecret), or the raw challenge without
+   uamsecret, as CoovaChilli 1.9 does). OPNsense: the logon API `POST /api/captiveportal/access/logon/0/` (`user`,
+   `password`) answers JSON `{"clientState":"AUTHORIZED"}`, posted by the portal's handoff or by the template
+   (`opnsense_fragment`).
 3. **RADIUS**: Access-Request (PAP, Message-Authenticator, `Calling-Station-Id` in the vendor's notation,
    `NAS-IP-Address`, `NAS-Identifier`, `Framed-IP-Address`), reads `Session-Timeout`, `Acct-Interim-Interval` and
    `WISPr-Bandwidth-Max-Up/Down`, sends Accounting-Start, Interim-Updates, and redirects the browser to the success URL.
-4. **CoA**: answers a Disconnect-Request (RFC 5176) on UDP 3799 with Disconnect-ACK when every identifying attribute
+   Attributes follow what real devices sent in a test (CoovaChilli 1.9: Service-Type, NAS-Port(-Id), dashed MACs,
+   Acct-Session-Id; OPNsense 26.7: no Framed-IP-Address, NAS-Port-Type Ethernet).
+4. **CoA** (not for OPNsense, which has none): answers a Disconnect-Request (RFC 5176) on UDP 3799 with Disconnect-ACK when every identifying attribute
    matches the session (else NAK, Error-Cause 503), then sends Accounting-Stop (Admin-Reset).
 5. Logs one line per step (`[preset] step: ...`) and serves its state as JSON at `/state`.
 
@@ -28,7 +36,7 @@ Disconnect-ACK and Accounting-Stop, then prints a summary table.
 ## Run against the container (the real target)
 
 ```sh
-tests/nas-sim/run.sh <portal-container> [cisco_wlc aruba opnsense coovachilli ruckus custom]
+tests/nas-sim/run.sh <portal-container> [cisco_wlc aruba pfsense opnsense opnsense_fragment coovachilli ruckus custom]
 ```
 
 - Needs Docker and `openssl` on the host and internet access for the images (`python:3.12-alpine`,
@@ -42,6 +50,11 @@ tests/nas-sim/run.sh <portal-container> [cisco_wlc aruba opnsense coovachilli ru
   `1M/4M`, so WISPr shows up). Overrides for the test: Aruba's fixed login host becomes the simulator, the custom
   mapping reads the login URL from `login`. Use a **test instance**; remove the seed with
   `tests/nas-sim/run.sh --cleanup <portal-container>`.
+- `opnsense_fragment` is the preset `opnsense` with the handoff method "fragment" (login URL
+  `http://{nas_host}/index.html`). For both OPNsense runs the expected result after the revoke is **no**
+  Disconnect-Request and no Accounting-Stop (OPNsense does not support it; access ends at the Session-Timeout).
+  With the HTTPS portal, the default OPNsense handoff posts a form to HTTP: Chrome shows its "form is not secure"
+  warning first; `flow.js` clicks "Send anyway" and logs the step `insecure_form_warning`.
 - Ruckus always uses port 9998 (the preset's login URL `https://{sip}:9998/login`); the others `SIM_PORT` (8099).
 - Requires: code login switched on and terms of use published on the instance, the queue worker running (the
   Disconnect-Request is a queued job), no other router with NAS IP `127.0.0.1`.

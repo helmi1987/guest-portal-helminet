@@ -18,7 +18,8 @@
 #   Seeds through `php artisan tinker` in the repository, runs the simulator with --no-radius and Playwright
 #   from local node_modules (npm i --no-save playwright). Checks redirect and handoff only; RADIUS is skipped.
 #
-# Presets: cisco_wlc aruba opnsense coovachilli ruckus custom (default: all). Summary table at the end.
+# Presets: cisco_wlc aruba pfsense opnsense opnsense_fragment coovachilli ruckus custom (default: all; opnsense_fragment
+# = preset opnsense with the handoff method "fragment" through docs/opnsense-captive-template). Summary table at the end.
 # Env: SIM_PORT (8099; ruckus always 9998), SITE_SLUG (nas-sim), PYTHON_IMAGE, PLAYWRIGHT_VERSION.
 set -eu
 
@@ -30,7 +31,7 @@ PYTHON_IMAGE=${PYTHON_IMAGE:-python:3.12-alpine}
 PLAYWRIGHT_VERSION=${PLAYWRIGHT_VERSION:-1.49.1}
 PLAYWRIGHT_IMAGE=${PLAYWRIGHT_IMAGE:-mcr.microsoft.com/playwright:v${PLAYWRIGHT_VERSION}-noble}
 UAMSECRET=sim-uamsecret
-ALL="cisco_wlc aruba opnsense coovachilli ruckus custom"
+ALL="cisco_wlc aruba pfsense opnsense opnsense_fragment coovachilli ruckus custom"
 
 usage() { sed -n '2,22p' "$0" | sed 's/^# \{0,1\}//'; exit 2; }
 say() { printf '%s\n' "[run] $*" >&2; }
@@ -89,15 +90,17 @@ $site->save();
 $overrides = match ($preset) {
     "aruba" => ["login_url" => "https://127.0.0.1:".$port."/cgi-bin/login"],
     "custom" => ["param_login_url" => "login"],
+    "opnsense_fragment" => ["method" => "fragment", "login_url" => "http://{nas_host}/index.html"],
     default => [],
 };
+$variant = $preset; $preset = $preset === "opnsense_fragment" ? "opnsense" : $preset;
 $site->settings = GenericSettings::mergeInto($site, ["preset" => $preset] + $overrides + Presets::PRESETS[$preset]
-    + ["wispr" => true, "disconnect_attrs" => GenericSettings::DEFAULT_DISCONNECT], $preset === "coovachilli" ? "'"$UAMSECRET"'" : "");
+    + ["wispr" => true, "disconnect_attrs" => Presets::DISCONNECT[$preset] ?? GenericSettings::DEFAULT_DISCONNECT], $preset === "coovachilli" ? "'"$UAMSECRET"'" : "");
 $site->save();
 $nas = $site->nasClients()->where("nas_ip", "127.0.0.1")->first() ?? $site->nasClients()->create(["name" => "NAS simulator", "nas_ip" => "127.0.0.1", "coa_port" => 3799]);
 $written = app(App\Radius\ClientsFile::class)->write();
 $grant = app(App\Services\GrantManager::class)->createCode(["duration_s" => 3600, "expiry_mode" => App\Enums\ExpiryMode::FirstLogin,
-    "rate_limit" => "1M/4M", "label" => "nas-sim ".$preset]);
+    "rate_limit" => "1M/4M", "label" => "nas-sim ".$variant]);
 echo "SEED ".json_encode(["secret" => $nas->radius_secret, "code" => $grant->code, "grant" => $grant->id, "written" => $written])."\n";
 ' | sed -n 's/^SEED //p;s/^\(SEED_ERROR .*\)/\1/p'
 }
@@ -122,8 +125,13 @@ FAILED=0
 for preset in $PRESETS; do
     port=$SIM_PORT
     [ "$preset" = ruckus ] && port=9998
+    sim_preset=$preset
+    [ "$preset" = opnsense_fragment ] && sim_preset=opnsense
     scheme=https
-    [ "$preset" = coovachilli ] && scheme=http
+    case "$sim_preset" in coovachilli|opnsense) scheme=http ;; esac
+    # OPNsense has no Disconnect-Request: revoke must not reach the device, access ends at the Session-Timeout.
+    nocoa=0
+    [ "$sim_preset" = opnsense ] && nocoa=1
     sim_url="$scheme://$SIM_HOST:$port"
     say "== $preset: seeding"
     out=$(seed "$preset" "$port")
@@ -132,10 +140,10 @@ $preset|seed failed|-|-|-|-|-|-"; continue ;; esac
     secret=$(json "$out" secret); code=$(json "$out" code); grant=$(json "$out" grant)
     [ "$(json "$out" written)" = True ] && { say "clients file rewritten: waiting for the FreeRADIUS restart"; sleep 8; }
 
-    args="--preset $preset --portal $PORTAL_URL --site $SLUG --host $SIM_HOST --port $port --secret $secret --uamsecret $UAMSECRET"
+    args="--preset $sim_preset --portal $PORTAL_URL --site $SLUG --host $SIM_HOST --port $port --secret $secret --uamsecret $UAMSECRET"
     if [ "$MODE" = local ]; then
         # shellcheck disable=SC2086
-        python3 "$DIR/nas_sim.py" $args --no-radius --cert "$CERTS/sim.crt" --key "$CERTS/sim.key" &
+        python3 "$DIR/nas_sim.py" $args --no-radius --cert "$CERTS/sim.crt" --key "$CERTS/sim.key" --template "$ROOT/docs/opnsense-captive-template/index.html" &
         SIM_PID=$!
         sleep 1
         (cd "$DIR" && SIM_URL="$sim_url/" CODE="$code" PRESET="$preset" NO_RADIUS=1 node flow.js) >"$CERTS/flow.json" || true
@@ -143,7 +151,8 @@ $preset|seed failed|-|-|-|-|-|-"; continue ;; esac
         docker rm -f "nas-sim-$preset" >/dev/null 2>&1 || true
         # shellcheck disable=SC2086
         docker run -d --name "nas-sim-$preset" --network "container:$CONTAINER" -v "$DIR:/sim:ro" -v "$CERTS:/certs:ro" \
-            "$PYTHON_IMAGE" python3 -u /sim/nas_sim.py $args --cert /certs/sim.crt --key /certs/sim.key >/dev/null
+            -v "$ROOT/docs/opnsense-captive-template:/template:ro" \
+            "$PYTHON_IMAGE" python3 -u /sim/nas_sim.py $args --cert /certs/sim.crt --key /certs/sim.key --template /template/index.html >/dev/null
         sleep 2
         docker run --rm --network "container:$CONTAINER" -v "$DIR:/sim:ro" -e SIM_URL="$sim_url/" -e CODE="$code" -e PRESET="$preset" \
             "$PLAYWRIGHT_IMAGE" sh -c "cd /tmp && npm init -y >/dev/null 2>&1 && npm i --no-save --no-audit --no-fund playwright@$PLAYWRIGHT_VERSION >/dev/null 2>&1 && cp /sim/flow.js . && node flow.js" \
@@ -154,15 +163,22 @@ $preset|seed failed|-|-|-|-|-|-"; continue ;; esac
 
     disc=-; stop=-
     if [ "$MODE" = container ] && [ "$flow_ok" = True ]; then
-        say "revoking the grant: expecting Disconnect-ACK and Accounting-Stop"
         artisan '$g = App\Models\Grant::find("'"$grant"'"); app(App\Services\GrantManager::class)->revoke($g); echo "revoked\n";' >/dev/null
+        if [ "$nocoa" = 1 ]; then
+            say "revoked the grant: no Disconnect-Request expected (not supported), waiting 15 s"
+            sleep 15
+        else
+            say "revoked the grant: expecting Disconnect-ACK and Accounting-Stop"
+        fi
         i=0
-        while [ $i -lt 30 ]; do
+        while [ "$nocoa" = 0 ] && [ $i -lt 30 ]; do
             st=$(state "$sim_url" "$preset" 2>/dev/null || echo '{}')
             stop=$(printf '%s' "$st" | check '"Stop" in s.get("accounting", [])')
             [ "$stop" = True ] && break
             sleep 2; i=$((i + 1))
         done
+        st=$(state "$sim_url" "$preset" 2>/dev/null || echo '{}')
+        stop=$(printf '%s' "$st" | check '"Stop" in s.get("accounting", [])')
         disc=$(printf '%s' "$st" | check '",".join(d["result"] for d in s.get("disconnect", [])) or "none"')
     fi
     st=$(state "$sim_url" "$preset" 2>/dev/null || echo '{}')
@@ -175,7 +191,12 @@ $preset|seed failed|-|-|-|-|-|-"; continue ;; esac
         ok=$([ "$flow_ok" = True ] && [ "$handoff" = True ] && echo PASS || echo FAIL)
         kill "$SIM_PID" 2>/dev/null || true; wait "$SIM_PID" 2>/dev/null || true; SIM_PID=
     else
-        ok=$([ "$flow_ok" = True ] && [ "$access" = accept ] && [ "$disc" = ack ] && [ "$stop" = True ] && echo PASS || echo FAIL)
+        if [ "$nocoa" = 1 ]; then
+            # Expected: accepted, no Disconnect-Request reached the device, the session stays until Session-Timeout.
+            ok=$([ "$flow_ok" = True ] && [ "$access" = accept ] && [ "$disc" = none ] && [ "$stop" = False ] && echo PASS || echo FAIL)
+        else
+            ok=$([ "$flow_ok" = True ] && [ "$access" = accept ] && [ "$disc" = ack ] && [ "$stop" = True ] && echo PASS || echo FAIL)
+        fi
         docker logs "nas-sim-$preset" 2>&1 | tail -n 40 >&2
         docker rm -f "nas-sim-$preset" >/dev/null 2>&1 || true
     fi
@@ -184,9 +205,9 @@ $preset|seed failed|-|-|-|-|-|-"; continue ;; esac
 $preset|$flow_ok|$handoff|$access|$wispr|$start|$disc|$stop|$ok|$errors"
 done
 
-printf '\n%-12s %-6s %-8s %-7s %-17s %-6s %-11s %-6s %-5s %s\n' preset flow handoff access wispr_up/down start disconnect stop result errors
+printf '\n%-18s %-6s %-8s %-7s %-17s %-6s %-11s %-6s %-5s %s\n' preset flow handoff access wispr_up/down start disconnect stop result errors
 printf '%s\n' "$SUMMARY" | while IFS='|' read -r p f h a w s d t r e; do
-    [ -n "$p" ] && printf '%-12s %-6s %-8s %-7s %-17s %-6s %-11s %-6s %-5s %s\n' "$p" "$f" "$h" "$a" "$w" "$s" "$d" "$t" "$r" "${e:-}"
+    [ -n "$p" ] && printf '%-18s %-6s %-8s %-7s %-17s %-6s %-11s %-6s %-5s %s\n' "$p" "$f" "$h" "$a" "$w" "$s" "$d" "$t" "$r" "${e:-}"
 done
 [ "$MODE" = local ] && say "local mode: RADIUS, accounting and Disconnect-Request were skipped (no FreeRADIUS)."
 exit $FAILED
