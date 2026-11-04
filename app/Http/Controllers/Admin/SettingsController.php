@@ -18,8 +18,10 @@ use App\Http\Controllers\Controller;
 use App\Models\Channel;
 use App\Models\Instance;
 use App\Models\Setting;
+use App\Sms\Drivers\SmsDrivers;
 use App\Sms\OtpService;
 use App\Sms\PhoneNumber;
+use App\Sms\SmsProviders;
 use App\Sms\SmsSettings;
 use App\Support\Audit;
 use App\Support\DisplayOrder;
@@ -46,7 +48,11 @@ class SettingsController extends Controller
     {
         return view('admin.settings', [
             'channels' => Channel::query()->where('kind', Channel::KIND_NOTIFICATION)->orderBy('name')->get(),
-            'smsChannels' => Channel::query()->where('kind', Channel::KIND_SMS)->orderBy('name')->get(),
+            'smsChannels' => $smsChannels = SmsProviders::ordered(),
+            'smsBadges' => SmsProviders::badges($smsChannels),
+            'smsDown' => $smsChannels->mapWithKeys(fn (Channel $c) => [$c->id => SmsProviders::downSince($c)])->filter()->all(),
+            'smsOutage' => SmsProviders::outage(),
+            'smsCooldownS' => SmsSettings::failoverCooldownS(),
             'smsDurationHours' => round(SmsSettings::durationS() / 3600, 2),
             'smsCountries' => implode(', ', SmsSettings::countries()),
             'smsCaps' => SmsSettings::caps(),
@@ -402,6 +408,7 @@ class SettingsController extends Controller
             'sms_duration_hours' => ['required', 'numeric', 'between:0.25,8760'],
             'sms_countries' => ['required', 'string', 'max:500'],
             ...collect($caps)->mapWithKeys(fn ($k) => ["sms_caps.$k" => ['required', 'integer', 'between:0,100000']])->all(),
+            'sms_failover_cooldown_s' => ['sometimes', 'required', 'integer', 'between:'.SmsSettings::COOLDOWN_MIN.','.SmsSettings::COOLDOWN_MAX],
             'sms_text' => ['sometimes', 'array'],
             ...collect(config('portal.locales'))->mapWithKeys(fn ($l) => ["sms_text.$l" => ['nullable', 'string', 'max:2000']])->all(),
         ]);
@@ -431,12 +438,15 @@ class SettingsController extends Controller
         Setting::put('sms_duration_s', (int) round($data['sms_duration_hours'] * 3600));
         Setting::put('sms_countries', $countries);
         Setting::put('sms_caps', array_map('intval', $data['sms_caps']));
+        if (isset($data['sms_failover_cooldown_s'])) {
+            Setting::put('sms_failover_cooldown_s', (int) $data['sms_failover_cooldown_s']);
+        }
         if ($request->has('sms_text')) {
             Setting::put('sms_text', $texts);
         }
         Audit::log('settings.sms', null, ['duration_s' => (int) round($data['sms_duration_hours'] * 3600),
             'countries' => $countries, 'caps' => array_map('intval', $data['sms_caps']),
-            'own_text' => array_keys($texts)]);
+            'own_text' => array_keys($texts), 'failover_cooldown_s' => SmsSettings::failoverCooldownS()]);
 
         return back()->with('status', __('portal.saved'));
     }
@@ -514,7 +524,12 @@ class SettingsController extends Controller
         abort_unless(Channel::kindOf($driver) !== null, 404);
 
         $channel = new Channel(['kind' => Channel::kindOf($driver), 'driver' => $driver]);
+        $sms = $channel->kind === Channel::KIND_SMS;
+        // SMS: store the current list first (keeps the active provider of a list from before 0.26.0),
+        // then append the new provider as last backup (or active, if none is enabled).
+        $sms && SmsProviders::normalise();
         $this->fill($request, $channel);
+        $sms && SmsProviders::normalise();
         Audit::log('channel.created', $channel, ['driver' => $driver, 'name' => $channel->name]);
 
         return redirect()->route('admin.settings')->with('status', __('portal.saved'));
@@ -536,6 +551,28 @@ class SettingsController extends Controller
         return redirect()->route('admin.settings')->with('status', __('portal.deleted'));
     }
 
+    /** SMS provider list: make this channel the active provider (enables it). */
+    public function smsPrimary(Channel $channel): RedirectResponse
+    {
+        abort_unless($channel->kind === Channel::KIND_SMS && ! in_array($channel->driver, SmsDrivers::TEST_ONLY, true), 404);
+        SmsProviders::makePrimary($channel);
+        Audit::log('channel.sms_primary', $channel, ['name' => $channel->name]);
+
+        return redirect()->route('admin.settings')->with('status', __('portal.saved'));
+    }
+
+    /** SMS provider list: move a backup one place up or down. */
+    public function smsMove(Request $request, Channel $channel): RedirectResponse
+    {
+        abort_unless($channel->kind === Channel::KIND_SMS, 404);
+        $direction = $request->validate(['direction' => ['required', 'in:up,down']])['direction'];
+        if (SmsProviders::move($channel, $direction === 'up' ? -1 : 1)) {
+            Audit::log('channel.sms_order', $channel, ['name' => $channel->name, 'direction' => $direction]);
+        }
+
+        return redirect()->route('admin.settings')->with('status', __('portal.saved'));
+    }
+
     /** Validate and save; empty secret fields keep the stored value. */
     private function fill(Request $request, Channel $channel): void
     {
@@ -545,11 +582,13 @@ class SettingsController extends Controller
         foreach ($fields as $field => $spec) {
             $required = ($spec['required'] ?? false) && ! (($spec['secret'] ?? false) && ! empty($old[$field]));
             $rules["config.$field"] = [$required ? 'required' : 'nullable', 'string', 'max:500',
-                ...(in_array($field, ['url', 'api_url'], true) ? ['url:https,http'] : [])];
+                ...(in_array($field, ['url', 'api_url'], true) ? ['url:https,http'] : []),
+                ...(isset($spec['options']) ? [Rule::in($spec['options'])] : [])];
         }
         $data = $request->validate($rules);
 
-        $config = [];
+        // Reserved keys (SMS role and order, SmsProviders) are not form fields and are kept.
+        $config = SmsProviders::reservedOf($old);
         foreach ($fields as $field => $spec) {
             $value = trim((string) ($data['config'][$field] ?? ''));
             $config[$field] = ($spec['secret'] ?? false) && $value === '' ? ($old[$field] ?? null) : $value;

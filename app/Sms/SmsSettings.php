@@ -37,6 +37,21 @@ class SmsSettings
         return $caps;
     }
 
+    public const COOLDOWN_MIN = 60;
+
+    public const COOLDOWN_MAX = 3600;
+
+    /**
+     * Failover cooldown in seconds (CONCEPT.md §7.2 B): how long a failed provider is skipped before it is
+     * tried again. Default 300 s, 60-3600 s.
+     */
+    public static function failoverCooldownS(): int
+    {
+        $value = (int) Setting::get('sms_failover_cooldown_s', config('portal.sms.failover_cooldown_s', 300));
+
+        return min(self::COOLDOWN_MAX, max(self::COOLDOWN_MIN, $value));
+    }
+
     public const TEXT_MAX = 300;
 
     /**

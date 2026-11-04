@@ -37,9 +37,10 @@ class Channel extends Model
         $query->where('kind', self::KIND_NOTIFICATION)->where('enabled', true);
     }
 
+    /** Enabled SMS channels that may send guest codes (test-only drivers such as Free Mobile excluded). */
     public function scopeActiveSms(Builder $query): void
     {
-        $query->where('kind', self::KIND_SMS)->where('enabled', true);
+        $query->where('kind', self::KIND_SMS)->where('enabled', true)->whereNotIn('driver', SmsDrivers::TEST_ONLY);
     }
 
     /** Kind of a driver name (driver names are unique across kinds), null if unknown. */

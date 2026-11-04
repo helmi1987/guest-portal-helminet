@@ -145,6 +145,8 @@ return [
         // hour/day, and per instance per day.
         'caps' => ['phone_hour' => 3, 'phone_day' => 6, 'mac_hour' => 3, 'mac_day' => 6, 'site_hour' => 30,
             'site_day' => 200, 'global_day' => 500],
+        // Failover between SMS providers: seconds a failed provider is skipped (setting, 60-3600).
+        'failover_cooldown_s' => 300,
     ],
 
     // Code duration presets in seconds.

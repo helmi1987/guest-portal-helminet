@@ -2,18 +2,20 @@
 
 namespace App\Jobs;
 
-use App\Models\Channel;
+use App\Models\OtpChallenge;
 use App\Models\SmsMessage;
+use App\Sms\SmsSender;
 use App\Support\Redact;
 use Illuminate\Contracts\Queue\ShouldBeEncrypted;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
 use Illuminate\Support\Facades\Log;
-use Throwable;
 
 /**
- * Send one SMS via the first enabled SMS channel and record the provider's answer. The payload
- * contains the code, so the queued job is encrypted. Not retried (the guest can resend).
+ * Send one SMS via the active SMS provider, with failover to the backups (SmsSender, CONCEPT.md §7.2 B),
+ * and record the result. The payload contains the code, so the queued job is encrypted. Not retried (the
+ * guest can request a new code). When no provider delivers, the challenge is closed, so the guest's code
+ * page shows the "sms_failed" error page instead of waiting for a code that never comes.
  */
 class SendSms implements ShouldBeEncrypted, ShouldQueue
 {
@@ -23,29 +25,27 @@ class SendSms implements ShouldBeEncrypted, ShouldQueue
 
     public function __construct(public string $messageId, public string $text) {}
 
-    public function handle(): void
+    public function handle(SmsSender $sender): void
     {
         $message = SmsMessage::find($this->messageId);
         if ($message === null) {
             return;
         }
-        $channel = Channel::query()->activeSms()->orderBy('name')->first();
-        if ($channel === null) {
-            $message->update(['status' => SmsMessage::FAILED, 'error' => 'No enabled SMS channel']);
+
+        $result = $sender->send($message->phone_e164, $this->text, ['message' => $message->id]);
+        if ($result['status'] === 'accepted') {
+            $message->update(['status' => SmsMessage::ACCEPTED, 'channel_id' => $result['channel']->id, 'provider_id' => $result['id']]);
+            Log::info('SMS accepted', ['message' => $message->id, 'channel' => $result['channel']->id,
+                'provider_id' => $result['id'], 'phone' => Redact::phone($message->phone_e164)]);
 
             return;
         }
 
-        try {
-            $id = $channel->smsDriver()->send($channel, $message->phone_e164, $this->text);
-            $message->update(['status' => SmsMessage::ACCEPTED, 'channel_id' => $channel->id, 'provider_id' => $id]);
-            Log::info('SMS accepted', ['message' => $message->id, 'channel' => $channel->id, 'provider_id' => $id,
-                'phone' => Redact::phone($message->phone_e164)]);
-        } catch (Throwable $e) {
-            $error = Redact::secrets($e->getMessage(), $channel->secretValues());
-            $message->update(['status' => SmsMessage::FAILED, 'channel_id' => $channel->id, 'error' => mb_substr($error, 0, 255)]);
-            Log::warning('SMS failed', ['message' => $message->id, 'channel' => $channel->id, 'driver' => $channel->driver,
-                'phone' => Redact::phone($message->phone_e164), 'error' => $error]);
+        $message->update(['status' => SmsMessage::FAILED, 'channel_id' => $result['channel']?->id,
+            'error' => mb_substr($result['error'], 0, 255)]);
+        $challenge = $message->otp_challenge_id ? OtpChallenge::find($message->otp_challenge_id) : null;
+        if ($challenge !== null && $challenge->isOpen()) {
+            $challenge->update(['expires_at' => now()]);
         }
     }
 }

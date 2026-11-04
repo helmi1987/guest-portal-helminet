@@ -118,6 +118,10 @@
             <label class="label">{{ __('portal.settings.sms_caps.'.$key) }}
                 <input name="sms_caps[{{ $key }}]" type="number" min="0" value="{{ old('sms_caps.'.$key, $value) }}" required class="field"></label>
         @endforeach
+        <label class="label">{{ __('portal.settings.sms_failover_cooldown') }}
+            <input name="sms_failover_cooldown_s" type="number" min="{{ \App\Sms\SmsSettings::COOLDOWN_MIN }}" max="{{ \App\Sms\SmsSettings::COOLDOWN_MAX }}" value="{{ old('sms_failover_cooldown_s', $smsCooldownS) }}" required class="field">
+            <span class="text-xs text-slate-500">{{ __('portal.settings.sms_failover_cooldown_help') }}</span>
+            @error('sms_failover_cooldown_s')<span class="text-xs text-red-600">{{ $message }}</span>@enderror</label>
         <p class="text-xs text-slate-500 md:col-span-2">{{ __('portal.settings.sms_help') }}</p>
         <h3 class="font-semibold md:col-span-2">{{ __('portal.settings.sms_text') }}</h3>
         @foreach ($smsTexts as $locale => $text)
@@ -159,27 +163,68 @@
     <section class="card">
         <div class="mb-4 flex flex-wrap items-center justify-between gap-2">
             <h2 class="text-lg font-semibold">{{ __('portal.channels.sms_title') }}</h2>
-            <div class="flex gap-2">
-                @foreach (array_keys(\App\Sms\Drivers\SmsDrivers::DRIVERS) as $driver)
-                    <a href="{{ route('admin.channels.create', ['driver' => $driver]) }}" class="btn-light">+ {{ __('portal.channels.drivers.'.$driver) }}</a>
-                @endforeach
-            </div>
+            <form method="GET" action="{{ route('admin.channels.create') }}" class="flex flex-wrap items-center gap-2">
+                <label class="sr-only" for="sms-driver">{{ __('portal.channels.driver') }}</label>
+                <select id="sms-driver" name="driver" class="field">
+                    @foreach (array_keys(\App\Sms\Drivers\SmsDrivers::DRIVERS) as $driver)
+                        <option value="{{ $driver }}">{{ __('portal.channels.drivers.'.$driver) }}</option>
+                    @endforeach
+                </select>
+                <button class="btn-light">+ {{ __('portal.channels.sms_add') }}</button>
+            </form>
         </div>
+        @if ($smsOutage)
+            @php($outagePrimary = $smsChannels->firstWhere('id', $smsOutage['primary']))
+            @php($outageUsed = $smsChannels->firstWhere('id', $smsOutage['used']))
+            <p data-sms-outage class="mb-4 rounded border border-amber-300 bg-amber-50 p-3 text-sm text-amber-900">{{ __('portal.channels.sms_outage', [
+                'primary' => $outagePrimary?->name ?? '–', 'used' => $outageUsed?->name ?? '–',
+                'time' => \Illuminate\Support\Carbon::createFromTimestamp($smsOutage['failed_at'])->setTimezone(config('app.timezone'))->format('d.m.Y H:i')]) }}</p>
+        @endif
         <table class="data-table">
-            <thead><tr><th>{{ __('portal.sites.name') }}</th><th>{{ __('portal.channels.driver') }}</th><th>{{ __('portal.channels.enabled') }}</th><th></th></tr></thead>
+            <thead><tr><th>{{ __('portal.channels.sms_role') }}</th><th>{{ __('portal.sites.name') }}</th><th>{{ __('portal.channels.driver') }}</th><th></th></tr></thead>
             <tbody>
                 @forelse ($smsChannels as $channel)
+                    @php($badge = $smsBadges[$channel->id])
                     <tr>
+                        <td>
+                            <span data-sms-role="{{ $badge['role'] }}" @class(['rounded px-2 py-0.5 text-xs font-medium',
+                                'bg-green-100 text-green-800' => $badge['role'] === 'primary',
+                                'bg-slate-100 text-slate-700' => $badge['role'] === 'backup',
+                                'bg-slate-50 text-slate-400' => $badge['role'] === 'off'])>{{ match ($badge['role']) {
+                                'primary' => __('portal.channels.sms_primary'),
+                                'backup' => __('portal.channels.sms_backup', ['n' => $badge['n']]),
+                                default => __('portal.channels.sms_off'),
+                            } }}</span>
+                            @if (isset($smsDown[$channel->id]))
+                                <span class="block text-xs text-red-700">{{ __('portal.channels.sms_down', ['time' => \Illuminate\Support\Carbon::createFromTimestamp($smsDown[$channel->id])->setTimezone(config('app.timezone'))->format('H:i')]) }}</span>
+                            @endif
+                        </td>
                         <td>{{ $channel->name }}</td>
                         <td>{{ __('portal.channels.drivers.'.$channel->driver) }}</td>
-                        <td>{{ $channel->enabled ? '✓' : '–' }}</td>
-                        <td><a href="{{ route('admin.channels.edit', $channel) }}" class="btn-light">{{ __('portal.channels.edit') }}</a></td>
+                        <td class="flex flex-wrap gap-1">
+                            @if ($badge['role'] !== 'primary' && ! in_array($channel->driver, \App\Sms\Drivers\SmsDrivers::TEST_ONLY, true))
+                                <form method="POST" action="{{ route('admin.channels.sms-primary', $channel) }}">@csrf
+                                    <button class="btn-light">{{ __('portal.channels.sms_make_primary') }}</button></form>
+                            @endif
+                            @if ($badge['role'] !== 'primary' && ! $loop->first && ! ($loop->index === 1 && $smsBadges[$smsChannels[0]->id]['role'] === 'primary'))
+                                <form method="POST" action="{{ route('admin.channels.sms-move', $channel) }}">@csrf
+                                    <input type="hidden" name="direction" value="up">
+                                    <button class="btn-light" title="{{ __('portal.channels.sms_up') }}">{{ __('portal.channels.sms_up') }}</button></form>
+                            @endif
+                            @if ($badge['role'] !== 'primary' && ! $loop->last)
+                                <form method="POST" action="{{ route('admin.channels.sms-move', $channel) }}">@csrf
+                                    <input type="hidden" name="direction" value="down">
+                                    <button class="btn-light" title="{{ __('portal.channels.sms_down_move') }}">{{ __('portal.channels.sms_down_move') }}</button></form>
+                            @endif
+                            <a href="{{ route('admin.channels.edit', $channel) }}" class="btn-light">{{ __('portal.channels.edit') }}</a>
+                        </td>
                     </tr>
                 @empty
                     <tr><td colspan="4" class="text-slate-500">{{ __('portal.channels.sms_none') }}</td></tr>
                 @endforelse
             </tbody>
         </table>
-        <p class="mt-4 text-xs text-slate-500">{{ __('portal.channels.sms_help') }}</p>
+        <p class="mt-4 text-xs text-slate-500">{{ __('portal.channels.sms_failover_help') }}</p>
+        <p class="mt-1 text-xs text-slate-500">{{ __('portal.channels.sms_help') }}</p>
     </section>
 </x-layouts.admin>

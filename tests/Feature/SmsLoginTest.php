@@ -77,7 +77,7 @@ class SmsLoginTest extends TestCase
     public function test_wrong_codes_use_up_tries_and_codes_expire(): void
     {
         $this->clickatell();
-        Http::fake();
+        Http::fake(['platform.clickatell.com/*' => Http::response(['messages' => [['apiMessageId' => 'm1', 'accepted' => true]]])]);
 
         $this->enterPortal();
         $this->requestSms();
@@ -100,7 +100,7 @@ class SmsLoginTest extends TestCase
     public function test_country_allowlist_is_enforced_and_configurable(): void
     {
         $this->clickatell();
-        Http::fake();
+        Http::fake(['platform.clickatell.com/*' => Http::response(['messages' => [['apiMessageId' => 'm1', 'accepted' => true]]])]);
         $this->enterPortal();
 
         $this->requestSms('+44 7400 000000')->assertSessionHasErrors(['phone' => __('portal.guest.errors.phone_country',
@@ -126,7 +126,7 @@ class SmsLoginTest extends TestCase
     public function test_resend_cooldown_and_cost_caps(): void
     {
         $this->clickatell();
-        Http::fake();
+        Http::fake(['platform.clickatell.com/*' => Http::response(['messages' => [['apiMessageId' => 'm1', 'accepted' => true]]])]);
         $this->enterPortal();
         $this->requestSms();
 

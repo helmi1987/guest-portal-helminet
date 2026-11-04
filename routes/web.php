@@ -170,6 +170,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::post('/settings/branding', [BrandingController::class, 'updateGlobal'])->name('settings.branding');
                 Route::post('/channels/{channel}/test', [SettingsController::class, 'testChannel'])->name('channels.test')
                     ->middleware('throttle:5,1,channel-test');
+                Route::post('/channels/{channel}/sms-primary', [SettingsController::class, 'smsPrimary'])->name('channels.sms-primary');
+                Route::post('/channels/{channel}/sms-move', [SettingsController::class, 'smsMove'])->name('channels.sms-move');
                 Route::get('/channels/create', [SettingsController::class, 'createChannel'])->name('channels.create');
                 Route::post('/channels', [SettingsController::class, 'storeChannel'])->name('channels.store');
                 Route::get('/channels/{channel}', [SettingsController::class, 'editChannel'])->name('channels.edit');
