@@ -20,6 +20,7 @@ use App\Http\Controllers\Admin\SiteCodeController;
 use App\Http\Controllers\Admin\SiteController;
 use App\Http\Controllers\Admin\SiteControllerSettingsController;
 use App\Http\Controllers\Admin\SiteDirectoryController;
+use App\Http\Controllers\Admin\SiteGenericSettingsController;
 use App\Http\Controllers\Admin\TermsController;
 use App\Http\Controllers\Admin\ToolboxController;
 use App\Http\Controllers\Admin\UserController;
@@ -53,6 +54,9 @@ Route::middleware(['zone:guest', 'locale', 'guest.texts'])->group(function () {
     // UniFi external portal redirect (experimental, decision 2026-11-04): /guest/s/<UniFi site>/?ap=..&id=..
     Route::get('/guest/s/{unifiSite}', [PortalController::class, 'unifiRedirect'])->name('guest.unifi')
         ->where('unifiSite', '[A-Za-z0-9._-]{1,64}')->middleware('throttle:60,1,guest-unifi');
+    // Generic RADIUS captive portal redirect (experimental, decision 2026-11-04, v0.28.0): the NAS appends its query.
+    Route::get('/portal/g/{slug}', [PortalController::class, 'genericRedirect'])->name('guest.generic')
+        ->where('slug', '[A-Za-z0-9_-]{1,64}')->middleware('throttle:60,1,guest-generic');
     Route::post('/portal/code', [PortalController::class, 'redeem'])->name('guest.redeem')
         ->middleware('throttle:20,1,guest-code');
     // Directory account login (CONCEPT.md §7.2 E): user name and password of the site's AD / LDAP.
@@ -214,6 +218,10 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::put('/sites/{site}/controller', [SiteControllerSettingsController::class, 'update'])->name('sites.controller');
                 Route::post('/sites/{site}/controller/check', [SiteControllerSettingsController::class, 'check'])->name('sites.controller.check')
                     ->middleware('throttle:10,1,controller-check');
+                // Generic RADIUS captive portal (experimental, decision 2026-11-04, v0.28.0): mapping, preset, simulation.
+                Route::put('/sites/{site}/generic', [SiteGenericSettingsController::class, 'update'])->name('sites.generic');
+                Route::post('/sites/{site}/generic/preset', [SiteGenericSettingsController::class, 'preset'])->name('sites.generic.preset');
+                Route::get('/sites/{site}/generic/simulate', [SiteGenericSettingsController::class, 'simulate'])->name('sites.generic.simulate');
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');

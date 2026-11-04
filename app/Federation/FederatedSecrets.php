@@ -10,6 +10,7 @@ use App\Models\Channel;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Models\User;
+use App\Nas\Generic\GenericSettings;
 use App\Nas\Unifi\UnifiSettings;
 
 /**
@@ -70,6 +71,9 @@ class FederatedSecrets
 
         // API keys and local account passwords of the UniFi controllers (site setting "controller")
         $count += UnifiSettings::reencryptSecrets();
+
+        // Handoff secrets of generic RADIUS captive portals (site setting "generic")
+        $count += GenericSettings::reencryptSecrets();
 
         return $count + (OidcSettings::reencryptSecret() ? 1 : 0) + SocialSettings::reencryptSecrets();
     }

@@ -7,7 +7,8 @@ namespace App\Nas;
  * the binding MAC is the one RADIUS reports (CONCEPT.md §7.1). Controller-based drivers
  * (AuthorizesViaController) have no login URL; they carry the vendor fields instead: the access
  * point MAC, the SSID, the controller's site name and the redirect's timestamp (UniFi: ap, ssid,
- * the path's site, t). Missing keys in a stored context read as null.
+ * the path's site, t). The generic RADIUS driver keeps the redirect values its mapping refers to in
+ * `params` (name => value, validated by the driver). Missing keys in a stored context read as null.
  */
 final readonly class HotspotContext
 {
@@ -20,14 +21,18 @@ final readonly class HotspotContext
         public ?string $ssid = null,
         public ?string $unifiSite = null,
         public ?int $timestamp = null,
+        /** @var array<string, string> */
+        public array $params = [],
     ) {}
 
     public static function fromArray(array $data): self
     {
         $timestamp = $data['timestamp'] ?? null;
+        $params = is_array($data['params'] ?? null)
+            ? array_filter($data['params'], fn ($v, $k) => is_string($k) && is_string($v), ARRAY_FILTER_USE_BOTH) : [];
 
         return new self($data['mac'] ?? null, $data['ip'] ?? null, $data['login_url'] ?? null, $data['orig_url'] ?? null,
-            $data['ap'] ?? null, $data['ssid'] ?? null, $data['unifi_site'] ?? null, is_int($timestamp) ? $timestamp : null);
+            $data['ap'] ?? null, $data['ssid'] ?? null, $data['unifi_site'] ?? null, is_int($timestamp) ? $timestamp : null, $params);
     }
 
     public function toArray(): array
@@ -38,6 +43,9 @@ final readonly class HotspotContext
             if ($value !== null) {
                 $data[$key] = $value;
             }
+        }
+        if ($this->params !== []) {
+            $data['params'] = $this->params;
         }
 
         return $data;

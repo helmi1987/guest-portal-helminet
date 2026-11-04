@@ -21,4 +21,19 @@ final class Mac
         return preg_match('/^[0-9A-Fa-f]{2}([:-]?)[0-9A-Fa-f]{2}(\1[0-9A-Fa-f]{2}){4}\z/', (string) $value) === 1
             ? self::normalize($value) : null;
     }
+
+    /**
+     * Notations captive portals use in their redirect (decision 2026-11-04, v0.28.0): colon or dash
+     * separated (AA:BB:CC:DD:EE:FF, aa-bb-cc-dd-ee-ff), Cisco dotted (aabb.ccdd.eeff) or bare hex; any
+     * case. Normalised to AA:BB:CC:DD:EE:FF; null for anything else.
+     */
+    public static function fromRedirect(mixed $value): ?string
+    {
+        if (! is_string($value) || strlen($value) > 17) {
+            return null;
+        }
+
+        return self::strict($value) ?? (preg_match('/^[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\.[0-9A-Fa-f]{4}\z/', $value) === 1
+            ? self::normalize($value) : null);
+    }
 }

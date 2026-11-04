@@ -3,7 +3,7 @@
         <h1 class="text-2xl font-semibold">{{ $site->exists ? $site->name : __('portal.sites.create') }}</h1>
         @if ($site->exists)
             <span class="flex flex-wrap gap-2">
-                @unless ($site->driver() instanceof \App\Nas\AuthorizesViaController)
+                @unless ($site->driver() instanceof \App\Nas\AuthorizesViaController || $site->driver() instanceof \App\Nas\GenericRadiusDriver)
                     <a href="{{ route('admin.sites.wizard', $site) }}" class="btn-light" data-wizard-link>{{ __('portal.wizard.open') }}</a>
                 @endunless
                 <a href="{{ route('admin.sites.setup', $site) }}" class="btn">{{ __('portal.setup.open_assistant') }}</a>
@@ -50,7 +50,9 @@
     </form>
 
     @php($viaController = $site->exists && $site->driver() instanceof \App\Nas\AuthorizesViaController)
-    @if ($site->exists && ! $viaController)
+    {{-- Generic RADIUS captive portal (experimental, decision 2026-11-04): no RouterOS certificate steps or router API. --}}
+    @php($generic = $site->exists && $site->driver() instanceof \App\Nas\GenericRadiusDriver)
+    @if ($site->exists && ! $viaController && ! $generic)
         @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $site->driver()->setupCommands($site, [], false)['diagnostics']['verify'] ?? ''])
     @endif
 
@@ -74,6 +76,9 @@
 
         @if ($viaController)
             @include('admin.sites.controller', ['site' => $site])
+        @endif
+        @if ($generic)
+            @include('admin.sites.generic', ['site' => $site])
         @endif
 
         @include('admin.sites.directory', ['site' => $site])
@@ -105,6 +110,7 @@
                             </td>
                         </tr>
                         @php($apiErrors = $errors->getBag('api_'.$router->id))
+                        @unless ($generic)
                         <tr>
                             <td colspan="5">
                                 {{-- Read-only router API for the state query of the setup assistant; the password is never rendered, the user name is --}}
@@ -149,6 +155,7 @@
                                 </details>
                             </td>
                         </tr>
+                        @endunless
                     @empty
                         <tr><td colspan="5" class="text-slate-500">{{ __('portal.none') }}</td></tr>
                     @endforelse

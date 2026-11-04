@@ -7,6 +7,8 @@ use App\Jobs\QueryRouterState;
 use App\Models\LocalSetting;
 use App\Models\NasClient;
 use App\Models\Site;
+use App\Nas\Generic\GenericSettings;
+use App\Nas\GenericRadiusDriver;
 use App\Nas\NasDriver;
 use App\Nas\RouterOs\ProvisioningEditor;
 use App\Nas\RouterOs\RouterStateDriver;
@@ -39,6 +41,11 @@ class SetupController extends Controller
         $driver = $site->driver();
         if ($driver instanceof UnifiDriver) {
             return view('admin.sites.setup-controller', ['site' => $site, 'checklist' => $driver->checklist($site)]);
+        }
+        // Generic RADIUS captive portal (experimental, decision 2026-11-04, v0.28.0): checklist and mapping summary.
+        if ($driver instanceof GenericRadiusDriver) {
+            return view('admin.sites.setup-generic', ['site' => $site->load('nasClients'), 'checklist' => $driver->checklist($site),
+                'mapping' => GenericSettings::forSite($site)]);
         }
 
         return view('admin.sites.setup', $this->viewData($site));

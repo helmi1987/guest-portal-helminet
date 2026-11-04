@@ -11,6 +11,8 @@ final class NasDrivers
         'mikrotik_ros7' => MikrotikRos7Driver::class,
         // Experimental, controller API instead of RADIUS (decision 2026-11-04, v0.27.0).
         UnifiDriver::KEY => UnifiDriver::class,
+        // Experimental, RADIUS with a per-site mapping and vendor presets (decision 2026-11-04, v0.28.0).
+        GenericRadiusDriver::KEY => GenericRadiusDriver::class,
     ];
 
     public static function make(string $driver): NasDriver

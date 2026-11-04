@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Nas\AuthorizesViaController;
+use App\Nas\GenericRadiusDriver;
 use App\Nas\MikrotikRos7Driver;
 use App\Tls\CertificateInfo;
 use App\Tls\CertificateSources;
@@ -71,8 +72,8 @@ class WizardController extends Controller
 
     public function show(Request $request, Site $site, SetupController $setup): View|RedirectResponse
     {
-        // The wizard follows the RouterOS blocks; controller sites (UniFi) use the checklist of the setup page.
-        if ($site->driver() instanceof AuthorizesViaController) {
+        // The wizard follows the RouterOS blocks; UniFi and generic RADIUS sites use the checklist of the setup page.
+        if ($site->driver() instanceof AuthorizesViaController || $site->driver() instanceof GenericRadiusDriver) {
             return redirect()->route('admin.sites.setup', $site);
         }
         $data = $setup->viewData($site);

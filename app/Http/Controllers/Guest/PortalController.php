@@ -22,6 +22,7 @@ use App\Models\SiteCode;
 use App\Models\TermsAcceptance;
 use App\Models\TermsVersion;
 use App\Nas\ControllerSessions;
+use App\Nas\GenericRadiusDriver;
 use App\Nas\HotspotContext;
 use App\Nas\RedirectSignals;
 use App\Nas\Unifi\UnifiSettings;
@@ -133,6 +134,30 @@ class PortalController extends Controller
         $query = ['site' => $sites->first()->slug, 'unifi_site' => $unifiSite];
         foreach (['id', 'ap', 't', 'url', 'ssid'] as $key) {
             if (is_string($value = $request->query($key)) && $value !== '' && strlen($value) <= 2048) {
+                $query[$key] = $value;
+            }
+        }
+
+        return redirect()->to(route('guest.portal', [], false).'?'.http_build_query($query));
+    }
+
+    /**
+     * Redirect of a generic RADIUS captive portal (decision 2026-11-04, v0.28.0, experimental):
+     * `/portal/g/<slug>?<the NAS's parameters>`, for NAS that append their query to a configured URL. Continues
+     * at /portal with site=<slug> and the parameters; the driver's parseRedirect() validates them.
+     */
+    public function genericRedirect(Request $request, string $slug): Response|RedirectResponse
+    {
+        $site = Site::query()->where('slug', $slug)->first();
+        if ($site === null || $site->driver !== GenericRadiusDriver::KEY) {
+            Log::warning('Generic captive-portal redirect for an unknown site or another driver', ['slug' => $slug]);
+            $request->session()->forget('portal');
+
+            return $this->error('no_hotspot');
+        }
+        $query = ['site' => $site->slug];
+        foreach ($request->query() as $key => $value) {
+            if (is_string($key) && $key !== 'site' && is_string($value) && strlen($key) <= 40 && strlen($value) <= 2048 && count($query) <= 30) {
                 $query[$key] = $value;
             }
         }

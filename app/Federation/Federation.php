@@ -83,9 +83,10 @@ final class Federation
      * Keys of `sites.settings` that decide where guest credentials go and which portal guests see: a
      * remote event changes them only from the hub or from the site's home instance. `directory`: the
      * server that receives the passwords of the account login (CONCEPT.md §7.2 E). `controller`: the UniFi
-     * controller that receives the API key or the local account's password (CONCEPT.md §5.1).
+     * controller that receives the API key or the local account's password (CONCEPT.md §5.1). `generic`: the
+     * mapping of a generic RADIUS captive portal that decides where the one-time credentials go (§5.1).
      */
-    public const SECURITY_SITE_SETTINGS = ['hotspot_hosts', 'portal_url', 'directory', 'controller'];
+    public const SECURITY_SITE_SETTINGS = ['hotspot_hosts', 'portal_url', 'directory', 'controller', 'generic'];
 
     /**
      * Columns of an active admin's user row that decide who can log in as that admin, or whether the

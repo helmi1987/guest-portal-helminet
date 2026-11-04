@@ -6,6 +6,7 @@ use App\Federation\DataKey;
 use App\Models\Concerns\Replicated;
 use App\Nas\NasDriver;
 use App\Nas\NasDrivers;
+use App\Nas\SiteBoundDriver;
 use App\Support\LocalInstance;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
@@ -320,6 +321,9 @@ class Site extends Model
 
     public function driver(): NasDriver
     {
-        return NasDrivers::make($this->driver);
+        $driver = NasDrivers::make($this->driver);
+
+        // Drivers with per-site settings get the site (decision 2026-11-04, v0.28.0).
+        return $driver instanceof SiteBoundDriver ? $driver->forSite($this) : $driver;
     }
 }
