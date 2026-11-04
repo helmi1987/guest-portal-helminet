@@ -50,6 +50,8 @@ class DisconnectSession implements ShouldQueue
         if ($driver instanceof ReportsDisconnectSupport && ! $driver->supportsDisconnect($summary->site)) {
             Log::info('No Disconnect-Request for this device, access ends at Session-Timeout',
                 ['session_summary_id' => $summary->id, 'site' => $summary->site->slug]);
+            // Terminal for enforcement: portal:enforce-grants does not dispatch this session again.
+            $summary->update(['disconnect_skipped_at' => now()]);
 
             return;
         }

@@ -34,6 +34,7 @@ use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
+use Illuminate\Support\Facades\Queue;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
 use RuntimeException;
@@ -564,6 +565,34 @@ class GenericRadiusDriverTest extends TestCase
         } finally {
             Process::assertNothingRan();
         }
+    }
+
+    public function test_enforcement_does_not_repeat_the_disconnect_of_a_device_without_support(): void
+    {
+        $this->mapping(Presets::CISCO_WLC); // the redirect of enter(); the device then has no Disconnect support
+        $session = $this->openSession('sess-opn', '10.0.0.20');
+        $this->mapping(Presets::OPNSENSE);
+        app(GrantManager::class)->revoke($session->grant); // runs DisconnectSession (sync queue): skipped once
+        $this->assertNotNull($session->fresh()->disconnect_skipped_at);
+        $this->assertNull($session->fresh()->stopped_at);
+
+        Queue::fake();
+        $this->artisan('portal:enforce-grants')->expectsOutput('Disconnect requested for 0 session(s).')->assertSuccessful();
+        $this->travel(2)->minutes();
+        $this->accounting('Interim-Update', 'sess-opn', $session->accounting()->sole()->username);
+        $this->artisan('portal:enforce-grants')->expectsOutput('Disconnect requested for 0 session(s).')->assertSuccessful();
+        Queue::assertNothingPushed();
+
+        // Closed by the Accounting-Stop when the Session-Timeout ends the session on the device.
+        $this->accounting('Stop', 'sess-opn', $session->accounting()->sole()->username);
+        $this->assertNotNull($session->fresh()->stopped_at);
+
+        // A device with Disconnect support is still enforced.
+        $this->mapping(Presets::CISCO_WLC);
+        $other = $this->openSession('sess-cisco', '10.0.0.21');
+        $other->grant->update(['revoked_at' => now()]);
+        $this->artisan('portal:enforce-grants')->expectsOutput('Disconnect requested for 1 session(s).')->assertSuccessful();
+        Queue::assertPushed(DisconnectSession::class, 1);
     }
 
     // --- Helpers ------------------------------------------------------------------------------------

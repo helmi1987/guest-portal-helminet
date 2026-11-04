@@ -135,6 +135,8 @@ user portal URL although the zone served HTTP (observed); the portal does not us
 - The browser may keep a GET handoff URL (one-time credentials, valid 60 s and single use) in its history; the
   OPNsense template removes the fragment right away.
 - Devices without Disconnect-Request support (OPNsense): revoke and shorten take effect at the `Session-Timeout`.
+  The disconnect job then completes once and marks the session (`disconnect_skipped_at`), so `portal:enforce-grants`
+  does not dispatch it again; the Accounting-Stop (or the stale check) closes it.
 
 ## 6. NAS simulator (Docker)
 

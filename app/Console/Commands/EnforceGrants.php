@@ -56,7 +56,9 @@ class EnforceGrants extends Command
 
             $ended = $session->accessEnded();
 
-            if ($ended && ! $recentlySent) {
+            // NAS without Disconnect-Request (decision 2026-11-04, v0.28.0): already handled once; the session is
+            // closed by the Accounting-Stop or as stale after its Session-Timeout.
+            if ($ended && ! $recentlySent && $session->disconnect_skipped_at === null) {
                 DisconnectSession::dispatch($session->id);
                 $disconnected++;
             }
