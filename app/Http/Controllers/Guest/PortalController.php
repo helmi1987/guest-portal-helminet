@@ -23,6 +23,7 @@ use App\Models\TermsAcceptance;
 use App\Models\TermsVersion;
 use App\Nas\ControllerSessions;
 use App\Nas\HotspotContext;
+use App\Nas\RedirectSignals;
 use App\Nas\Unifi\UnifiSettings;
 use App\Services\AccessEndedNotice;
 use App\Services\GrantManager;
@@ -58,13 +59,15 @@ class PortalController extends Controller
         if ($request->filled('site')) {
             $site = Site::query()->where('slug', $request->query('site'))->first();
             $context = $site?->driver()->parseRedirect($request, $site);
+            // Vendor parameter names stay in the driver (decision 2026-11-04, v0.28.0).
+            $signals = $site ? RedirectSignals::of($site->driver(), $request, $site) : RedirectSignals::NONE;
             $request->session()->put('portal', $site ? ['site' => $site->id, 'context' => $context->toArray()] : null);
             // Router redirect with a login URL that is not a configured hotspot host, or an unknown site.
             $request->session()->put('portal_misconfigured', $site === null
-                || ($request->filled('link-login-only') && $context->loginUrl === null));
+                || ($signals['has_login_url'] && $context->loginUrl === null));
         }
-        // Prefill only (?code=, also inside the router's link-orig); name and terms are still required.
-        if (($prefill = $this->prefillCode($request)) !== null) {
+        // Prefill only (?code=, also inside the redirect's original URL); name and terms are still required.
+        if (($prefill = $this->prefillCode($request, $signals ?? RedirectSignals::NONE)) !== null) {
             $request->session()->put('portal_code', $prefill);
         }
 
@@ -520,18 +523,14 @@ class PortalController extends Controller
                 ->contains(fn (SiteCode $c) => ! $c->isValid()) ? GrantStatus::Expired : null);
     }
 
-    /** 6-digit code from ?code= or from a portal URL with ?code= in the router's link-orig or url (prefill only). */
-    private function prefillCode(Request $request): ?string
+    /** 6-digit code from ?code=, else the one the driver found in the redirect's original URL (prefill only). */
+    private function prefillCode(Request $request, array $signals): ?string
     {
         $code = $request->query('code');
         if (! is_string($code)) {
-            // MikroTik: link-orig; UniFi (guest.unifi route): url.
-            $orig = $request->query('link-orig') ?? $request->query('url');
-            $path = is_string($orig) ? (string) parse_url($orig, PHP_URL_PATH) : '';
-            parse_str(is_string($orig) && str_ends_with($path, '/portal') ? (string) parse_url($orig, PHP_URL_QUERY) : '', $query);
-            $code = $query['code'] ?? null;
+            return $signals['prefill_code'];
         }
-        $code = is_string($code) ? preg_replace('/\D/', '', $code) : '';
+        $code = preg_replace('/\D/', '', $code);
 
         return strlen($code) === 6 ? $code : null;
     }

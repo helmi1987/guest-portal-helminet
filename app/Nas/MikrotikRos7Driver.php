@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * MikroTik RouterOS 7 hotspot (CONCEPT.md §2.1, §5.1).
  */
-class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDriver
+class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirectSignals, RouterStateDriver
 {
     use MikrotikRos7Provisioning;
     use MikrotikRos7RouterState;
@@ -229,6 +229,13 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, RouterStateDr
             // Kept for completeness only: the portal never redirects to it, and the handoff sends the status page as dst.
             origUrl: self::httpUrl($request->query('link-orig')),
         );
+    }
+
+    /** link-login-only present: the hotspot sends a login URL; code prefill from link-orig. */
+    public function redirectSignals(Request $request, Site $site): array
+    {
+        return ['has_login_url' => $request->filled('link-login-only'),
+            'prefill_code' => RedirectSignals::codeFromUrl($request->query('link-orig'))];
     }
 
     public function loginHandoff(HotspotContext $context, string $username, string $password, string $successUrl): array

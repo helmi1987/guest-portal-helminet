@@ -26,7 +26,7 @@ use Illuminate\Validation\Rule;
  * roaming do not work on UniFi sites. Resolved as a scoped singleton: one controller login per request
  * or command run (UnifiClient per site).
  */
-class UnifiDriver implements AuthorizesViaController, NasDriver
+class UnifiDriver implements AuthorizesViaController, NasDriver, ReadsRedirectSignals
 {
     public const KEY = 'unifi';
 
@@ -67,6 +67,12 @@ class UnifiDriver implements AuthorizesViaController, NasDriver
             $unifiSite,
             $t !== null && ctype_digit($t) ? (int) $t : null,
         );
+    }
+
+    /** No login URL (the controller API lets the client out); code prefill from the original URL (url). */
+    public function redirectSignals(Request $request, Site $site): array
+    {
+        return ['has_login_url' => false, 'prefill_code' => RedirectSignals::codeFromUrl($request->query('url'))];
     }
 
     /** Not used: the core authorizes through authorizeClient() instead of a browser handoff. */
