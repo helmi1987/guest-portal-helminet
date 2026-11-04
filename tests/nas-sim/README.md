@@ -49,7 +49,10 @@ tests/nas-sim/run.sh <portal-container> [cisco_wlc aruba pfsense opnsense opnsen
   CoA port 3799; the clients file is rewritten and FreeRADIUS restarts), one access code per preset (rate limit
   `1M/4M`, so WISPr shows up). Overrides for the test: Aruba's fixed login host becomes the simulator, the custom
   mapping reads the login URL from `login`. Use a **test instance**; remove the seed with
-  `tests/nas-sim/run.sh --cleanup <portal-container>`.
+  `tests/nas-sim/run.sh --cleanup <portal-container>` (it also closes the site's open sessions and revokes the
+  simulator's codes, so no Disconnect-Request for an old session reaches the next run).
+- The disconnect column counts only Disconnect-Requests for the run's own session (its Acct-Session-Id); others
+  are logged as `coa_foreign`, answered with NAK and listed in the errors column.
 - `opnsense_fragment` is the preset `opnsense` with the handoff method "fragment" (login URL
   `http://{nas_host}/index.html`). For both OPNsense runs the expected result after the revoke is **no**
   Disconnect-Request and no Accounting-Stop (OPNsense does not support it; access ends at the Session-Timeout).

@@ -51,7 +51,14 @@ artisan() {
 }
 
 if [ "$CLEANUP" = 1 ]; then
-    artisan '$s = App\Models\Site::where("slug", "'"$SLUG"'")->first(); if ($s) { $s->nasClients()->each(fn ($n) => $n->delete()); $s->delete(); app(App\Radius\ClientsFile::class)->write(); } echo "removed\n";'
+    # Close the site's open sessions and revoke the simulator's codes first, so that portal:enforce-grants does not
+    # send Disconnect-Requests for them to the next run's simulator.
+    artisan '$s = App\Models\Site::where("slug", "'"$SLUG"'")->first(); if ($s) {
+        $closed = App\Models\SessionSummary::where("site_id", $s->id)->whereNull("stopped_at")->update(["stopped_at" => now()]);
+        $revoked = App\Models\Grant::where("label", "like", "nas-sim %")->whereNull("revoked_at")->get()
+            ->each(fn ($g) => app(App\Services\GrantManager::class)->revoke($g))->count();
+        $s->nasClients()->each(fn ($n) => $n->delete()); $s->delete(); app(App\Radius\ClientsFile::class)->write();
+        echo "closed $closed session(s), revoked $revoked code(s)\n"; } echo "removed\n";'
     exit 0
 fi
 
@@ -188,7 +195,7 @@ $preset|seed failed|-|-|-|-|-|-"; continue ;; esac
     access=$(printf '%s' "$st" | check '(s.get("access") or {}).get("result", "-")')
     wispr=$(printf '%s' "$st" | check '"%s/%s" % ((s.get("access") or {}).get("wispr_up", "-"), (s.get("access") or {}).get("wispr_down", "-"))')
     start=$(printf '%s' "$st" | check '"Start" in s.get("accounting", [])')
-    errors=$(printf '%s' "$st" | check '"; ".join(s.get("errors", []))[:120] or "-"')
+    errors=$(printf '%s' "$st" | check '"; ".join(s.get("errors", []) + ["foreign CoA " + d["result"] for d in s.get("coa_foreign", [])])[:120] or "-"')
     if [ "$MODE" = local ]; then
         ok=$([ "$flow_ok" = True ] && [ "$handoff" = True ] && echo PASS || echo FAIL)
         kill "$SIM_PID" 2>/dev/null || true; wait "$SIM_PID" 2>/dev/null || true; SIM_PID=
@@ -208,6 +215,7 @@ $preset|$flow_ok|$handoff|$access|$wispr|$start|$disc|$stop|$ok|$errors"
 done
 
 printf '\n%-18s %-6s %-8s %-7s %-17s %-6s %-11s %-6s %-5s %s\n' preset flow handoff access wispr_up/down start disconnect stop result errors
+# disconnect: only requests for this run's own session; others are listed as "foreign" in the errors column.
 printf '%s\n' "$SUMMARY" | while IFS='|' read -r p f h a w s d t r e; do
     [ -n "$p" ] && printf '%-18s %-6s %-8s %-7s %-17s %-6s %-11s %-6s %-5s %s\n' "$p" "$f" "$h" "$a" "$w" "$s" "$d" "$t" "$r" "${e:-}"
 done

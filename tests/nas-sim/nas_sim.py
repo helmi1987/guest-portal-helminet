@@ -216,7 +216,7 @@ class Sim:
         self.p = presets(a)
         self.lock = threading.Lock()
         self.state = {'preset': a.preset, 'radius': not a.no_radius, 'steps': [], 'handoff': None, 'access': None,
-                      'session': None, 'accounting': [], 'disconnect': [], 'errors': []}
+                      'session': None, 'accounting': [], 'disconnect': [], 'coa_foreign': [], 'errors': []}
         self.radius = None if a.no_radius else Radius(a.radius_host, a.auth_port, a.acct_port, a.secret, self.log)
 
     def log(self, step, message, **data):
@@ -356,9 +356,13 @@ class Sim:
             resp_auth = hashlib.md5(header + req_auth + reply_attrs + secret).digest()
             sock.sendto(header + resp_auth + reply_attrs, peer)
             result = 'ack' if match else 'nak'
-            self.log('coa', 'Disconnect-%s' % ('ACK' if match else 'NAK'), attributes=got, peer=peer[0])
+            # Own: addressed to this run's session (its Acct-Session-Id, or its User-Name without one). Others (e.g.
+            # a stale session of an earlier run that portal:enforce-grants still disconnects) are tallied apart.
+            own = s is not None and (got.get('Acct-Session-Id') == s['acct_session_id']
+                                     if 'Acct-Session-Id' in got else got.get('User-Name') == s['user'])
+            self.log('coa' if own else 'coa_foreign', 'Disconnect-%s' % ('ACK' if match else 'NAK'), attributes=got, peer=peer[0])
             with self.lock:
-                self.state['disconnect'].append({'result': result, 'attributes': got})
+                self.state['disconnect' if own else 'coa_foreign'].append({'result': result, 'attributes': got})
             if match:
                 s['open'] = False
                 self.acct(2, cause=6)  # Admin-Reset
