@@ -7,6 +7,12 @@ driver is the reference; since v0.27.0 an experimental Ubiquiti UniFi driver aut
 instead of RADIUS (§3). This guide describes what a driver for another captive portal has to implement. Design
 and decisions: [CONCEPT.md](../CONCEPT.md) §5 (RADIUS), §5.1 (NAS drivers), §9 (setup assistant).
 
+**Quickest way to support a new RADIUS vendor:** since v0.28.0 the experimental generic RADIUS captive-portal driver
+(`generic_radius`, [generic-captive-portal.md](generic-captive-portal.md)) covers NAS that redirect guests to an
+external page and check the posted credentials with RADIUS PAP. Its parameter names, login URL and form fields are
+set per site, with presets for several vendors. Try it (and the NAS simulator in `tests/nas-sim`) before writing a
+driver; a dedicated driver is worth it when the vendor needs scripts, a state query or a controller API.
+
 ## 1. What a driver does and what the core does
 
 | Responsibility | Driver method | Core side | MikroTik RouterOS 7 driver |
@@ -88,18 +94,23 @@ Display name in the site form. Plain English product name, no translation key (i
 - **MikroTik:** [`MikrotikRos7Driver.php:213`](../app/Nas/MikrotikRos7Driver.php#L213) reads `link-login-only`, `mac`,
   `ip`, `link-orig` and validates URLs with `httpUrl()` (http/https only, no embedded credentials).
 
-Note: the "misconfigured hotspot" error page is chosen by the core when the request carries `link-login-only` and the
-driver dropped the login URL ([`PortalController.php:60`](../app/Http/Controllers/Guest/PortalController.php#L60)), and
-the code prefill reads `link-orig` ([`PortalController.php:482`](../app/Http/Controllers/Guest/PortalController.php#L482)).
-Both use the MikroTik parameter names; with other names the guest sees "no hotspot" instead and no prefill happens.
+Redirect signals (since v0.28.0, optional interface [`ReadsRedirectSignals`](../app/Nas/ReadsRedirectSignals.php)):
+`redirectSignals(Request $request, Site $site)` returns `has_login_url` (the NAS is configured to send a login URL;
+when `parseRedirect()` then dropped it, the core shows the "misconfigured hotspot" page instead of "no hotspot") and
+`prefill_code` (a 6-digit code in the redirect's original URL, `RedirectSignals::codeFromUrl()`). The core no longer
+reads vendor parameter names ([`PortalController::show()`](../app/Http/Controllers/Guest/PortalController.php)).
+MikroTik: `link-login-only` / `link-orig`; UniFi: no login URL, code from `url`; generic: the mapped names. A driver
+without the interface gives no signals (guests see "no hotspot", no prefill from the original URL).
 
 ### 2.4 `loginHandoff(HotspotContext $context, string $username, string $password, string $successUrl): array`
 
 - **When:** right after a successful portal login (every login method).
 - **Input:** the context from `parseRedirect()`, the one-time credentials, and `$successUrl`, the signed status page
   (valid until the grant ends plus one hour, no cookie needed).
-- **Returns:** `['url' => <form action>, 'fields' => [name => value]]`. The view renders a POST form with hidden fields
-  and submits it with inline JavaScript; it cannot send headers, use GET or call an API.
+- **Returns:** `['url' => <form action>, 'fields' => [name => value]]`, optionally `'method' => 'GET'`. The view renders
+  a POST form with hidden fields and submits it with inline JavaScript, or for GET navigates to the URL with the
+  fields as query string (since v0.28.0); it cannot send headers or call an API. The guest CSP allows any `https:`
+  form action; a plain-HTTP login URL only works with GET (navigation).
 - **Pitfalls:** the NAS must authenticate these credentials with PAP against RADIUS and should send the browser to
   `$successUrl` afterwards. The status page waits until RADIUS accepted the token; if it never was, the next portal
   visit shows the "router login not completed" notice.
@@ -117,6 +128,9 @@ Both use the MikroTik parameter names; with other names the guest sees "no hotsp
   none).
 - **MikroTik:** [`MikrotikRos7Driver.php:248`](../app/Nas/MikrotikRos7Driver.php#L248) returns
   `reply:Mikrotik-Rate-Limit` when `$grant->rate_limit` is set.
+- **Per-site settings:** `replyAttributes()`, `loginHandoff()` and `disconnectAttributes()` get no site. A driver that
+  needs one implements the optional interface [`SiteBoundDriver`](../app/Nas/SiteBoundDriver.php) (`forSite(Site): static`);
+  `Site::driver()` then returns a copy bound to the site (since v0.28.0, used by the generic driver).
 
 ### 2.6 `disconnectAttributes(RadiusAccounting $acct): ?array`
 

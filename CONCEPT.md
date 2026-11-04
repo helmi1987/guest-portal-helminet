@@ -177,15 +177,16 @@ The RADIUS core (grants, Session-Timeout, accounting, Disconnect-Request per RFC
 vendor-neutral. Vendor-specific parts sit behind a `NasDriver` interface; each site has a
 `driver` field.
 
-| Responsibility | MikroTik RouterOS 7 driver | Ubiquiti UniFi driver (experimental, v0.27.0) |
-|---|---|---|
-| Parse captive-portal redirect parameters | `login.html` query: `link-login-only`, `mac`, `ip`, `link-orig`, site id | Route `/guest/s/{unifiSite}`: `id`, `ap`, `ssid`, `url`, `t` |
-| Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` | Server side: controller API authorizes the client (`AuthorizesViaController`) |
-| Vendor RADIUS attributes | e.g. `Mikrotik-Rate-Limit` | none (no RADIUS) |
-| Disconnect capability | RFC 5176 via `/radius incoming`; only `Framed-IP-Address` (§5) | Controller API: unauthorize guest |
-| Config generator | RouterOS script + `login.html` (§9) | Controller checklist (setup page) |
+| Responsibility | MikroTik RouterOS 7 driver | Ubiquiti UniFi driver (experimental, v0.27.0) | Generic RADIUS captive portal (experimental, v0.28.0) |
+|---|---|---|---|
+| Parse captive-portal redirect parameters | `login.html` query: `link-login-only`, `mac`, `ip`, `link-orig`, site id | Route `/guest/s/{unifiSite}`: `id`, `ap`, `ssid`, `url`, `t` | Route `/portal/g/{slug}` or `/portal?site=`: parameter names per site (MAC, IP, login URL, original URL), MAC in colon, dash, dot or bare notation |
+| Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` | Server side: controller API authorizes the client (`AuthorizesViaController`) | Browser POST or GET to the login URL (parameter, or fixed URL with `{name}` placeholders), mapped field names, fixed extra fields, optional CoovaChilli UAM password encoding |
+| Vendor RADIUS attributes | e.g. `Mikrotik-Rate-Limit` | none (no RADIUS) | Optional `WISPr-Bandwidth-Max-Up/Down` |
+| Disconnect capability | RFC 5176 via `/radius incoming`; only `Framed-IP-Address` (§5) | Controller API: unauthorize guest | RFC 5176 with the attributes chosen per site (`User-Name`, `Acct-Session-Id`, `Framed-IP-Address`, `Calling-Station-Id`) |
+| Config generator | RouterOS script + `login.html` (§9) | Controller checklist (setup page) | Device checklist with the generic walled-garden list (setup page), generic login page |
 
-Other drivers (e.g. Omada, OPNsense, CoovaChilli) are future/community work.
+Other drivers (e.g. Omada) are future/community work; the generic driver is the quickest way to try another
+RADIUS captive portal.
 Guide: [docs/nas-driver.md](docs/nas-driver.md).
 
 Decision 2026-11-04 (v0.27.0, experimental UniFi driver): the owner wants a UniFi driver that "should work" although
@@ -208,6 +209,31 @@ when it is authorized, the legacy API also pre-authorizes a MAC that never conne
 guest listener must be reachable at it over HTTPS; the AP's plain-HTTP redirect is an open point. Controller settings: replicated security site setting `controller` (URL, mode, UniFi site, TLS
 verification or public key pin, fallback duration), API key and password encrypted with the federation data key.
 Setup, limits and verification state: [docs/unifi-setup.md](docs/unifi-setup.md).
+
+Decision 2026-11-04 (v0.28.0, experimental generic RADIUS captive-portal driver): the owner asked for "generic"
+support (e.g. Cisco) and a vendor-neutral walled garden, experimental like UniFi. The driver `generic_radius`
+(label "Generic RADIUS captive portal (experimental)") serves NAS that redirect guests to an external page and check
+the posted credentials with RADIUS PAP, as the MikroTik hotspot does. Its mapping is the replicated **security** site
+setting `generic` (it decides where the one-time credentials go): redirect parameter names, the login URL from a
+parameter or a fixed URL with `{name}` placeholders filled from the redirect (HTTPS only; HTTP only for GET with an
+explicit switch, for CoovaChilli; the host must be one of the site's hotspot hosts), handoff method and field names,
+up to ten fixed extra fields, the password encoding (`plain` or CoovaChilli UAM: hex of the password XOR
+MD5(challenge + uamsecret)), WISPr bandwidth limits from the grant's RouterOS rate limit, the Disconnect-Request
+attributes (`Framed-IP-Address` only while the session is open and fresh, as for MikroTik; `NAS-Port-Id` is not
+offered because accounting does not record it) and an optional login page template. An optional handoff secret
+(the uamsecret) is encrypted with the federation data key like the UniFi secrets. Vendor presets (Cisco WLC /
+Catalyst 9800, Aruba Instant / ArubaOS, pfSense / OPNsense, CoovaChilli, Ruckus Unleashed / ZoneDirector, custom)
+only prefill the form; they follow public documentation, are **unverified** and cite their sources in
+`app/Nas/Generic/Presets.php`. No scripts: the setup page and each router's configuration page show a checklist
+(RADIUS, CoA, redirect URL, login form, generic walled-garden list with the portal host and IP, DNS and the social
+login hosts, MAC authentication note), "Simulate redirect" shows what the portal reads from a sample redirect. MAC
+whitelist and roaming need the NAS to send the MAC as `User-Name` (unchanged RADIUS rule). Core clean-up: the
+portal no longer reads MikroTik parameter names itself; the optional interface `ReadsRedirectSignals` gives
+"NAS sends a login URL" (misconfigured page) and the prefill code from the original URL, and the optional interface
+`SiteBoundDriver` binds a driver to its site so that `loginHandoff()`, `replyAttributes()` and
+`disconnectAttributes()` can use per-site settings; the handoff view also navigates by GET. A NAS simulator
+(`tests/nas-sim`, Docker and Playwright) checks the driver against the documented conventions, not against real
+devices. Guide: [docs/generic-captive-portal.md](docs/generic-captive-portal.md).
 
 ## 6. TLS
 
@@ -676,7 +702,7 @@ Features:
 
 | Area | Content |
 |---|---|
-| Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods; directory for the account login (v0.24.0, §7.2 E: server, TLS, service account, filter, group, duration, check button); for the UniFi driver (v0.27.0, experimental, §5.1) the controller (URL, API key or local account, UniFi site, TLS pin, check button) instead of routers, and a controller checklist instead of the setup assistant's RouterOS blocks. |
+| Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods; directory for the account login (v0.24.0, §7.2 E: server, TLS, service account, filter, group, duration, check button); for the UniFi driver (v0.27.0, experimental, §5.1) the controller (URL, API key or local account, UniFi site, TLS pin, check button) instead of routers, and a controller checklist instead of the setup assistant's RouterOS blocks; for the generic RADIUS captive-portal driver (v0.28.0, experimental, §5.1) the mapping section (preset, redirect, handoff, RADIUS, login page, "Simulate redirect"), routers without the RouterOS API, and a device checklist instead of the RouterOS blocks. |
 | Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke, delete ended codes (list shows current codes by default). |
 | Guests & sessions | Implemented M6 (admin + manager), one page: guests newest first (each login creates a guest row) with name, phone (masked for managers), login method (grant type; without grant: approval request or SMS challenge), site and accepted terms version + time of the latest acceptance, created; its grant (code/status/remaining, extend and revoke via the grant routes) and devices (MAC, online = open session summary of grant + MAC, IP, start/end, traffic from local accounting `bytes_in`/`bytes_out`). An open session without accounting update for `PORTAL_RADIUS_STALE_AFTER` (default 3 x interim interval = 900 s) is shown as "stale" (Stop probably lost; display only, data unchanged). Disconnect: Disconnect-Request job for an open session served by this instance (sessions of other instances: M7); the grant stays valid, audited `grant.disconnected`. Filters: site, method, running grants only, name (LIKE wildcards literal) or exact code; invalid filter values are ignored; 25 per page. Extend/shorten takes whole hours; a revoked grant cannot be extended (422). No new fields. |
 | MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |

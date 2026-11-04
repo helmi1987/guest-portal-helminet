@@ -21,10 +21,14 @@ Website: https://portal.helminet.ch (overview, screenshots, demo of the guest si
 
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
 can be supported via drivers (contributions welcome, see [docs/nas-driver.md](docs/nas-driver.md)); an
-experimental Ubiquiti UniFi driver exists since v0.27.0 ([docs/unifi-setup.md](docs/unifi-setup.md)).
+experimental Ubiquiti UniFi driver exists since v0.27.0 ([docs/unifi-setup.md](docs/unifi-setup.md)) and an
+experimental generic RADIUS captive-portal driver with vendor presets since v0.28.0
+([docs/generic-captive-portal.md](docs/generic-captive-portal.md)).
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.28: generic RADIUS captive-portal driver (experimental, presets for Cisco WLC, Aruba, pfSense/OPNsense,
+  CoovaChilli, Ruckus) and a generic walled-garden checklist (docs/generic-captive-portal.md).
 - v0.27: experimental Ubiquiti UniFi driver (controller API, no RADIUS; untested on hardware, feedback welcome;
   docs/unifi-setup.md).
 - v0.26: SMS providers modelled on Uptime Kuma's list (Twilio, seven.io, ClickSend, SMSAPI, 46elks,
