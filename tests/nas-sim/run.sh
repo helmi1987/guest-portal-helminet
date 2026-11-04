@@ -7,7 +7,8 @@
 #   (--network container:<name>): the simulator reaches FreeRADIUS on 127.0.0.1:1812/1813, the portal sends
 #   its Disconnect-Request to 127.0.0.1:3799 (the router entry's NAS IP is 127.0.0.1), and the browser opens
 #   the guest portal at https://127.0.0.1:<GUEST_PORT>. Nothing is published on the host.
-#   The script seeds the portal through `docker exec <container> artisan tinker`: site "nas-sim" (driver
+#   The script seeds the portal through `docker exec -e HOME=/tmp <container> artisan tinker` (the image's artisan
+#   wrapper runs as the app user, and psysh needs a writable HOME or it drops the output): site "nas-sim" (driver
 #   generic_radius, preset applied, hotspot host 127.0.0.1), router "NAS simulator" (NAS IP 127.0.0.1) and one
 #   access code per preset. Use a TEST instance: it adds that site, router and codes (remove with --cleanup).
 #
@@ -45,7 +46,7 @@ esac
 PRESETS=${*:-$ALL}
 
 artisan() {
-    if [ "$MODE" = local ]; then (cd "$ROOT" && php artisan tinker --execute="$1"); else docker exec "$CONTAINER" artisan tinker --execute="$1"; fi
+    if [ "$MODE" = local ]; then (cd "$ROOT" && php artisan tinker --execute="$1"); else docker exec -e HOME=/tmp "$CONTAINER" artisan tinker --execute="$1"; fi
 }
 
 if [ "$CLEANUP" = 1 ]; then
