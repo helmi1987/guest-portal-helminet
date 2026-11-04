@@ -19,7 +19,7 @@
         "laravel/framework": "^13.17",
         "laravel/socialite": "^5",
         "laravel/tinker": "^3.0",
-        "livewire/livewire": "^3.8",
+        "livewire/livewire": "^4.4",
         "pragmarx/google2fa": "^9.0"
     },
     "require-dev": {
