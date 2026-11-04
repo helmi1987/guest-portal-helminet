@@ -2,9 +2,10 @@
 
 The RADIUS core of the portal (grants, one-time credentials, `Session-Timeout`, accounting, Disconnect-Request per
 RFC 5176) is vendor-neutral. Everything that depends on the router or access controller (the NAS) sits behind the
-interface `App\Nas\NasDriver`; each site stores the key of its driver in `sites.driver`. Only the MikroTik RouterOS 7
-driver ships; this guide describes what a driver for another captive portal has to implement, using that driver as the
-reference. Design and decisions: [CONCEPT.md](../CONCEPT.md) §5 (RADIUS), §5.1 (NAS drivers), §9 (setup assistant).
+interface `App\Nas\NasDriver`; each site stores the key of its driver in `sites.driver`. The MikroTik RouterOS 7
+driver is the reference; since v0.27.0 an experimental Ubiquiti UniFi driver authorizes through a controller API
+instead of RADIUS (§3). This guide describes what a driver for another captive portal has to implement. Design
+and decisions: [CONCEPT.md](../CONCEPT.md) §5 (RADIUS), §5.1 (NAS drivers), §9 (setup assistant).
 
 ## 1. What a driver does and what the core does
 
@@ -238,49 +239,57 @@ prefill) and `App\Nas\RouterOs\ProvisioningEditor` (CAPsMAN rules) are separate 
 ([`RouterStateQuery.php:25`](../app/Nas/RouterOs/RouterStateQuery.php#L25)) and the assistant shows the commands
 without colours or suggestions. They talk to RouterOS (REST, API-SSL); a new driver should not implement them.
 
-## 3. Limits: portals that authorize through a controller API
+## 3. Portals that authorize through a controller API (`AuthorizesViaController`)
 
-The interface assumes that the NAS itself runs a RADIUS-backed login form: the handoff is a browser POST of one-time
-RADIUS credentials to the NAS (`loginHandoff()`), the device is bound when RADIUS accepts them, sessions are known
-from RADIUS accounting, and disconnects are RADIUS Disconnect-Requests.
+The interface of §2 assumes that the NAS itself runs a RADIUS-backed login form: the handoff is a browser POST of
+one-time RADIUS credentials to the NAS (`loginHandoff()`), the device is bound when RADIUS accepts them, sessions
+are known from RADIUS accounting, and disconnects are RADIUS Disconnect-Requests.
 
-Some captive portals work differently. Example: Ubiquiti UniFi with an "external portal server". The controller
-redirects the guest to the external portal with `ap` (AP MAC), `id` (client MAC), `t` (timestamp), `url` (original
-URL) and `ssid`; the portal then authorizes the client through the controller API (`cmd/stamgr`, command
-`authorize-guest` with the MAC and `minutes`). There is no RADIUS login form and no RADIUS accounting in that mode
-(details of the controller API to verify per controller version).
-
-**This is not supported by the current interface.** A contribution would have to add:
-
-- a server-side authorization step instead of the browser handoff, with the device binding and the session summary
-  created there (today: Access-Accept and Accounting-Start in `RadiusController`);
-- controller URL and credentials per site (encrypted, never in logs or the audit);
-- the time limit passed to the API (minutes) instead of `Session-Timeout`, and re-authorization on extension;
-- disconnect via the API: `DisconnectSession` and `portal:enforce-grants` work on RADIUS accounting rows today;
-- vendor parameters in the context (`HotspotContext` has only `mac`, `ip`, `loginUrl`, `origUrl`) and a status page
-  that does not wait for a RADIUS accept;
-- no data usage in the guest list without accounting.
-
-A possible shape, as an optional interface next to `NasDriver` (proposal only, nothing of this exists):
+Some captive portals work differently: the controller redirects the guest to an external portal and the portal
+then lets the client out through the controller's API. Since v0.27.0 (decision 2026-11-04, CONCEPT.md §5.1) the
+core supports this through the **optional interface** [`App\Nas\AuthorizesViaController`](../app/Nas/AuthorizesViaController.php),
+implemented by the **experimental** Ubiquiti UniFi driver ([`UnifiDriver`](../app/Nas/UnifiDriver.php), setup and
+limits: [unifi-setup.md](unifi-setup.md); background: [unifi-feasibility.md](unifi-feasibility.md)).
 
 ```php
 interface AuthorizesViaController
 {
-    /** Per-site controller inputs (URL, controller site, credentials) as validation rules. */
+    /** Validation rules of the per-site controller inputs (site setting "controller"). */
     public function controllerFields(): array;
 
-    /** Authorize the client after a successful portal login; returns the URL the browser goes to next. */
-    public function authorizeClient(Site $site, HotspotContext $context, Grant $grant, int $seconds): string;
+    /** Let the client of $context out for $seconds; checks it first (connected guest, AP). Never throws. */
+    public function authorizeClient(Site $site, HotspotContext $context, Grant $grant, int $seconds): ControllerAuthorization;
 
-    /** End the client's access (revoke, shorten, rebind); false when the controller refused or failed. */
+    /** End access (revoke, shorten, rebind); true also when the client is not connected. */
     public function deauthorizeClient(Site $site, string $mac): bool;
+
+    /** connected, authorized, ip, bytes_in, bytes_out, expires_at; null when the controller cannot be asked. */
+    public function clientStatus(Site $site, string $mac): ?array;
+
+    /** Check button of the site page: array{status, message}. */
+    public function checkController(Site $site): array;
 }
 ```
 
-Open an issue first to agree on the approach; such a change touches decisions recorded in CONCEPT.md §5 and §7.
+What the core does differently for a site whose driver implements it (`ControllerSessions::supports()`):
 
-A researched study of what UniFi offers, what the portal would have to change, the test setup and the effort:
-[unifi-feasibility.md](unifi-feasibility.md) (2026-11-03).
+| Step | RADIUS driver | Controller driver |
+|---|---|---|
+| Redirect | `parseRedirect()` from `/portal?site=...` | A vendor route forwards to `/portal?site=...` (UniFi: `/guest/s/{unifiSite}`); `HotspotContext` carries the vendor fields `ap`, `ssid`, `unifiSite`, `timestamp`; `isComplete()` accepts a context without login URL when `unifiSite` is set |
+| Handoff | `loginHandoff()` → browser POST to the NAS | [`GuestLogin::handoff()`](../app/Http/Controllers/Guest/Concerns/GuestLogin.php) calls `ControllerSessions::authorize()`: `authorizeClient()` outside the database transaction, then device binding, the one-time token marked used and a session summary with one local accounting row (`nas_client_id` null, `acct_session_id` `controller:<token id>`); redirect to the status page, error page `controller_failed` otherwise |
+| Status page | waits for the RADIUS accept | shows `clientStatus()` on each load (no JavaScript) and the original URL as a link |
+| Usage | RADIUS accounting | `portal:poll-controllers` (every two minutes) writes `clientStatus()` into the accounting row |
+| Revoke, rebind, expiry | `DisconnectSession` → Disconnect-Request | `DisconnectSession` → `deauthorizeClient()`, then the summary is closed; `portal:enforce-grants` never closes such sessions as stale while the grant runs |
+| Extend / shorten | Session-Timeout stays the upper bound | job `ReauthorizeControllerSession` → `authorizeClient()` with the new remaining time |
+| MAC whitelist, roaming | RADIUS MAC authentication | not supported |
+| Setup assistant | `setupCommands()` blocks | the driver returns notes for every block id; the setup page shows the driver's checklist, the wizard redirects there |
+
+The `NasDriver` methods still have to exist: return no-ops with a short explanation (`replyAttributes()` `[]`,
+`disconnectAttributes()` `null`, `loginHandoff()` the success URL, `loginPage()`/`loginPageFetch()` a note,
+`configScript()` the checklist). Controller credentials belong into a replicated security site setting with the
+secrets encrypted by the federation data key and re-encrypted on rotation (`FederatedSecrets`), like
+[`UnifiSettings`](../app/Nas/Unifi/UnifiSettings.php); they never appear in logs, the audit or exception
+messages (`Redact::secrets`).
 
 ## 4. Testing and contributing
 

@@ -20,10 +20,13 @@ Website: https://portal.helminet.ch (overview, screenshots, demo of the guest si
 > hotspot profile may have received `ssl-certificate`/`login-by`: check `/ip hotspot profile print`.
 
 Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; other captive portals
-can be supported via drivers (contributions welcome, see [docs/nas-driver.md](docs/nas-driver.md)).
+can be supported via drivers (contributions welcome, see [docs/nas-driver.md](docs/nas-driver.md)); an
+experimental Ubiquiti UniFi driver exists since v0.27.0 ([docs/unifi-setup.md](docs/unifi-setup.md)).
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.27: experimental Ubiquiti UniFi driver (controller API, no RADIUS; untested on hardware, feedback welcome;
+  docs/unifi-setup.md).
 - v0.26: SMS providers modelled on Uptime Kuma's list (Twilio, seven.io, ClickSend, SMSAPI, 46elks,
   Cellsynt, Octopush, SMSEagle, SMS Planet, PromoSMS, SerwerSMS, SMSC, SMS Partner, SmsManager, GTX Messaging,
   plus the Swiss ASPSMS and eCall; Free Mobile for tests), one active provider with ordered backups and

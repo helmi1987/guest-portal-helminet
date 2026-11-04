@@ -177,18 +177,35 @@ The RADIUS core (grants, Session-Timeout, accounting, Disconnect-Request per RFC
 vendor-neutral. Vendor-specific parts sit behind a `NasDriver` interface; each site has a
 `driver` field.
 
-| Responsibility | MikroTik RouterOS 7 driver |
-|---|---|
-| Parse captive-portal redirect parameters | `login.html` query: `link-login-only`, `mac`, `ip`, `link-orig`, site id |
-| Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` |
-| Vendor RADIUS attributes | e.g. `Mikrotik-Rate-Limit` |
-| Disconnect capability | RFC 5176 via `/radius incoming`; only `Framed-IP-Address` (§5) |
-| Config generator | RouterOS script + `login.html` (§9) |
+| Responsibility | MikroTik RouterOS 7 driver | Ubiquiti UniFi driver (experimental, v0.27.0) |
+|---|---|---|
+| Parse captive-portal redirect parameters | `login.html` query: `link-login-only`, `mac`, `ip`, `link-orig`, site id | Route `/guest/s/{unifiSite}`: `id`, `ap`, `ssid`, `url`, `t` |
+| Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` | Server side: controller API authorizes the client (`AuthorizesViaController`) |
+| Vendor RADIUS attributes | e.g. `Mikrotik-Rate-Limit` | none (no RADIUS) |
+| Disconnect capability | RFC 5176 via `/radius incoming`; only `Framed-IP-Address` (§5) | Controller API: unauthorize guest |
+| Config generator | RouterOS script + `login.html` (§9) | Controller checklist (setup page) |
 
-Only the MikroTik RouterOS 7 driver ships. Other drivers (e.g. UniFi, Omada, OPNsense,
-CoovaChilli) are future/community work.
+Other drivers (e.g. Omada, OPNsense, CoovaChilli) are future/community work.
 Guide: [docs/nas-driver.md](docs/nas-driver.md).
-UniFi: see [docs/unifi-feasibility.md](docs/unifi-feasibility.md) (study 2026-11-03).
+
+Decision 2026-11-04 (v0.27.0, experimental UniFi driver): the owner wants a UniFi driver that "should work" although
+no UniFi hardware is available; it ships as **experimental** (label "Ubiquiti UniFi (experimental)", banner in the
+site's controller section, feedback through the test report issue), against the study's recommendation to wait
+([docs/unifi-feasibility.md](docs/unifi-feasibility.md), 2026-11-03). Design: an optional interface
+`AuthorizesViaController` next to `NasDriver` (`controllerFields`, `authorizeClient`, `deauthorizeClient`,
+`clientStatus`, `checkController`); for such sites the core authorizes after the portal login instead of the
+RADIUS handoff, records device binding, used token and session summary itself (one local accounting row without
+NAS), shows the controller's state on the status page, ends access through the controller on revoke, rebind and
+expiry, authorizes again on an admin's extension or shortening (UniFi enforces the time limit itself), and polls
+the controller for usage (`portal:poll-controllers`, every two minutes). Both API modes: the official Network API
+with an API key (`/proxy/network/integration/v1`, UniFi OS consoles and UniFi OS Server) and the legacy cookie
+login with a local account (`/api/login` on the standalone application, `/api/auth/login` + `/proxy/network` on
+UniFi OS, detected at login), because the standalone application (the only one testable without a console) has
+no API keys. **No RADIUS accounting** (usage per authorization from the controller, reset on every
+authorization), **no MAC whitelist and no roaming** on UniFi sites, the client must be connected when it is
+authorized. Controller settings: replicated security site setting `controller` (URL, mode, UniFi site, TLS
+verification or public key pin, fallback duration), API key and password encrypted with the federation data key.
+Setup, limits and verification state: [docs/unifi-setup.md](docs/unifi-setup.md).
 
 ## 6. TLS
 
@@ -657,7 +674,7 @@ Features:
 
 | Area | Content |
 |---|---|
-| Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods; directory for the account login (v0.24.0, §7.2 E: server, TLS, service account, filter, group, duration, check button). |
+| Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods; directory for the account login (v0.24.0, §7.2 E: server, TLS, service account, filter, group, duration, check button); for the UniFi driver (v0.27.0, experimental, §5.1) the controller (URL, API key or local account, UniFi site, TLS pin, check button) instead of routers, and a controller checklist instead of the setup assistant's RouterOS blocks. |
 | Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke, delete ended codes (list shows current codes by default). |
 | Guests & sessions | Implemented M6 (admin + manager), one page: guests newest first (each login creates a guest row) with name, phone (masked for managers), login method (grant type; without grant: approval request or SMS challenge), site and accepted terms version + time of the latest acceptance, created; its grant (code/status/remaining, extend and revoke via the grant routes) and devices (MAC, online = open session summary of grant + MAC, IP, start/end, traffic from local accounting `bytes_in`/`bytes_out`). An open session without accounting update for `PORTAL_RADIUS_STALE_AFTER` (default 3 x interim interval = 900 s) is shown as "stale" (Stop probably lost; display only, data unchanged). Disconnect: Disconnect-Request job for an open session served by this instance (sessions of other instances: M7); the grant stays valid, audited `grant.disconnected`. Filters: site, method, running grants only, name (LIKE wildcards literal) or exact code; invalid filter values are ignored; 25 per page. Extend/shorten takes whole hours; a revoked grant cannot be extended (422). No new fields. |
 | MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
@@ -1042,6 +1059,10 @@ links) and change log events are purged after all direct peers have acknowledged
   Account login (v0.24.0, §7.2 E): LDAP connections only to the site's directory, timeout per site (default
   5 s), LDAPS by default with certificate and host name verified (switching it off or `none` warns), no
   referrals.
+  UniFi controller (v0.27.0, experimental, §5.1): HTTPS to the site's configured controller URL only (no path,
+  no redirects), 10 s timeout (5 s connect), one retry after 2 s on HTTP 429, certificate verified against the
+  system CAs or pinned to the controller's public key (switching both off warns); API key and password never
+  in logs, audit or error messages.
 - **Federation:** mTLS with pinned certs, one-time join tokens, idempotent signed events, clock
   skew checks.
 - **Web/privacy:** CSRF, strict CSP, HSTS, signed URLs, HMAC webhooks, bundled assets; minimal data, retention + purge.

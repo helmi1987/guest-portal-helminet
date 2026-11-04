@@ -1,5 +1,10 @@
 # UniFi feasibility study (2026-11-03)
 
+> **Implemented experimentally in 0.27.0** (decision 2026-11-04, CONCEPT.md §5.1): both API paths (official
+> Network API with an API key and the legacy local-account API), without hardware tests. Setup, limits and what
+> is verified: [unifi-setup.md](unifi-setup.md). This study stays as the research basis; its recommendation
+> "do it later, official API only" was overruled by the owner's decision.
+
 Question: can Ubiquiti UniFi access points serve as the NAS of a portal site, and what would a UniFi NAS driver need?
 This is a study, not a design decision and not code. The current interface and its limits are described in
 [nas-driver.md](nas-driver.md) §3; decisions belong in [CONCEPT.md](../CONCEPT.md).
