@@ -52,10 +52,11 @@ const NO_RADIUS = process.env.NO_RADIUS === '1';
         while (!/\/status\//.test(page.url())) {
             if (Date.now() > deadline) throw new Error('no status page, at ' + page.url());
             // Chrome's warning before a form goes from the HTTPS portal to an HTTP login URL: send anyway.
+            // The page may be navigating right now (auto-submitted handoff): a destroyed execution context is not an error.
             const proceed = page.locator('#proceed-button');
-            if (await proceed.count()) {
+            if (await proceed.count().catch(() => 0)) {
                 step('insecure_form_warning', { clicked: true });
-                await proceed.click();
+                await proceed.click().catch(() => {});
             }
             const body = await page.locator('body').innerText().catch(() => '');
             if (/"clientState"\s*:\s*"AUTHORIZED"/.test(body) && successUrl) {
