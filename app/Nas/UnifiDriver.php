@@ -150,7 +150,7 @@ class UnifiDriver implements AuthorizesViaController, NasDriver
             '   - External portal (IPv4 of the portal): '.$ip,
             '   - Domain / Redirect Hostname: '.$host,
             '   - Redirect: the AP sends guests to http(s)://'.$host.'/guest/s/'.$unifiSite.'/?ap=...&id=...&t=...&url=...&ssid=...',
-            '   - "Use Secure Portal" (HTTPS): leave on when the portal has a trusted certificate for '.$host,
+            '   - "Use Secure Portal" (HTTPS): on; the portal answers HTTPS only (guest port) and needs a trusted certificate for '.$host,
             '   - Landing page after the login: leave the original URL; the portal shows its status page.',
             '3. Pre-authorization allowances (allowed before login)',
             '   - '.$host,

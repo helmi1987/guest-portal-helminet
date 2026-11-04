@@ -52,7 +52,9 @@ The setup page of a UniFi site (Sites → site → "Setup assistant") shows this
 2. **Hotspot → Authentication:** "External Portal Server".
    - External portal: the **IPv4 address** of the portal (the field takes no host name).
    - Domain (Network 10) / Redirect Hostname (8/9): the portal host name, e.g. `portal.example.com`.
-   - "Use Secure Portal": on when the portal has a certificate that guests' devices trust for that host name.
+   - "Use Secure Portal": on. The portal answers on its HTTPS guest port only (no plain HTTP listener) and needs a
+     certificate that guests' devices trust for that host name. If an AP redirects to plain HTTP anyway, put a
+     redirect to HTTPS in front of the portal (behaviour of the AP **unverified**).
 3. **Pre-authorization allowances:** the portal host and its IP, plus the hosts of the switched-on social login
    providers (listed on the setup page; see §5 for wildcards).
 4. **API key:** Network → Settings → Control Plane → Integrations → create an API key. Create it as a dedicated
