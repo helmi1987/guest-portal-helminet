@@ -14,7 +14,7 @@ decision: [CONCEPT.md](../CONCEPT.md) §5.1; interface: [nas-driver.md](nas-driv
 | Area | State |
 |---|---|
 | Redirect route `/guest/s/<UniFi site>/?ap=..&id=..&t=..&url=..&ssid=..` | Implemented after Ubiquiti's example; the exact URL an AP sends (scheme, host with "Secure Portal" and "Domain") is **unverified** |
-| Official Network API (API key): site lookup, client lookup by MAC, `AUTHORIZE_GUEST_ACCESS` with `timeLimitMinutes`, `UNAUTHORIZE_GUEST_ACCESS`, usage | Implemented after the OpenAPI files 10.6.106 / 11.0.97; **not tested against a console or UniFi OS Server** |
+| Official Network API (API key): site lookup, client lookup by MAC, `AUTHORIZE_GUEST_ACCESS` with `timeLimitMinutes`, `UNAUTHORIZE_GUEST_ACCESS`, usage | Implemented after the OpenAPI files 10.6.106 / 11.0.97; **verified** against UniFi OS Server 5.1.42 (Network 10.5.67): site list, info, client lookup, check button, authorize/unauthorize calls; a MAC that is not connected cannot be authorized there (§7) |
 | Legacy API (local account): login, `stat/sta`, `stat/guest`, `cmd/stamgr` `authorize-guest` / `unauthorize-guest`, check button | **Verified** against a standalone Network Application 10.6.109 without access points (§7) |
 | Legacy API on UniFi OS (`/api/auth/login`, `TOKEN` cookie, CSRF token, `/proxy/network` prefix) | **Unverified** |
 | API keys on the standalone application | **Not available** (verified, §7): use the local account there |
@@ -154,8 +154,20 @@ Smoke test of v0.27.0 (2026-11-04) against a **standalone UniFi Network Applicat
 ("Pre-Authorization Allowances"), `restricted_subnet_1..3`, `redirect_enabled` / `redirect_url` ("Success Landing
 Page"), `expire*`, `portal_enabled`, `portal_customized: false`.
 
-Not verified: the AP's redirect (URL, scheme, parameters), traffic actually let through, the legacy API on UniFi OS,
-the official API (API key) against a console or UniFi OS Server.
+Smoke test of the same build in **API key mode against UniFi OS Server 5.1.42** (Network 10.5.67, installed from
+Ubiquiti's Linux installer in a VM, no access points, no clients):
+
+| Call | Answer |
+|---|---|
+| `GET /proxy/network/integration/v1/sites` with `X-API-KEY` | 200 `{"count":1,"data":[{"id":"<uuid>","internalReference":"default","name":"Default"}]}`; without a key 401 |
+| `GET /proxy/network/integration/v1/info` | 200 `{"applicationVersion":"10.5.67"}` (check button: "version 10.5.67, site default, 0 connected clients") |
+| `GET .../clients?filter=macAddress.eq('<mac>')` for a MAC that never connected | 200 with `count: 0`: the official API lists connected clients only |
+| `POST .../clients/<mac>/actions` `AUTHORIZE_GUEST_ACCESS` with the MAC instead of a client id | 400 `api.request.argument-type-mismatch`: actions need the client UUID, so **no pre-authorization** in API key mode; `authorizeClient()` reports `not_connected` |
+| API keys | Created under Network → Integrations → "Create New API Key" (name, description, expiry); shown once |
+| `/integration/v1/sites` without the `/proxy/network` prefix | 200 but HTML (the UniFi OS login page), so always use the prefix on UniFi OS |
+
+Not verified: the AP's redirect (URL, scheme, parameters), traffic actually let through, the legacy API on UniFi OS
+(`/api/auth/login`), and the official API against a hardware console (only UniFi OS Server was available).
 
 ## 8. Reporting results
 
