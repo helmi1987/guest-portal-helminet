@@ -4,9 +4,11 @@ namespace App\Jobs;
 
 use App\Models\SessionSummary;
 use App\Nas\ControllerSessions;
+use App\Nas\ReportsDisconnectSupport;
 use App\Radius\Disconnector;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 /**
@@ -38,6 +40,16 @@ class DisconnectSession implements ShouldQueue
             }
             $summary->accounting()->whereNull('nas_client_id')->update(['terminate_cause' => 'Controller-Unauthorized']);
             $summary->update(['stopped_at' => now()]);
+
+            return;
+        }
+
+        // NAS without Disconnect-Request (decision 2026-11-04, v0.28.0): nothing to send, no retries; the grant stays
+        // revoked and the Session-Timeout of the login ends access.
+        $driver = $summary->site?->driver();
+        if ($driver instanceof ReportsDisconnectSupport && ! $driver->supportsDisconnect($summary->site)) {
+            Log::info('No Disconnect-Request for this device, access ends at Session-Timeout',
+                ['session_summary_id' => $summary->id, 'site' => $summary->site->slug]);
 
             return;
         }

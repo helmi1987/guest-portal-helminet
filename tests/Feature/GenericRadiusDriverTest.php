@@ -32,9 +32,11 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Request;
 use Illuminate\Process\PendingProcess;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Process;
 use Illuminate\Testing\TestResponse;
 use PHPUnit\Framework\Attributes\DataProvider;
+use RuntimeException;
 use Tests\TestCase;
 
 /**
@@ -536,6 +538,32 @@ class GenericRadiusDriverTest extends TestCase
         $this->mapping(Presets::OPNSENSE, ['method' => 'fragment', 'disconnect_attrs' => []]);
         $this->assertStringContainsString('docs/opnsense-captive-template/index.html', $this->driver()->checklist($this->site->fresh()));
         $this->assertFileExists(base_path('docs/opnsense-captive-template/index.html'));
+    }
+
+    public function test_disconnect_job_completes_quietly_without_device_support_but_retries_an_unsafe_session(): void
+    {
+        // No Disconnect support (OPNsense): the job completes once, sends nothing, the grant stays revoked.
+        $this->mapping(Presets::CISCO_WLC);
+        $session = $this->openSession('sess-none', '10.0.0.20');
+        $this->mapping(Presets::OPNSENSE);
+        app(GrantManager::class)->revoke($session->grant);
+        Log::spy();
+        (new DisconnectSession($session->id))->handle(app(Disconnector::class));
+        Process::assertNothingRan();
+        Log::shouldHaveReceived('info')->with('No Disconnect-Request for this device, access ends at Session-Timeout', \Mockery::type('array'))->once();
+        $this->assertNotNull($session->grant->fresh()->revoked_at);
+        $this->assertFalse($this->site->fresh()->driver()->supportsDisconnect($this->site->fresh()));
+
+        // Supported, but the session cannot be addressed safely (stale, Framed-IP-Address only): warning and retry.
+        $this->mapping(Presets::CISCO_WLC, ['disconnect_attrs' => ['Framed-IP-Address']]);
+        $this->assertTrue($this->site->fresh()->driver()->supportsDisconnect($this->site->fresh()));
+        $this->travel((int) config('portal.radius.stale_after') + 60)->seconds();
+        $this->expectException(RuntimeException::class);
+        try {
+            (new DisconnectSession($session->id))->handle(app(Disconnector::class));
+        } finally {
+            Process::assertNothingRan();
+        }
     }
 
     // --- Helpers ------------------------------------------------------------------------------------

@@ -20,7 +20,7 @@ use Illuminate\Support\Facades\Log;
  * per-site mapping (GenericSettings); vendor presets prefill it (Presets, unverified). No scripts: the router
  * configuration is a checklist.
  */
-class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundDriver
+class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, ReportsDisconnectSupport, SiteBoundDriver
 {
     public const KEY = 'generic_radius';
 
@@ -114,6 +114,12 @@ class GenericRadiusDriver implements NasDriver, ReadsRedirectSignals, SiteBoundD
         }
 
         return ['reply:WISPr-Bandwidth-Max-Up' => $rates[0], 'reply:WISPr-Bandwidth-Max-Down' => $rates[1]];
+    }
+
+    /** No Disconnect attributes selected: the NAS has no Disconnect-Request (OPNsense). */
+    public function supportsDisconnect(Site $site): bool
+    {
+        return $this->mapping($site)['disconnect_attrs'] !== [];
     }
 
     /**
