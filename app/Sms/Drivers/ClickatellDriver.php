@@ -3,6 +3,7 @@
 namespace App\Sms\Drivers;
 
 use App\Models\Channel;
+use App\Sms\SmsFailure;
 use App\Support\OutboundHttp;
 use App\Support\Redact;
 use RuntimeException;
@@ -47,7 +48,7 @@ class ClickatellDriver implements SmsDriver
             throw new RuntimeException('Clickatell send failed: '.Redact::secrets($e->getMessage(), $channel->secretValues()));
         }
         if ($response->failed() || $response->redirect()) {
-            throw new RuntimeException('Clickatell send failed: HTTP '.$response->status());
+            throw SmsFailure::http('Clickatell', $response->status(), recipient: $response->redirect() ? false : null);
         }
 
         $message = $response->json('messages.0') ?? [];

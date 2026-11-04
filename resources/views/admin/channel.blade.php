@@ -1,6 +1,9 @@
 @php($fields = \App\Models\Channel::fieldsOf($channel->driver))
 <x-layouts.admin :title="__('portal.channels.drivers.'.$channel->driver)">
     <h1 class="mb-4 text-2xl font-semibold">{{ __('portal.channels.drivers.'.$channel->driver) }}</h1>
+    @if (\Illuminate\Support\Facades\Lang::has('portal.channels.driver_help.'.$channel->driver))
+        <p class="mb-4 text-sm text-slate-600">{{ __('portal.channels.driver_help.'.$channel->driver) }}</p>
+    @endif
 
     <form method="POST" action="{{ $channel->exists ? route('admin.channels.update', $channel) : route('admin.channels.store') }}" class="card mb-6 grid gap-4 md:grid-cols-2">
         @csrf
@@ -13,9 +16,18 @@
         @foreach ($fields as $field => $spec)
             @php($secret = $spec['secret'] ?? false)
             <label class="label">{{ __('portal.channels.fields.'.$field) }}
+                @if (isset($spec['options']))
+                    <select name="config[{{ $field }}]" class="field">
+                        @foreach ($spec['options'] as $option)
+                            <option value="{{ $option }}" @selected(old('config.'.$field, $channel->conf($field, $spec['options'][0])) === $option)>{{ __('portal.channels.options.'.$field.'.'.$option) }}</option>
+                        @endforeach
+                    </select>
+                @else
                 <input name="config[{{ $field }}]" type="{{ $secret ? 'password' : 'text' }}" autocomplete="off"
                        value="{{ $secret ? '' : old('config.'.$field, $channel->conf($field)) }}"
                        placeholder="{{ $secret && $channel->conf($field) ? __('portal.channels.secret_keep') : '' }}" class="field">
+                @endif
+                @error('config.'.$field)<span class="text-xs text-red-600">{{ $message }}</span>@enderror
                 @if (\Illuminate\Support\Facades\Lang::has('portal.channels.field_help.'.$field))
                     <span class="text-xs text-slate-500">{{ __('portal.channels.field_help.'.$field) }}</span>
                 @endif
