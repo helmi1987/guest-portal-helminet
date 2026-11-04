@@ -180,9 +180,9 @@ vendor-neutral. Vendor-specific parts sit behind a `NasDriver` interface; each s
 | Responsibility | MikroTik RouterOS 7 driver | Ubiquiti UniFi driver (experimental, v0.27.0) | Generic RADIUS captive portal (experimental, v0.28.0) |
 |---|---|---|---|
 | Parse captive-portal redirect parameters | `login.html` query: `link-login-only`, `mac`, `ip`, `link-orig`, site id | Route `/guest/s/{unifiSite}`: `id`, `ap`, `ssid`, `url`, `t` | Route `/portal/g/{slug}` or `/portal?site=`: parameter names per site (MAC, IP, login URL, original URL), MAC in colon, dash, dot or bare notation |
-| Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` | Server side: controller API authorizes the client (`AuthorizesViaController`) | Browser POST or GET to the login URL (parameter, or fixed URL with `{name}` placeholders), mapped field names, fixed extra fields, optional CoovaChilli UAM password encoding |
+| Post-portal login handoff | Auto-submit one-time credentials to `link-login-only` | Server side: controller API authorizes the client (`AuthorizesViaController`) | Browser POST, GET or `fragment` navigation to the login URL (parameter, or fixed URL with `{name}` placeholders), mapped field names, fixed extra fields, optional CoovaChilli UAM password encoding |
 | Vendor RADIUS attributes | e.g. `Mikrotik-Rate-Limit` | none (no RADIUS) | Optional `WISPr-Bandwidth-Max-Up/Down` |
-| Disconnect capability | RFC 5176 via `/radius incoming`; only `Framed-IP-Address` (§5) | Controller API: unauthorize guest | RFC 5176 with the attributes chosen per site (`User-Name`, `Acct-Session-Id`, `Framed-IP-Address`, `Calling-Station-Id`) |
+| Disconnect capability | RFC 5176 via `/radius incoming`; only `Framed-IP-Address` (§5) | Controller API: unauthorize guest | RFC 5176 with the attributes chosen per site (`User-Name`, `Acct-Session-Id`, `Framed-IP-Address`, `Calling-Station-Id`); none = not supported (OPNsense), Session-Timeout ends access |
 | Config generator | RouterOS script + `login.html` (§9) | Controller checklist (setup page) | Device checklist with the generic walled-garden list (setup page), generic login page |
 
 Other drivers (e.g. Omada) are future/community work; the generic driver is the quickest way to try another
@@ -215,16 +215,25 @@ support (e.g. Cisco) and a vendor-neutral walled garden, experimental like UniFi
 (label "Generic RADIUS captive portal (experimental)") serves NAS that redirect guests to an external page and check
 the posted credentials with RADIUS PAP, as the MikroTik hotspot does. Its mapping is the replicated **security** site
 setting `generic` (it decides where the one-time credentials go): redirect parameter names, the login URL from a
-parameter or a fixed URL with `{name}` placeholders filled from the redirect (HTTPS only; HTTP only for GET with an
-explicit switch, for CoovaChilli; the host must be one of the site's hotspot hosts), handoff method and field names,
-up to ten fixed extra fields, the password encoding (`plain` or CoovaChilli UAM: hex of the password XOR
-MD5(challenge + uamsecret)), WISPr bandwidth limits from the grant's RouterOS rate limit, the Disconnect-Request
+parameter or a fixed URL with `{name}` placeholders filled from the redirect (HTTPS only; HTTP only with an explicit
+switch, for CoovaChilli and OPNsense; the host must be one of the site's hotspot hosts), handoff method (`POST`, `GET`
+or `fragment`: navigation with the fields after `#`, read and posted by a page on the device) and field names, up to
+ten fixed extra fields, the password encoding (`plain` or CoovaChilli UAM: the password zero-padded to 16-byte
+blocks, XOR MD5(challenge + uamsecret), or the raw challenge without uamsecret), WISPr bandwidth limits from the grant's RouterOS rate limit, the Disconnect-Request
 attributes (`Framed-IP-Address` only while the session is open and fresh, as for MikroTik; `NAS-Port-Id` is not
-offered because accounting does not record it) and an optional login page template. An optional handoff secret
+offered because accounting does not record it; none selected = the device has no Disconnect-Request, access ends at
+the Session-Timeout) and an optional login page template. An optional handoff secret
 (the uamsecret) is encrypted with the federation data key like the UniFi secrets. Vendor presets (Cisco WLC /
-Catalyst 9800, Aruba Instant / ArubaOS, pfSense / OPNsense, CoovaChilli, Ruckus Unleashed / ZoneDirector, custom)
-only prefill the form; they follow public documentation, are **unverified** and cite their sources in
-`app/Nas/Generic/Presets.php`. No scripts: the setup page and each router's configuration page show a checklist
+Catalyst 9800, Aruba Instant / ArubaOS, pfSense, OPNsense, CoovaChilli, Ruckus Unleashed / ZoneDirector, custom)
+only prefill the form; they follow public documentation and cite their sources in `app/Nas/Generic/Presets.php`.
+CoovaChilli 1.9 and OPNsense 26.7 were observed on real software (same day): chilli's UAM password encoding without
+uamsecret, and OPNsense's behaviour, which the presets follow; the others are **unverified**. OPNsense has no external
+login page: a custom template (`docs/opnsense-captive-template/index.html`) forwards guests to the portal, and the
+guest's browser logs in through OPNsense's logon API (OPNsense binds the login to the client IP) by a form POST over
+HTTP or the `fragment` handoff through the template; OPNsense sends no Framed-IP-Address and has no
+Disconnect-Request (the preset selects no attributes). The guest CSP therefore allows `http:` form actions in
+addition to `https:` (only sites with the explicit HTTP switch post there; browsers warn before posting from HTTPS to
+HTTP). No scripts: the setup page and each router's configuration page show a checklist
 (RADIUS, CoA, redirect URL, login form, generic walled-garden list with the portal host and IP, DNS and the social
 login hosts, MAC authentication note), "Simulate redirect" shows what the portal reads from a sample redirect. MAC
 whitelist and roaming need the NAS to send the MAC as `User-Name` (unchanged RADIUS rule). Core clean-up: the
@@ -1097,13 +1106,14 @@ links) and change log events are purged after all direct peers have acknowledged
   Status 2026-11-02 (v0.21.0): nginx sends a CSP per listener (docker/nginx/portal-headers.conf, maps in
   portal.conf.template). Guest (443): `default-src 'self'; script-src 'self' 'unsafe-inline'; style-src
   'self'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri
-  'self'; form-action 'self' https:; frame-ancestors 'none'`. Admin (8443): `default-src 'self';
+  'self'; form-action 'self' https: http:; frame-ancestors 'none'`. Admin (8443): `default-src 'self';
   script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data:;
   font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self';
   frame-ancestors 'none'`. Both send `Strict-Transport-Security: max-age=31536000` (no includeSubDomains,
   no preload); the internal and federation listeners send neither. A CSP or nosniff header set by the app
   (uploaded branding files carry their own strict CSP) is not duplicated. Guest `form-action` allows
-  `https:` because the handoff posts to the router's `link-login-only` host. Known loosenings, accepted
+  `https:` because the handoff posts to the router's `link-login-only` host, and `http:` since v0.28.0 for generic
+  RADIUS sites with an explicit HTTP login URL (OPNsense logon API). Known loosenings, accepted
   for now: `'unsafe-inline'` guest scripts (handoff auto-submit, WebOTP, "sign in again"), and
   `'unsafe-inline'` scripts and styles plus `'unsafe-eval'` on the admin listener for Livewire/Alpine
   (`new Function`) and inline `onsubmit`/`onclick` handlers; nonces or hashes, handlers without inline

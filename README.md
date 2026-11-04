@@ -27,7 +27,7 @@ experimental generic RADIUS captive-portal driver with vendor presets since v0.2
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
-- v0.28: generic RADIUS captive-portal driver (experimental, presets for Cisco WLC, Aruba, pfSense/OPNsense,
+- v0.28: generic RADIUS captive-portal driver (experimental, presets for Cisco WLC, Aruba, pfSense, OPNsense,
   CoovaChilli, Ruckus) and a generic walled-garden checklist (docs/generic-captive-portal.md).
 - v0.27: experimental Ubiquiti UniFi driver (controller API, no RADIUS; untested on hardware, feedback welcome;
   docs/unifi-setup.md).
