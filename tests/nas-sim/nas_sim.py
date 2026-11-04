@@ -143,6 +143,9 @@ def presets(a):
     colon = ':'.join(mac_hex(mac)[i:i + 2] for i in range(0, 12, 2))
     dash_upper = colon.replace(':', '-').upper()
     portal = a.portal.rstrip('/') + '/portal/g/' + urllib.parse.quote(a.site)
+    # CoovaChilli session id: unique per run like chilli's (start time + counter). The portal finds accounting rows
+    # by (NAS, Acct-Session-Id): a reused id would attach a new login to an old session.
+    sid = '%d%08d' % (a.started, 1)
     q = urllib.parse.urlencode
     return {
         'cisco_wlc': dict(
@@ -173,13 +176,13 @@ def presets(a):
         'coovachilli': dict(
             entry=portal + '?' + q({'res': 'notyet', 'uamip': a.host, 'uamport': str(a.port), 'challenge': a.challenge,
                                     'called': 'AA-BB-CC-00-00-99', 'mac': dash_upper, 'ip': a.client_ip, 'nasid': a.nas_id,
-                                    'sessionid': '5a1b2c3d00000001', 'userurl': 'http://example.com/'}),
+                                    'sessionid': sid, 'userurl': 'http://example.com/'}),
             path='/logon', method='GET', user='username', password='password', success='redirurl', fixed={},
-            calling=dash_upper, session_id='5a1b2c3d00000001',
+            calling=dash_upper, session_id=sid,
             # CoovaChilli 1.9 (observed): Service-Type, NAS-Port(-Id), dashed MACs, Framed-IP-Address.
             radius=[attr_int(SERVICE_TYPE, 1), attr_int(NAS_PORT, 1), attr(NAS_PORT_ID, '00000001'), attr_int(NAS_PORT_TYPE, 19),
                     attr(CALLED_STATION_ID, 'AA-BB-CC-00-00-99'),
-                    attr(ACCT_SESSION_ID, '5a1b2c3d00000001'), attr_ip(FRAMED_IP_ADDRESS, a.client_ip)]),
+                    attr(ACCT_SESSION_ID, sid), attr_ip(FRAMED_IP_ADDRESS, a.client_ip)]),
         'ruckus': dict(
             entry=portal + '?' + q({'client_mac': colon, 'uip': a.client_ip, 'sip': a.host, 'nbiIP': a.host,
                                     'url': 'http://example.com/', 'ssid': 'Guest'}),
@@ -458,6 +461,7 @@ def main():
     ap.add_argument('--interim', type=int, default=60, help='upper bound of the interim interval in seconds')
     ap.add_argument('--no-radius', action='store_true', help='without FreeRADIUS: only check the redirect and the handoff')
     a = ap.parse_args()
+    a.started = int(time.time())
     if not a.no_radius and not a.secret:
         ap.error('--secret is required unless --no-radius')
 
