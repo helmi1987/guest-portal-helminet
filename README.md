@@ -24,6 +24,10 @@ can be supported via drivers (contributions welcome, see [docs/nas-driver.md](do
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.26: SMS providers modelled on Uptime Kuma's list (Twilio, seven.io, ClickSend, SMSAPI, 46elks,
+  Cellsynt, Octopush, SMSEagle, SMS Planet, PromoSMS, SerwerSMS, SMSC, SMS Partner, SmsManager, GTX Messaging,
+  plus the Swiss ASPSMS and eCall; Free Mobile for tests), one active provider with ordered backups and
+  automatic failover.
 - v0.25: display order of the guest login methods and of the social login providers set by the admin
   (up/down arrows in Settings, global, hub-only in a federation).
 - v0.24: guest login with the site's Active Directory / LDAP account (user name and password checked by the
@@ -73,7 +77,7 @@ can be supported via drivers (contributions welcome, see [docs/nas-driver.md](do
 - v0.1-v0.11: milestones M1-M6, branding, dark/light colour scheme, translated validation messages.
 
 Features: code login, SMS one-time password
-(Clickatell or generic SMS webhook) and push approval (Telegram group, Gotify, generic webhook,
+(20 provider drivers incl. a generic SMS webhook, one active provider with backups) and push approval (Telegram group, Gotify, generic webhook,
 admin UI) via RADIUS with versioned terms of use, DE/IT/FR/EN, HTTPS router login with automatic
 router certificate, setup assistant and guided wizard; admin extras (M6): users with roles admin/manager, TOTP two-factor
 login, audit log, backups, certificate pull from CertWarden or a URL, test buttons, guests & sessions list,
@@ -155,8 +159,18 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   notification language, notification channels. Telegram: create a bot with BotFather, add it to the
   approvers' group, enter bot token and group chat id (optionally an allowlist of user ids); button
   presses are received by long polling (s6 service `telegram`), no inbound connection needed.
-- SMS login: admin UI → Settings → SMS login (duration, allowed countries, cost caps) and SMS
-  providers (Clickatell API key, or a generic SMS webhook for an own gateway; test SMS button).
+- SMS login: admin UI → Settings → SMS login (duration, allowed countries, cost caps, failover wait time)
+  and SMS providers (pick a provider, enter the credentials shown in its help line; test SMS button).
+  Only the provider marked «Aktiv» sends; the others are ordered backups that take over for an SMS when
+  it fails (unreachable, error, timeout; not when the number is rejected). A failed provider is skipped
+  for 5 minutes (setting), then tried again. The first failover of an outage is audited (`sms.failover`)
+  and announced once on the enabled notification channels; recovery is audited (`sms.recovered`).
+  Per-provider notes: most providers require the sender id (alphanumeric, max. 11 characters) to be
+  registered or approved, and some countries (e.g. the US) refuse alphanumeric senders; Twilio needs a
+  Twilio number or a Messaging Service SID; SMSEagle needs a certificate trusted by the container (TLS is
+  verified); Free Mobile only reaches the subscriber's own number and is therefore offered for the test
+  button only, never for guests. The drivers are tested against the providers' documented formats, not
+  against live accounts: send a test SMS before relying on a provider.
   Known limit: the cost caps bound the bill, but an attacker who exhausts the site or instance cap
   (or a number's cap) blocks SMS login for everyone (or that number) until the window passes; cap
   hits are logged as warnings. Code and approval login keep working.
