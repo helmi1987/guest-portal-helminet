@@ -142,6 +142,18 @@ class UnifiDriverTest extends TestCase
         $this->driver()->deauthorizeClient($this->site, self::MAC);
         Http::assertSentCount(5); // login, sites, stat/sta, authorize, unauthorize
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/cmd/stamgr') && $r['cmd'] === 'unauthorize-guest');
+
+        // Pre-authorization: the legacy API accepts a MAC that is not connected (verified on 10.6.109).
+        $offline = $this->driver()->authorizeClient($this->site, $this->context('AA:BB:CC:00:00:05', null), $grant, 120);
+        $this->assertTrue($offline->granted);
+        Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/cmd/stamgr') && $r['cmd'] === 'authorize-guest'
+            && $r['mac'] === 'aa:bb:cc:00:00:05' && $r['minutes'] === 2);
+        // Offline devices: authorization from the guest record (end in the future, not expired).
+        $this->assertTrue($this->driver()->clientStatus($this->site, 'AA:BB:CC:00:00:05')['authorized']);
+        $this->assertFalse($this->driver()->clientStatus($this->site, 'AA:BB:CC:00:00:06')['authorized']);
+        // The controller does not validate MACs: the driver refuses anything else before a call.
+        $this->assertFalse($this->driver()->deauthorizeClient($this->site, 'nonsense'));
+        Http::assertNotSent(fn (Request $r) => str_contains($r->body(), 'nonsense'));
     }
 
     public function test_legacy_mode_detects_unifi_os_and_uses_the_proxy_prefix(): void
@@ -414,7 +426,7 @@ class UnifiDriverTest extends TestCase
 
         $this->admin($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
             ->assertSee(__('portal.controller.checklist_title'))->assertSee('External Portal Server')
-            ->assertSee('portal.example.com/guest/s/branch/', false)->assertSee('10.0.0.10')
+            ->assertSee('/guest/s/branch/', false)->assertSee('IPv4 address only')->assertSee('10.0.0.10')
             ->assertDontSee(__('portal.router_api.state_title'));
         $this->admin($admin)->get("/admin/sites/{$this->site->id}/wizard")->assertRedirect(route('admin.sites.setup', $this->site));
 
@@ -546,6 +558,10 @@ class UnifiDriverTest extends TestCase
                 str_starts_with($path, "$prefix/api/s/default/stat/sta/") => $ok(($c = $this->clients[substr($path, strlen("$prefix/api/s/default/stat/sta/"))] ?? null)
                     ? [['mac' => strtolower(self::MAC), 'is_guest' => $c['guest'], 'authorized' => $c['authorized'], 'ap_mac' => strtolower(self::AP),
                         'ip' => $c['ip'], 'tx_bytes' => 5000, 'rx_bytes' => 700]] : []),
+                $path === "$prefix/api/s/default/stat/guest" => $ok([
+                    ['mac' => 'aa:bb:cc:00:00:05', 'start' => now()->getTimestamp() - 60, 'end' => now()->getTimestamp() + 60, 'expired' => false],
+                    ['mac' => 'aa:bb:cc:00:00:06', 'start' => now()->getTimestamp() - 60, 'end' => now()->getTimestamp() - 60, 'expired' => false, 'unauthorized_by' => 'api'],
+                ]),
                 $path === "$prefix/api/s/default/cmd/stamgr" => $ok($request['cmd'] === 'authorize-guest'
                     ? [['mac' => $request['mac'], 'start' => 1_799_996_400, 'end' => 1_800_000_000, 'authorized_by' => 'api']] : []),
                 default => Http::response('<html>Not found</html>', 404),

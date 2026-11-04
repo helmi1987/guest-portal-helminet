@@ -1587,7 +1587,7 @@ return [
         'title' => 'Controller (UniFi, experimental)',
         'experimental' => 'Experimental: tested without hardware; please report your results through the test report issue.',
         'help' => 'After a guest signs in, the portal releases the device through the API of the UniFi controller. The portal must reach the controller over HTTPS. The API key and the password are stored encrypted and never shown.',
-        'limits' => 'Not supported on UniFi sites: MAC whitelist, roaming between sites without a new sign-in, and RADIUS accounting (usage comes from the controller). The device must be connected to the guest Wi-Fi when it is released.',
+        'limits' => 'Not supported on UniFi sites: MAC whitelist, roaming between sites without a new sign-in, and RADIUS accounting (usage comes from the controller). With an API key the device must be connected to the guest Wi-Fi when it is released.',
         'ready' => 'Configured: guests of this site are released through the controller.',
         'not_ready' => 'Not configured: guests of this site cannot be released yet.',
         'secret_broken' => 'A stored API key or password cannot be decrypted; please enter it again.',

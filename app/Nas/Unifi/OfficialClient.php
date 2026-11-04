@@ -54,7 +54,7 @@ final class OfficialClient extends UnifiClient
     public function findClient(string $mac): ?array
     {
         $siteId = $this->site()['id'];
-        $rows = $this->get("/sites/{$siteId}/clients", ['filter' => "macAddress.eq('".self::apiMac($mac)."')", 'limit' => 1])->json('data');
+        $rows = $this->get("/sites/{$siteId}/clients", ['filter' => "macAddress.eq('".$this->apiMac($mac)."')", 'limit' => 1])->json('data');
         $row = is_array($rows) && is_array($rows[0] ?? null) ? $rows[0] : null;
         if ($row === null || ! isset($row['id'])) {
             return null;

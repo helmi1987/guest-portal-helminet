@@ -202,8 +202,10 @@ with an API key (`/proxy/network/integration/v1`, UniFi OS consoles and UniFi OS
 login with a local account (`/api/login` on the standalone application, `/api/auth/login` + `/proxy/network` on
 UniFi OS, detected at login), because the standalone application (the only one testable without a console) has
 no API keys. **No RADIUS accounting** (usage per authorization from the controller, reset on every
-authorization), **no MAC whitelist and no roaming** on UniFi sites, the client must be connected when it is
-authorized. Controller settings: replicated security site setting `controller` (URL, mode, UniFi site, TLS
+authorization), **no MAC whitelist and no roaming** on UniFi sites; with an API key the client must be connected
+when it is authorized, the legacy API also pre-authorizes a MAC that never connected (verified on a standalone
+10.6.109, which has no API keys). The UniFi external portal server is an IPv4 address (`custom_ip`): the portal's
+guest listener must be reachable at it over HTTPS; the AP's plain-HTTP redirect is an open point. Controller settings: replicated security site setting `controller` (URL, mode, UniFi site, TLS
 verification or public key pin, fallback duration), API key and password encrypted with the federation data key.
 Setup, limits and verification state: [docs/unifi-setup.md](docs/unifi-setup.md).
 

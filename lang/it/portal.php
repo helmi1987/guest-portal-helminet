@@ -1587,7 +1587,7 @@ return [
         'title' => 'Controller (UniFi, sperimentale)',
         'experimental' => 'Sperimentale: testato senza hardware; segnala i tuoi risultati tramite la issue del rapporto di test.',
         'help' => 'Dopo l\'accesso di un ospite, il portale abilita il dispositivo tramite l\'API del controller UniFi. Il portale deve raggiungere il controller via HTTPS. La chiave API e la password sono salvate cifrate e mai mostrate.',
-        'limits' => 'Non supportato sui siti UniFi: whitelist MAC, roaming tra siti senza nuovo accesso e accounting RADIUS (il consumo viene dal controller). Il dispositivo deve essere connesso al Wi-Fi ospiti quando viene abilitato.',
+        'limits' => 'Non supportato sui siti UniFi: whitelist MAC, roaming tra siti senza nuovo accesso e accounting RADIUS (il consumo viene dal controller). Con una chiave API il dispositivo deve essere connesso al Wi-Fi ospiti quando viene abilitato.',
         'ready' => 'Configurato: gli ospiti di questo sito vengono abilitati tramite il controller.',
         'not_ready' => 'Non configurato: gli ospiti di questo sito non possono ancora essere abilitati.',
         'secret_broken' => 'Una chiave API o una password salvata non può essere decifrata; inseriscila di nuovo.',

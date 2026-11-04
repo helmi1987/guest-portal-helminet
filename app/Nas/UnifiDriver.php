@@ -146,15 +146,20 @@ class UnifiDriver implements AuthorizesViaController, NasDriver
             '1. Guest network and SSID',
             '   - Network for guests (own VLAN, client isolation), SSID with "Hotspot Portal" switched on',
             '     (Network 9+: Hotspot zone or Settings > Hotspot).',
+            '   - The SSID: Application "Hotspot", Hotspot type "Captive Portal".',
             '2. Hotspot > Authentication: "External Portal Server"',
-            '   - External portal (IPv4 of the portal): '.$ip,
-            '   - Domain / Redirect Hostname: '.$host,
-            '   - Redirect: the AP sends guests to http(s)://'.$host.'/guest/s/'.$unifiSite.'/?ap=...&id=...&t=...&url=...&ssid=...',
-            '   - "Use Secure Portal" (HTTPS): on; the portal answers HTTPS only (guest port) and needs a trusted certificate for '.$host,
-            '   - Landing page after the login: leave the original URL; the portal shows its status page.',
-            '3. Pre-authorization allowances (allowed before login)',
-            '   - '.$host,
+            '   - External portal server: '.$ip.'  (IPv4 address only, the controller refuses host names)',
+            '   - Domain ("portal_hostname", if offered): '.$host,
+            '   - Redirect: the AP sends guests to http(s)://<server>/guest/s/'.$unifiSite.'/?id=...&ap=...&t=...&url=...&ssid=...',
+            '   - The portal answers HTTPS only on its guest port: switch on "HTTPS Redirection Support" and "Use Secure Portal",',
+            '     and make https://'.$ip.'/ reach the portal (certificate for '.$host.'). A plain-http redirect to the IP is an',
+            '     open point (no port-80 listener; unverified without an AP).',
+            '   - "Encrypted URL": off (its effect on the redirect parameters is unknown).',
+            '   - Success landing page: off (the portal shows its status page with a link to the original URL).',
+            '3. Pre-authorization allowances (allowed before login); the portal IP is required, otherwise the default',
+            '   restricted subnets (10/8, 172.16/12, 192.168/16) block it',
             '   - '.$ip,
+            '   - '.$host,
         ];
         foreach ($social as $entry) {
             $lines[] = '   - '.self::safe($entry).(str_starts_with($entry, '*.') ? '   (wildcard: support unverified, add the host names you need)' : '');
@@ -167,7 +172,7 @@ class UnifiDriver implements AuthorizesViaController, NasDriver
             '5. API access for the portal',
             '   - UniFi OS console / UniFi OS Server: Network > Settings > Control Plane > Integrations > create an API key',
             '     with a dedicated local admin limited to this site; mode "API key".',
-            '   - Standalone Network Application (10.x): a local account (no UI.com account, no 2FA) with a role that may',
+            '   - Standalone Network Application (10.x, no API keys there): a local account (no UI.com account, no 2FA) with a role that may',
             '     authorize guests (Hotspot Operator unverified, otherwise Site Admin); mode "local account".',
             '   - The portal must reach the controller on '.(self::safe((string) parse_url($c['url'], PHP_URL_HOST)) ?: '<CONTROLLER_HOST>')
                 .' (HTTPS); pin its public key or keep certificate verification on.',
@@ -207,9 +212,11 @@ class UnifiDriver implements AuthorizesViaController, NasDriver
         try {
             $api = $this->client($site);
             $client = $api->findClient($mac);
-            if ($client === null) {
+            if ($client === null && ! $api->canPreauthorize()) {
                 return ControllerAuthorization::failed('not_connected', 'device not found on the controller');
             }
+            // Legacy API: a device not (yet) listed as connected is pre-authorized by MAC.
+            $client ??= ['id' => $mac, 'mac' => $mac, 'guest' => true, 'ip' => null, 'ap_mac' => null, 'uplink_device_id' => null];
             if (! $client['guest']) {
                 return ControllerAuthorization::failed('not_guest', 'device is not a guest on the controller');
             }
@@ -249,7 +256,15 @@ class UnifiDriver implements AuthorizesViaController, NasDriver
             return null;
         }
         if ($client === null) {
-            return ['connected' => false, 'authorized' => false, 'ip' => null, 'bytes_in' => null, 'bytes_out' => null, 'expires_at' => null];
+            // Legacy API: a pre-authorized or briefly offline device still has its guest record.
+            try {
+                $stored = $this->client($site)->guestAuthorization($mac);
+            } catch (UnifiException) {
+                $stored = null;
+            }
+
+            return ['connected' => false, 'authorized' => (bool) ($stored['authorized'] ?? false), 'ip' => null, 'bytes_in' => null,
+                'bytes_out' => null, 'expires_at' => $stored['expires_at'] ?? null];
         }
 
         return array_intersect_key($client, array_flip(['connected', 'authorized', 'ip', 'bytes_in', 'bytes_out', 'expires_at']));

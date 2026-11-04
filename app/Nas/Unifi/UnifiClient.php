@@ -3,6 +3,7 @@
 namespace App\Nas\Unifi;
 
 use App\Federation\PinningCurlFactory;
+use App\Support\Mac;
 use App\Support\Redact;
 use GuzzleHttp\Handler\CurlHandler;
 use Illuminate\Http\Client\ConnectionException;
@@ -149,9 +150,36 @@ abstract class UnifiClient
         };
     }
 
-    /** Lower-case MAC with colons, as both APIs write it. */
-    protected static function apiMac(string $mac): string
+    /**
+     * Whether a client that is not connected can be authorized (pre-authorization). Legacy API: yes
+     * (verified on a standalone Network Application 10.6.109); official API: no, it addresses connected
+     * clients by id only.
+     */
+    public function canPreauthorize(): bool
     {
-        return strtolower($mac);
+        return false;
+    }
+
+    /**
+     * Stored guest authorization of a MAC that is not connected: array{authorized: bool, expires_at: ?Carbon}
+     * or null when the API cannot tell (official API: connected clients only).
+     */
+    public function guestAuthorization(string $mac): ?array
+    {
+        return null;
+    }
+
+    /**
+     * Lower-case MAC with colons, as both APIs write it. The controller does not validate MACs (the legacy
+     * API accepts "nonsense"), so anything else is refused here before a call.
+     */
+    protected function apiMac(string $mac): string
+    {
+        $normal = Mac::strict($mac);
+        if ($normal === null) {
+            throw $this->error('invalid_mac', 'not a MAC address');
+        }
+
+        return strtolower($normal);
     }
 }

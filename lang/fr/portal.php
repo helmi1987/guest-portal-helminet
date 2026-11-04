@@ -1587,7 +1587,7 @@ return [
         'title' => 'Contrôleur (UniFi, expérimental)',
         'experimental' => 'Expérimental : testé sans matériel ; merci de signaler vos résultats via le ticket de rapport de test.',
         'help' => 'Après la connexion d\'un invité, le portail autorise l\'appareil via l\'API du contrôleur UniFi. Le portail doit joindre le contrôleur en HTTPS. La clé API et le mot de passe sont stockés chiffrés et jamais affichés.',
-        'limits' => 'Non pris en charge sur les sites UniFi : liste blanche MAC, itinérance entre sites sans nouvelle connexion et comptabilité RADIUS (la consommation vient du contrôleur). L\'appareil doit être connecté au Wi-Fi invités au moment de l\'autorisation.',
+        'limits' => 'Non pris en charge sur les sites UniFi : liste blanche MAC, itinérance entre sites sans nouvelle connexion et comptabilité RADIUS (la consommation vient du contrôleur). Avec une clé API, l\'appareil doit être connecté au Wi-Fi invités au moment de l\'autorisation.',
         'ready' => 'Configuré : les invités de ce site sont autorisés via le contrôleur.',
         'not_ready' => 'Non configuré : les invités de ce site ne peuvent pas encore être autorisés.',
         'secret_broken' => 'Une clé API ou un mot de passe enregistré ne peut pas être déchiffré ; veuillez le saisir à nouveau.',

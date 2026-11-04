@@ -1587,7 +1587,7 @@ return [
         'title' => 'Controller (UniFi, experimentell)',
         'experimental' => 'Experimentell: ohne Hardware getestet; Rückmeldungen über das Test-Report-Issue',
         'help' => 'Nach der Anmeldung eines Gastes schaltet das Portal das Gerät über die API des UniFi-Controllers frei. Das Portal muss den Controller per HTTPS erreichen. API-Schlüssel und Passwort werden verschlüsselt gespeichert und nie angezeigt.',
-        'limits' => 'Auf UniFi-Standorten nicht unterstützt: MAC-Whitelist, Roaming zwischen Standorten ohne neue Anmeldung und RADIUS-Accounting (der Verbrauch kommt vom Controller). Das Gerät muss beim Freischalten mit dem Gäste-WLAN verbunden sein.',
+        'limits' => 'Auf UniFi-Standorten nicht unterstützt: MAC-Whitelist, Roaming zwischen Standorten ohne neue Anmeldung und RADIUS-Accounting (der Verbrauch kommt vom Controller). Mit API-Schlüssel muss das Gerät beim Freischalten mit dem Gäste-WLAN verbunden sein.',
         'ready' => 'Eingerichtet: Gäste dieses Standorts werden über den Controller freigeschaltet.',
         'not_ready' => 'Nicht eingerichtet: Gäste dieses Standorts können noch nicht freigeschaltet werden.',
         'secret_broken' => 'Ein gespeicherter API-Schlüssel oder ein Passwort lässt sich nicht entschlüsseln; bitte neu eingeben.',

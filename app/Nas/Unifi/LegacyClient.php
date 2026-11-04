@@ -16,7 +16,10 @@ use Illuminate\Support\Carbon;
  *   header `X-CSRF-Token`, Network paths under `/proxy/network/api/...`.
  *
  * Answers: `{"meta": {"rc": "ok"|"error", "msg": "api.err...."}, "data": [...]}`. The session is never kept
- * beyond this object.
+ * beyond this object. Verified against a standalone Network Application 10.6.109 (2026-11-04, no AP): the login
+ * sets only `unifises` and no CSRF token (POSTs work without one; a token is sent when the controller gives
+ * one), `authorize-guest` also pre-authorizes MACs that never connected, `unauthorize-guest` keeps the guest
+ * record with `end` = `start`, and MACs are not validated by the controller.
  */
 final class LegacyClient extends UnifiClient
 {
@@ -66,7 +69,7 @@ final class LegacyClient extends UnifiClient
     public function findClient(string $mac): ?array
     {
         try {
-            $rows = $this->api('get', 'stat/sta/'.self::apiMac($mac));
+            $rows = $this->api('get', 'stat/sta/'.$this->apiMac($mac));
         } catch (UnifiException $e) {
             // Unknown or offline MAC (unverified which of the two answers a controller gives).
             if (in_array($e->reason, ['not_found', 'unknown_station'], true)) {
@@ -79,6 +82,30 @@ final class LegacyClient extends UnifiClient
         return $row === null ? null : self::normalise($row, $mac);
     }
 
+    /** authorize-guest accepts a MAC that never connected (standalone 10.6.109, 2026-11-04). */
+    public function canPreauthorize(): bool
+    {
+        return true;
+    }
+
+    /**
+     * From stat/guest: the record with the latest end. Authorized while `end` lies in the future and the
+     * record is not `expired`; an unauthorized record stays listed with `end` = `start` (10.6.109).
+     */
+    public function guestAuthorization(string $mac): ?array
+    {
+        $mac = $this->apiMac($mac);
+        $records = array_filter($this->api('get', 'stat/guest'), fn ($g) => is_array($g) && strtolower((string) ($g['mac'] ?? '')) === $mac);
+        if ($records === []) {
+            return ['authorized' => false, 'expires_at' => null];
+        }
+        usort($records, fn ($a, $b) => (int) ($b['end'] ?? 0) <=> (int) ($a['end'] ?? 0));
+        $end = (int) ($records[0]['end'] ?? 0);
+
+        return ['authorized' => $end > time() && ! ($records[0]['expired'] ?? false),
+            'expires_at' => $end > 0 ? Carbon::createFromTimestamp($end) : null];
+    }
+
     public function apMac(array $client): ?string
     {
         return $client['ap_mac'] ?? null;
@@ -86,10 +113,10 @@ final class LegacyClient extends UnifiClient
 
     public function authorize(array $client, int $minutes, ?string $apMac = null): array
     {
-        $payload = ['cmd' => 'authorize-guest', 'mac' => self::apiMac($client['mac']), 'minutes' => max(1, min(1000000, $minutes))];
+        $payload = ['cmd' => 'authorize-guest', 'mac' => $this->apiMac($client['mac']), 'minutes' => max(1, min(1000000, $minutes))];
         if ($apMac !== null) {
             // "should result in faster authorization" (Art of WiFi client)
-            $payload['ap_mac'] = self::apiMac($apMac);
+            $payload['ap_mac'] = $this->apiMac($apMac);
         }
         $rows = $this->api('post', 'cmd/stamgr', $payload);
         $end = $rows[0]['end'] ?? null;
@@ -99,9 +126,9 @@ final class LegacyClient extends UnifiClient
 
     public function unauthorize(string $mac): void
     {
-        // By MAC: also sent when the client is not connected (whether the controller then ends the stored
-        // authorization is unverified).
-        $this->api('post', 'cmd/stamgr', ['cmd' => 'unauthorize-guest', 'mac' => self::apiMac($mac)]);
+        // By MAC, also when the client is not connected: the controller answers rc ok and sets the guest
+        // record's end to its start (standalone 10.6.109, 2026-11-04).
+        $this->api('post', 'cmd/stamgr', ['cmd' => 'unauthorize-guest', 'mac' => $this->apiMac($mac)]);
     }
 
     public function clientCount(): int
