@@ -1,0 +1,118 @@
+name: Test report
+description: Share how you tested the portal (devices, Wi-Fi mode, login methods) and what worked.
+title: "[Test report] "
+labels: ["test-report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for testing! Please do not post secrets, passwords, real domains, IP addresses or phone numbers.
+        Use generic placeholders such as `portal.example.com` or `10.0.0.0/24`.
+
+  - type: input
+    id: version
+    attributes:
+      label: Portal version
+      description: Shown in the admin UI footer or in the `VERSION` file (e.g. 0.25.0, image tag `:edge`).
+      placeholder: "0.25.0 (:edge)"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: container_host
+    attributes:
+      label: Where does the portal container run?
+      options:
+        - Docker host (VM)
+        - Docker host (bare metal)
+        - RouterOS container (on a MikroTik router)
+        - Other (describe below)
+    validations:
+      required: true
+
+  - type: input
+    id: container_details
+    attributes:
+      label: Container host details
+      description: OS / hypervisor, CPU architecture, for a RouterOS container the router model and RouterOS version.
+      placeholder: "Debian 12 VM on Proxmox, amd64"
+
+  - type: textarea
+    id: routers
+    attributes:
+      label: Routers and roles
+      description: One line per device. Model, RouterOS version and role (hotspot router, CAPsMAN manager, CAP, ...).
+      placeholder: |
+        - x86 / CHR, RouterOS 7.x, hotspot router (RADIUS client)
+        - Chateau 5G, RouterOS 7.x, hotspot router with local guest Wi-Fi
+        - hAP ax2, RouterOS 7.x, CAP
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: wifi_mode
+    attributes:
+      label: Guest Wi-Fi mode(s) tested
+      options:
+        - label: Local Wi-Fi on the hotspot router
+        - label: CAPsMAN v1 (legacy wireless)
+        - label: CAPsMAN v2 (WiFi / wifiwave2)
+        - label: Wired only / external access points
+        - label: Guest Wi-Fi password set (WPA2/WPA3)
+
+  - type: checkboxes
+    id: setup
+    attributes:
+      label: Setup tested
+      options:
+        - label: Setup assistant / guided wizard
+        - label: Router state check via router API (REST or API-SSL)
+        - label: HTTPS hotspot login with the router certificate
+        - label: Federation (several instances with a hub)
+
+  - type: checkboxes
+    id: login_methods
+    attributes:
+      label: Guest login methods tested
+      options:
+        - label: Access code / voucher
+        - label: Site code
+        - label: SMS one-time password
+        - label: Push approval (Telegram)
+        - label: Push approval (Gotify / webhook / admin UI)
+        - label: Social login (Google / Apple / Facebook / GitHub)
+        - label: Account login (Active Directory / LDAP)
+        - label: MAC whitelist
+
+  - type: input
+    id: providers
+    attributes:
+      label: SMS provider / approval channel / social providers used
+      placeholder: "Clickatell, Telegram group, Google"
+
+  - type: input
+    id: clients
+    attributes:
+      label: Guest devices and browsers
+      description: e.g. iOS 18 captive mini browser, Android 15 Chrome, Windows 11 Edge.
+      placeholder: "iPhone (iOS 18), Android 15, Windows 11"
+
+  - type: textarea
+    id: worked
+    attributes:
+      label: What worked
+    validations:
+      required: true
+
+  - type: textarea
+    id: problems
+    attributes:
+      label: Problems or unexpected behaviour
+      description: Steps to reproduce, expected vs. actual result.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
+      description: Container log (`docker logs guest-portal`) or RouterOS log excerpts. Remove secrets and real addresses.
+      render: text
