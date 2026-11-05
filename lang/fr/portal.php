@@ -1067,7 +1067,6 @@ return [
             'redirect_uris' => 'URI de redirection à enregistrer',
             'redirect_uris_help' => 'Enregistrer chaque ligne chez le fournisseur ; chaque adresse invité (APP_URL et l\'URL du portail de chaque site) nécessite sa propre entrée.',
             'no_origin' => 'Aucune adresse invité connue : définir APP_URL ou l\'URL du portail d\'un site.',
-            'github_single_callback' => 'Une application OAuth GitHub n\'autorise qu\'une seule URL de callback : enregistrer :uri. Avec plusieurs adresses invité, la connexion GitHub ne fonctionne que sur la première (APP_URL) ; une application par adresse n\'est pas prise en charge (un client par fournisseur).',
             'guide_title' => 'Guide de configuration',
             'guide' => [
                 'google' => [
@@ -1103,7 +1102,7 @@ return [
                 'github' => [
                     'Sur GitHub, ouvrir Settings → Developer settings → OAuth Apps → « New OAuth App » (pour une organisation, dans ses paramètres).',
                     'Homepage URL : l\'adresse invité (APP_URL).',
-                    'Authorization callback URL : la première URI de redirection listée ci-dessus (une application OAuth n\'en autorise qu\'une).',
+                    'Redirect URIs : chaque URI de redirection listée ci-dessus comme entrée distincte (à la création la première, ensuite dans les paramètres de l\'application avec « Add redirect URI » les autres ; jusqu\'à 10). Laisser « Allow wildcard matching » désactivé.',
                     'Enregistrer l\'application, copier l\'ID client et générer un nouveau secret client.',
                     'Saisir les deux ci-dessus, enregistrer puis cliquer sur « Vérifier ».',
                     'Nom : le nom du profil GitHub est facultatif ; sans lui, le portail utilise le nom d\'utilisateur GitHub.',

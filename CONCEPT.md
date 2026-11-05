@@ -525,7 +525,11 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
 
 **D. Social login (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0)**
 1. Guest accepts the terms on the social page and picks a provider (one form button per configured
-   provider). `POST /portal/social/{provider}` checks terms version, provider, hotspot context and lockout,
+   provider). Decision 2026-11-05 (v0.30.2): the chooser shows the configured providers as round logos
+   (links to the social page, label in `aria-label`/`title`); the social page shows full buttons with logo
+   and text that look inactive until the terms checkbox is ticked (CSS only; browser `required` and the
+   server still enforce the terms). Logos are the unmodified official marks in their original colours,
+   inline SVG on a white disc, no external requests. `POST /portal/social/{provider}` checks terms version, provider, hotspot context and lockout,
    stores the attempt in the session (state, nonce, PKCE verifier, redirect URI, terms version, site, MAC;
    single use, 10 min) and redirects to `GET .../go`, which answers the 302 to the provider: the hop to a
    foreign origin is never the direct answer of the form POST (Chrome applies the CSP `form-action` to such
@@ -744,8 +748,9 @@ All login methods produce a **grant**; a code is a grant created in advance.
   `credential_changed` per provider) or flashed back as old input; an empty field keeps, "remove"
   deletes. Redirect URI rule: one `<origin>/portal/social/<provider>/callback` per guest origin (APP_URL
   and each site's portal URL), since the callback must return to the host that holds the guest session.
-  A GitHub OAuth app allows only one callback URL and the portal keeps one client per provider, so with
-  several guest origins GitHub login works only on the first origin (APP_URL); the settings say so.
+  Decision 2026-11-05 (v0.30.2): GitHub OAuth apps accept several redirect URIs (up to 10), so GitHub is
+  registered like the other providers with every listed URI; "Allow wildcard matching" stays off. The former
+  "only one callback URL" warning is gone.
   Check button per provider (`App\Auth\Social\ProviderCheck`, 10 s timeout, TLS verified, no
   redirects, 10 per minute): it sends the provider's token request with the made-up code `portal-check`
   (Facebook: an app access token request); providers check the client credentials before the code, so

@@ -131,12 +131,7 @@
                 @else
                     <p class="text-xs text-red-700">{{ __('portal.settings.social.no_origin') }}</p>
                 @endif
-                @if ($provider === 'github')
-                    <p @class(['text-xs', 'text-amber-700' => count($socialOrigins) > 1, 'text-slate-500' => count($socialOrigins) <= 1]) data-github-single-callback>
-                        {{ __('portal.settings.social.github_single_callback', ['uri' => $cfg['redirect_uris'][0] ?? '–']) }}</p>
-                @else
-                    <p class="text-xs text-slate-500">{{ __('portal.settings.social.redirect_uris_help') }}</p>
-                @endif
+                <p class="text-xs text-slate-500">{{ __('portal.settings.social.redirect_uris_help') }}</p>
             </div>
 
             <details class="mt-3 text-sm" data-social-guide>

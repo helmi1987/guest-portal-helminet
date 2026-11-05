@@ -99,6 +99,7 @@ class SocialLoginTest extends TestCase
         // Default order: code first (primary button), social box after approval.
         $this->enter()->assertOk()->assertSeeInOrder(['gp-method-code', 'gp-method-approval', 'gp-method-social'], false)
             ->assertSeeInOrder([__('portal.guest.social_with', ['provider' => 'Google']), __('portal.guest.social_with', ['provider' => 'GitHub'])])
+            ->assertSee('gp-social-logos', false)->assertSeeInOrder(['gp-social-logo-google', 'gp-social-logo-github'], false)
             ->assertSee('gp-method-code btn"', false);
 
         LoginMethods::save(LoginMethods::all(), ['social', 'approval', 'sms', 'account', 'code']);

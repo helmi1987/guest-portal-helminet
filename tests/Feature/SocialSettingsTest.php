@@ -110,7 +110,9 @@ class SocialSettingsTest extends TestCase
             ->assertSee('https://portal.example.com/portal/social/google/callback')
             ->assertSee('https://guest-b.example.com/portal/social/google/callback')
             ->assertSee('https://guest-b.example.com/portal/social/apple/callback')
-            ->assertSee(__('portal.settings.social.github_single_callback', ['uri' => 'https://portal.example.com/portal/social/github/callback']))
+            ->assertSee('https://guest-b.example.com/portal/social/github/callback')
+            ->assertSee(__('portal.settings.social.guide.github.2'))
+            ->assertDontSee('data-github-single-callback', false)
             ->assertSee(__('portal.settings.social.secret_none'))
             ->assertSee(__('portal.settings.social.not_ready', ['items' => implode(', ', [
                 __('portal.settings.social.missing.enabled'), __('portal.settings.social.missing.client_id'), __('portal.settings.social.missing.secret'),

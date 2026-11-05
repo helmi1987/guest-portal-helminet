@@ -1067,7 +1067,6 @@ return [
             'redirect_uris' => 'Zu registrierende Redirect-URIs',
             'redirect_uris_help' => 'Jede Zeile beim Anbieter eintragen; jede Gast-Adresse (APP_URL und die Portal-URL jedes Standorts) braucht einen eigenen Eintrag.',
             'no_origin' => 'Keine Gast-Adresse bekannt: APP_URL oder die Portal-URL eines Standorts setzen.',
-            'github_single_callback' => 'Eine GitHub-OAuth-App erlaubt nur eine Callback-URL: :uri eintragen. Mit mehreren Gast-Adressen funktioniert der GitHub-Login nur auf der ersten (APP_URL); eine App pro Adresse wird nicht unterstützt (ein Client pro Anbieter).',
             'guide_title' => 'Einrichtungsanleitung',
             'guide' => [
                 'google' => [
@@ -1103,7 +1102,7 @@ return [
                 'github' => [
                     'Auf GitHub Settings → Developer settings → OAuth Apps → «New OAuth App» öffnen (für eine Organisation in deren Einstellungen).',
                     'Homepage URL: die Gast-Adresse (APP_URL).',
-                    'Authorization callback URL: die erste oben aufgeführte Redirect-URI (eine OAuth-App erlaubt nur eine).',
+                    'Redirect URIs: jede oben aufgeführte Redirect-URI als eigenen Eintrag (beim Anlegen die erste, danach in den App-Einstellungen mit «Add redirect URI» die weiteren; bis zu 10). «Allow wildcard matching» ausgeschaltet lassen.',
                     'Die App registrieren, die Client-ID kopieren und ein neues Client-Secret erzeugen.',
                     'Beides oben eintragen, speichern und dann «Prüfen» drücken.',
                     'Name: Der Name im GitHub-Profil ist freiwillig; fehlt er, verwendet das Portal den GitHub-Benutzernamen.',

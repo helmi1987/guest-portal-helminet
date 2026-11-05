@@ -92,6 +92,8 @@
     .card { @apply rounded-lg bg-(--gp-surface) p-6 shadow-(--gp-card-shadow); }
     .gp-link { @apply text-(--gp-accent); }
     .gp-logo { @apply text-(--gp-accent); }
+    /* Social page: provider buttons look inactive until the terms are accepted (still clickable, so the browser shows the required hint) */
+    .gp-form:has(.gp-terms-accept input:not(:checked)) .gp-social-providers .gp-social-button { opacity: 0.45; }
     .data-table { @apply w-full text-left text-sm; }
     .data-table th { @apply border-b border-slate-200 px-2 py-2 font-semibold; }
     .data-table td { @apply border-b border-slate-100 px-2 py-2 align-top; }
