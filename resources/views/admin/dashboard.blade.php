@@ -25,4 +25,6 @@
             </ul>
         </section>
     @endif
+
+    @include('admin.partials.social-secret-banner', ['entries' => $socialSecretAttention])
 </x-layouts.admin>

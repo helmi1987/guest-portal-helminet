@@ -14,6 +14,12 @@ use Throwable;
  * before the code, so "invalid client" means the credentials are wrong and "invalid code" means they
  * were accepted. No guest login is needed and nothing is created at the provider. The secret never
  * reaches a log, the audit log or the flash; only provider, outcome and HTTP status are logged.
+ *
+ * Microsoft (decision 2026-11-05, v0.31.0): the token endpoint of the configured tenant answers `invalid_client`
+ * when client authentication fails (wrong or expired secret) and `unauthorized_client` when the application is
+ * not known in that tenant (wrong client ID or tenant); with accepted credentials the made-up code gives
+ * `invalid_grant` ("the authorization code or PKCE code verifier is invalid or has expired"). Source:
+ * learn.microsoft.com/entra/identity-platform/v2-oauth2-auth-code-flow, "Error codes for token endpoint errors".
  */
 final class ProviderCheck
 {
@@ -35,7 +41,16 @@ final class ProviderCheck
         SocialSettings::APPLE => 'https://appleid.apple.com/auth/token',
         SocialSettings::FACEBOOK => 'https://graph.facebook.com/oauth/access_token',
         SocialSettings::GITHUB => 'https://github.com/login/oauth/access_token',
+        // Tenant-specific: MicrosoftProvider::tokenUrl(); this is the URL for the default tenant.
+        SocialSettings::MICROSOFT => 'https://login.microsoftonline.com/common/oauth2/v2.0/token',
     ];
+
+    public static function url(string $provider): string
+    {
+        return $provider === SocialSettings::MICROSOFT
+            ? MicrosoftProvider::tokenUrl((string) SocialSettings::provider($provider)['tenant'])
+            : self::URLS[$provider];
+    }
 
     /**
      * @return array{status: string, message: string, http: int|null} message: lang key (portal.settings.social.check.*)
@@ -75,6 +90,9 @@ final class ProviderCheck
                 return self::result(self::INCOMPLETE, 'key_invalid');
             }
         }
+        if ($provider === SocialSettings::MICROSOFT && ! SocialSettings::validTenant($config['tenant'])) {
+            return self::result(self::INCOMPLETE, 'missing_tenant');
+        }
 
         try {
             $response = self::request($provider, $config['client_id'], $secret);
@@ -89,7 +107,7 @@ final class ProviderCheck
     private static function request(string $provider, string $clientId, #[\SensitiveParameter] string $secret): Response
     {
         $http = OutboundHttp::client(self::TIMEOUT)->acceptJson();
-        $url = self::URLS[$provider];
+        $url = self::url($provider);
 
         return match ($provider) {
             SocialSettings::GOOGLE => $http->asForm()->post($url, [
@@ -104,6 +122,10 @@ final class ProviderCheck
             ]),
             SocialSettings::GITHUB => $http->asForm()->post($url, [
                 'client_id' => $clientId, 'client_secret' => $secret, 'code' => self::CODE,
+            ]),
+            SocialSettings::MICROSOFT => $http->asForm()->post($url, [
+                'grant_type' => 'authorization_code', 'code' => self::CODE, 'client_id' => $clientId,
+                'client_secret' => $secret, 'redirect_uri' => SocialSettings::redirectUris($provider)[0] ?? '',
             ]),
         };
     }
@@ -125,6 +147,11 @@ final class ProviderCheck
                 },
                 SocialSettings::APPLE => match ($error) {
                     'invalid_client' => self::REJECTED,
+                    'invalid_grant' => self::OK,
+                    default => null,
+                },
+                SocialSettings::MICROSOFT => match ($error) {
+                    'invalid_client', 'unauthorized_client' => self::REJECTED,
                     'invalid_grant' => self::OK,
                     default => null,
                 },

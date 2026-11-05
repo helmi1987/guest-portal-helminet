@@ -19,7 +19,7 @@ use Throwable;
  * URL and code exchange per provider, profile mapped to a SocialIdentity. State, nonce and the PKCE
  * verifier belong to the portal's own login flow (one session entry per attempt, SocialLoginController),
  * so Socialite runs stateless and never touches the session. PKCE (S256) is sent to the providers that
- * document it (Google, GitHub). Every request goes through a Guzzle client with TLS verification, 10 s
+ * document it (Google, GitHub, Microsoft). Every request goes through a Guzzle client with TLS verification, 10 s
  * timeout, 5 s connect timeout and no redirects, built on the Laravel HTTP client's handler stack.
  */
 class SocialLogin
@@ -30,13 +30,17 @@ class SocialLogin
         SocialSettings::APPLE => ['name', 'email'],
         SocialSettings::FACEBOOK => ['email', 'public_profile'],
         SocialSettings::GITHUB => ['read:user', 'user:email'],
+        SocialSettings::MICROSOFT => ['openid', 'profile', 'email'],
     ];
 
     /** Providers that get PKCE (S256). */
-    public const PKCE = [SocialSettings::GOOGLE, SocialSettings::GITHUB];
+    public const PKCE = [SocialSettings::GOOGLE, SocialSettings::GITHUB, SocialSettings::MICROSOFT];
 
     /** Providers that get a nonce (checked in their ID token). */
-    public const NONCE = [SocialSettings::GOOGLE, SocialSettings::APPLE];
+    public const NONCE = [SocialSettings::GOOGLE, SocialSettings::APPLE, SocialSettings::MICROSOFT];
+
+    /** Providers whose identity comes from the ID token of the token response (no access token needed). */
+    private const ID_TOKEN = [SocialSettings::APPLE, SocialSettings::MICROSOFT];
 
     /** Display names (brands, not translated). */
     public const NAMES = [
@@ -44,6 +48,7 @@ class SocialLogin
         SocialSettings::APPLE => 'Apple',
         SocialSettings::FACEBOOK => 'Facebook',
         SocialSettings::GITHUB => 'GitHub',
+        SocialSettings::MICROSOFT => 'Microsoft',
     ];
 
     private const GOOGLE_ISSUERS = ['https://accounts.google.com', 'accounts.google.com'];
@@ -87,7 +92,7 @@ class SocialLogin
             if (! is_array($tokens)) {
                 throw new SocialLoginException("$label token endpoint answered without JSON");
             }
-            $tokenField = $provider === SocialSettings::APPLE ? 'id_token' : 'access_token';
+            $tokenField = in_array($provider, self::ID_TOKEN, true) ? 'id_token' : 'access_token';
             if (! is_string($tokens[$tokenField] ?? null) || $tokens[$tokenField] === '') {
                 // Only the OAuth error code: the body is not logged.
                 throw new SocialLoginException("$label token response without $tokenField, error=".self::errorCode($tokens['error'] ?? null));
@@ -98,6 +103,7 @@ class SocialLogin
                 SocialSettings::APPLE => $this->apple($driver, $tokens, $nonce, $appleUser),
                 SocialSettings::FACEBOOK => $this->facebook($driver, $tokens),
                 SocialSettings::GITHUB => $this->github($driver, $tokens),
+                SocialSettings::MICROSOFT => $this->microsoft($driver, $tokens, $nonce),
             };
         } catch (SocialLoginException $e) {
             throw $e;
@@ -164,6 +170,14 @@ class SocialLogin
             SocialIdentity::cleanEmail($user->getEmail()));
     }
 
+    private function microsoft(MicrosoftProvider $driver, array $tokens, string $nonce): SocialIdentity
+    {
+        $user = $driver->userFromIdToken($tokens['id_token'], $nonce);
+        [$first, $last, $email] = MicrosoftProvider::profile($user->getRaw());
+
+        return new SocialIdentity(SocialSettings::MICROSOFT, self::subject($user), $first, $last, $email);
+    }
+
     /** Socialite provider for one login attempt; the secret is only needed for the code exchange. */
     private function provider(string $provider, string $redirectUri, bool $withSecret): AbstractProvider
     {
@@ -173,6 +187,8 @@ class SocialLogin
         if ($provider === SocialSettings::APPLE) {
             $driver = new AppleProvider(request(), $config['client_id'], $withSecret
                 ? AppleClientSecret::make($config['client_id'], $config['team_id'], $config['key_id'], $secret) : '', $redirectUri);
+        } elseif ($provider === SocialSettings::MICROSOFT) {
+            $driver = (new MicrosoftProvider(request(), $config['client_id'], $secret, $redirectUri))->setTenant($config['tenant']);
         } else {
             $class = match ($provider) {
                 SocialSettings::GOOGLE => GoogleProvider::class,
@@ -203,7 +219,7 @@ class SocialLogin
     }
 
     /** @return array<string, mixed>|null payload of a JWT (no signature check) */
-    private static function jwtClaims(mixed $jwt): ?array
+    public static function jwtClaims(mixed $jwt): ?array
     {
         $parts = is_string($jwt) ? explode('.', $jwt) : [];
         $claims = count($parts) === 3 ? json_decode((string) JWT::urlsafeB64Decode($parts[1]), true) : null;

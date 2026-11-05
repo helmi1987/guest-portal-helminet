@@ -9,6 +9,7 @@ use App\Auth\Oidc\OidcSettings;
 use App\Auth\Social\AppleClientSecret;
 use App\Auth\Social\LoginMethods;
 use App\Auth\Social\ProviderCheck;
+use App\Auth\Social\SecretExpiry;
 use App\Auth\Social\SocialSettings;
 use App\Auth\Social\WalledGarden;
 use App\Auth\TwoFactor;
@@ -77,6 +78,7 @@ class SettingsController extends Controller
             'accountDurationHours' => round(DirectorySettings::durationS() / 3600, 2),
             'social' => $this->socialStatus(),
             'socialOrigins' => SocialSettings::origins(),
+            'socialSecretAttention' => SecretExpiry::attention(),
         ]);
     }
 
@@ -130,7 +132,11 @@ class SettingsController extends Controller
             if ($provider === SocialSettings::APPLE && ($config['team_id'] === '' || $config['key_id'] === '')) {
                 $missing[] = 'apple_ids';
             }
+            if ($provider === SocialSettings::MICROSOFT && ! SocialSettings::validTenant($config['tenant'])) {
+                $missing[] = 'tenant';
+            }
             $out[$provider] = $config + [
+                'expiry' => SecretExpiry::status($provider),
                 'has_secret' => $hasSecret,
                 'secret_broken' => $broken,
                 'ready' => $missing === [],
@@ -211,7 +217,8 @@ class SettingsController extends Controller
     /**
      * Social login providers (CONCEPT.md §9, decision 2026-11-03). An empty secret field keeps the stored
      * secret, "remove" deletes it; secrets are never logged, audited or flashed back as old input. Display
-     * order of the providers: decision 2026-11-04.
+     * order of the providers: decision 2026-11-04. Microsoft tenant and the optional expiry date of a secret
+     * (all providers but Apple): decision 2026-11-05, v0.31.0; removing a secret also removes its date.
      */
     public function updateSocial(Request $request): RedirectResponse
     {
@@ -224,14 +231,25 @@ class SettingsController extends Controller
                 "providers.$provider.secret" => ['nullable', 'string', $provider === SocialSettings::APPLE ? 'max:10000' : 'max:500'],
                 "providers.$provider.secret_clear" => ['boolean'],
             ];
+            if (in_array($provider, SocialSettings::EXPIRING, true)) {
+                $rules["providers.$provider.secret_expires_at"] = ['nullable', 'date_format:Y-m-d', 'after_or_equal:2000-01-01',
+                    'before_or_equal:'.now()->addYears(30)->format('Y-m-d')];
+            }
         }
         $rules += [
             'providers.apple.team_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
             'providers.apple.key_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
+            'providers.microsoft.tenant' => ['nullable', 'string', 'max:253', function (string $attribute, mixed $value, \Closure $fail) {
+                if (! SocialSettings::validTenant(trim((string) $value))) {
+                    $fail(__('portal.settings.social.tenant_invalid'));
+                }
+            }],
         ] + self::orderRules(SocialSettings::PROVIDERS);
         $validator = Validator::make($request->all(), $rules, [
             'providers.apple.team_id.regex' => __('portal.settings.social.apple_id_invalid'),
             'providers.apple.key_id.regex' => __('portal.settings.social.apple_id_invalid'),
+            ...collect(SocialSettings::EXPIRING)->flatMap(fn ($p) => collect(['date_format', 'after_or_equal', 'before_or_equal'])
+                ->mapWithKeys(fn ($r) => ["providers.$p.secret_expires_at.$r" => __('portal.social_secret.invalid')]))->all(),
         ], [
             'social_duration_hours' => __('portal.settings.social.duration'),
             ...collect(SocialSettings::PROVIDERS)->mapWithKeys(fn ($p) => ["providers.$p.client_id" => __('portal.settings.social.providers.'.$p).': '
@@ -257,6 +275,15 @@ class SettingsController extends Controller
                 $config['providers'][$provider]['team_id'] = strtoupper(trim((string) ($input['team_id'] ?? '')));
                 $config['providers'][$provider]['key_id'] = strtoupper(trim((string) ($input['key_id'] ?? '')));
             }
+            if ($provider === SocialSettings::MICROSOFT) {
+                $tenant = trim((string) ($input['tenant'] ?? ''));
+                $config['providers'][$provider]['tenant'] = $tenant === '' ? 'common'
+                    : (in_array(strtolower($tenant), SocialSettings::MICROSOFT_TENANTS, true) ? strtolower($tenant) : $tenant);
+            }
+            if (in_array($provider, SocialSettings::EXPIRING, true)) {
+                $date = trim((string) ($input['secret_expires_at'] ?? ''));
+                $config['providers'][$provider]['secret_expires_at'] = $date === '' ? null : $date;
+            }
             $secret = trim(str_replace(["\r\n", "\r"], "\n", (string) ($input['secret'] ?? '')));
             $secrets[$provider] = $request->boolean("providers.$provider.secret_clear") ? '' : ($secret !== '' ? $secret : null);
         }
@@ -274,7 +301,7 @@ class SettingsController extends Controller
             'providers' => collect(SocialSettings::PROVIDERS)->mapWithKeys(fn ($p) => [$p => [
                 'enabled' => $config['providers'][$p]['enabled'],
                 'credential_changed' => $secrets[$p] !== null,
-            ]])->all(),
+            ] + (in_array($p, SocialSettings::EXPIRING, true) ? ['valid_until' => SocialSettings::secretExpiresAt($p)] : [])])->all(),
             'order' => SocialSettings::order(),
         ]);
 

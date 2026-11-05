@@ -78,6 +78,7 @@ final class Federation
         'social_secret_apple',
         'social_secret_facebook',
         'social_secret_github',
+        'social_secret_microsoft',
         'account_login',               // DirectorySettings::KEY: default duration of a directory account login
     ];
 

@@ -11,11 +11,13 @@ use Throwable;
 
 /**
  * Social login providers for guests (CONCEPT.md §7.2 D, decision 2026-11-03): Google, Apple, Facebook,
- * GitHub. Public settings live in one replicated, hub-only setting (Federation::SECURITY_SETTINGS);
+ * GitHub, Microsoft (decision 2026-11-05, v0.31.0). Public settings live in one replicated, hub-only setting (Federation::SECURITY_SETTINGS);
  * every provider secret (client secret, for Apple the private key) is stored under its own key,
  * encrypted with the federation data key (CONCEPT.md §10.2), and never leaves this class except for
  * the token request. The display order of the providers in the guest's social box is set by the admin
  * (decision 2026-11-04, v0.25.0) and stored in the same setting under "order"; default: PROVIDERS.
+ * Every provider except Apple carries an optional expiry date of its secret ("secret_expires_at", Y-m-d,
+ * decision 2026-11-05, v0.31.0) for the reminders of SecretReminder.
  */
 final class SocialSettings
 {
@@ -29,8 +31,16 @@ final class SocialSettings
 
     public const GITHUB = 'github';
 
+    public const MICROSOFT = 'microsoft';
+
     /** Known providers in default display order (admin order: order()). */
-    public const PROVIDERS = [self::GOOGLE, self::APPLE, self::FACEBOOK, self::GITHUB];
+    public const PROVIDERS = [self::GOOGLE, self::APPLE, self::FACEBOOK, self::GITHUB, self::MICROSOFT];
+
+    /** Microsoft tenant for work/school and personal accounts (default). */
+    public const MICROSOFT_TENANTS = ['common', 'consumers', 'organizations'];
+
+    /** Providers whose secret can carry an expiry date (Apple's .p8 key does not expire). */
+    public const EXPIRING = [self::GOOGLE, self::FACEBOOK, self::GITHUB, self::MICROSOFT];
 
     /** Setting key of a provider secret. */
     public static function secretSetting(string $provider): string
@@ -46,11 +56,13 @@ final class SocialSettings
 
     /** Public fields per provider (secrets excluded). */
     public const PROVIDER_DEFAULTS = [
-        self::GOOGLE => ['enabled' => false, 'client_id' => ''],
+        self::GOOGLE => ['enabled' => false, 'client_id' => '', 'secret_expires_at' => null],
         // Apple: services ID as client ID; the client secret is a JWT signed with the .p8 key (team + key ID).
         self::APPLE => ['enabled' => false, 'client_id' => '', 'team_id' => '', 'key_id' => ''],
-        self::FACEBOOK => ['enabled' => false, 'client_id' => ''],
-        self::GITHUB => ['enabled' => false, 'client_id' => ''],
+        self::FACEBOOK => ['enabled' => false, 'client_id' => '', 'secret_expires_at' => null],
+        self::GITHUB => ['enabled' => false, 'client_id' => '', 'secret_expires_at' => null],
+        // Microsoft (Entra ID): tenant of the authorize/token endpoints (common, consumers, organizations, a tenant ID or domain).
+        self::MICROSOFT => ['enabled' => false, 'client_id' => '', 'tenant' => 'common', 'secret_expires_at' => null],
     ];
 
     public const DEFAULTS = [
@@ -95,7 +107,39 @@ final class SocialSettings
             return false;
         }
 
-        return $provider !== self::APPLE || ($config['team_id'] !== '' && $config['key_id'] !== '');
+        return match ($provider) {
+            self::APPLE => $config['team_id'] !== '' && $config['key_id'] !== '',
+            self::MICROSOFT => self::validTenant($config['tenant']),
+            default => true,
+        };
+    }
+
+    /**
+     * Microsoft tenant as accepted by the endpoints: common, consumers, organizations, a tenant ID (GUID) or a
+     * verified domain name (letters, digits, dots and hyphens, at most 253 characters).
+     */
+    public static function validTenant(mixed $tenant): bool
+    {
+        if (! is_string($tenant) || $tenant === '' || strlen($tenant) > 253) {
+            return false;
+        }
+
+        return in_array(strtolower($tenant), self::MICROSOFT_TENANTS, true)
+            || self::isGuid($tenant)
+            || preg_match('/^(?=.{1,253}$)([A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)+[A-Za-z][A-Za-z0-9-]{0,61}[A-Za-z0-9]$/', $tenant) === 1;
+    }
+
+    public static function isGuid(mixed $value): bool
+    {
+        return is_string($value) && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i', $value) === 1;
+    }
+
+    /** Stored expiry date of a provider secret (Y-m-d), null when none is set or the provider has none. */
+    public static function secretExpiresAt(string $provider): ?string
+    {
+        $date = self::provider($provider)['secret_expires_at'] ?? null;
+
+        return is_string($date) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date) === 1 ? $date : null;
     }
 
     /** @return list<string> all providers in the display order set by the admin (DisplayOrder::normalize()) */
@@ -169,6 +213,10 @@ final class SocialSettings
             $own = $config['providers'][$name] ?? [];
             $providers[$name] = array_merge($current['providers'][$name], is_array($own) ? array_intersect_key($own, $defaults) : []);
             $providers[$name]['enabled'] = (bool) $providers[$name]['enabled'];
+            // Removing the secret also removes its expiry date.
+            if (array_key_exists('secret_expires_at', $defaults) && ($secrets[$name] ?? null) === '') {
+                $providers[$name]['secret_expires_at'] = null;
+            }
         }
         Setting::put(self::KEY, [
             'duration_s' => max(60, (int) ($config['duration_s'] ?? $current['duration_s'])),

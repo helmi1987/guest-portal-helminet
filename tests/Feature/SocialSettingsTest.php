@@ -38,6 +38,8 @@ class SocialSettingsTest extends TestCase
 
     private const FACEBOOK_SECRET = 'test-facebook-app-secret';
 
+    private const MICROSOFT_SECRET = 'test-microsoft-client-secret';
+
     private static ?string $appleKey = null;
 
     /** @var list<string> */
@@ -76,6 +78,7 @@ class SocialSettingsTest extends TestCase
             $base[$provider] = ['enabled' => '0', 'client_id' => '', 'secret' => ''];
         }
         $base['apple'] += ['team_id' => '', 'key_id' => ''];
+        $base['microsoft'] += ['tenant' => ''];
 
         return ['social_duration_hours' => $hours, 'providers' => array_replace_recursive($base, $providers)];
     }
@@ -87,12 +90,14 @@ class SocialSettingsTest extends TestCase
             'apple' => ['enabled' => true, 'client_id' => 'com.example.portal', 'team_id' => 'TEAM123456', 'key_id' => 'KEY1234567'],
             'facebook' => ['enabled' => true, 'client_id' => '1234567890'],
             'github' => ['enabled' => true, 'client_id' => 'gh-client-id'],
-        ]], ['google' => self::GOOGLE_SECRET, 'apple' => self::appleKey(), 'facebook' => self::FACEBOOK_SECRET, 'github' => self::GITHUB_SECRET]);
+            'microsoft' => ['enabled' => true, 'client_id' => '11111111-2222-3333-4444-555555555555'],
+        ]], ['google' => self::GOOGLE_SECRET, 'apple' => self::appleKey(), 'facebook' => self::FACEBOOK_SECRET, 'github' => self::GITHUB_SECRET,
+            'microsoft' => self::MICROSOFT_SECRET]);
     }
 
     private function assertNoSecretsIn(string $text): void
     {
-        foreach ([self::GOOGLE_SECRET, self::GITHUB_SECRET, self::FACEBOOK_SECRET, 'PRIVATE KEY'] as $secret) {
+        foreach ([self::GOOGLE_SECRET, self::GITHUB_SECRET, self::FACEBOOK_SECRET, self::MICROSOFT_SECRET, 'PRIVATE KEY'] as $secret) {
             $this->assertStringNotContainsString($secret, $text);
         }
     }
@@ -156,7 +161,7 @@ class SocialSettingsTest extends TestCase
         ], 12.5))->assertRedirect('/admin/settings')->assertSessionHasNoErrors()->assertSessionHas('status', __('portal.saved'));
 
         $this->assertSame(45000, SocialSettings::durationS());
-        $this->assertSame(['enabled' => true, 'client_id' => 'google-client.apps.example.com'], SocialSettings::provider('google'));
+        $this->assertSame(['enabled' => true, 'client_id' => 'google-client.apps.example.com', 'secret_expires_at' => null], SocialSettings::provider('google'));
         $this->assertSame(self::GOOGLE_SECRET, SocialSettings::secret('google'));
         $this->assertSame(self::GITHUB_SECRET, SocialSettings::secret('github'));
         $this->assertNull(SocialSettings::secret('facebook'));
@@ -185,10 +190,11 @@ class SocialSettingsTest extends TestCase
         $audits = AuditLog::where('action', 'settings.social')->orderBy('id')->get();
         $this->assertCount(3, $audits);
         $this->assertSame(['duration_s' => 45000, 'providers' => [
-            'google' => ['enabled' => true, 'credential_changed' => true],
+            'google' => ['enabled' => true, 'credential_changed' => true, 'valid_until' => null],
             'apple' => ['enabled' => false, 'credential_changed' => false],
-            'facebook' => ['enabled' => false, 'credential_changed' => false],
-            'github' => ['enabled' => false, 'credential_changed' => true],
+            'facebook' => ['enabled' => false, 'credential_changed' => false, 'valid_until' => null],
+            'github' => ['enabled' => false, 'credential_changed' => true, 'valid_until' => null],
+            'microsoft' => ['enabled' => false, 'credential_changed' => false, 'valid_until' => null],
         ], 'order' => SocialSettings::PROVIDERS], $audits[0]->data);
         $this->assertFalse($audits[1]->data['providers']['google']['credential_changed']);
         $this->assertTrue($audits[2]->data['providers']['google']['credential_changed']);
@@ -425,7 +431,7 @@ class SocialSettingsTest extends TestCase
         $this->assertSame(SocialSettings::PROVIDERS, SocialSettings::order());
         $this->assertSame(SocialSettings::PROVIDERS, $rows());
 
-        $order = ['github', 'facebook', 'google', 'apple'];
+        $order = ['github', 'facebook', 'microsoft', 'google', 'apple'];
         $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form() + ['order' => $order])
             ->assertSessionHasNoErrors();
         $this->assertSame($order, SocialSettings::order());
@@ -435,16 +441,16 @@ class SocialSettingsTest extends TestCase
         // Arrow button without JS; a save without order fields (and SocialSettings::save() without order) keeps it.
         $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form() + ['move' => 'google:up'])
             ->assertSessionHasNoErrors();
-        $this->assertSame(['github', 'google', 'facebook', 'apple'], SocialSettings::order());
+        $this->assertSame(['github', 'facebook', 'google', 'microsoft', 'apple'], SocialSettings::order());
         $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form())->assertSessionHasNoErrors();
         SocialSettings::save(['duration_s' => 3600]);
-        $this->assertSame(['github', 'google', 'facebook', 'apple'], SocialSettings::order());
+        $this->assertSame(['github', 'facebook', 'google', 'microsoft', 'apple'], SocialSettings::order());
     }
 
     public function test_invalid_provider_order_is_rejected(): void
     {
         $admin = $this->admin();
-        foreach ([['google', 'apple', 'facebook'], ['google', 'google', 'facebook', 'github'], ['google', 'apple', 'facebook', 'code'], 'google'] as $order) {
+        foreach ([['google', 'apple', 'facebook', 'github'], ['google', 'google', 'facebook', 'github', 'microsoft'], ['google', 'apple', 'facebook', 'github', 'code'], 'google'] as $order) {
             $this->onZone('admin')->actingAs($admin)->post('/admin/settings/social', $this->form() + ['order' => $order])
                 ->assertSessionHasErrors(['order' => __('portal.settings.order.invalid')]);
         }
@@ -455,7 +461,7 @@ class SocialSettingsTest extends TestCase
 
         // Stored values are read leniently (older versions, replicated values).
         Setting::put(SocialSettings::KEY, ['order' => ['apple', 'nope', 'apple']]);
-        $this->assertSame(['apple', 'google', 'facebook', 'github'], SocialSettings::order());
+        $this->assertSame(['apple', 'google', 'facebook', 'github', 'microsoft'], SocialSettings::order());
         Setting::put(SocialSettings::KEY, ['order' => 'apple']);
         $this->assertSame(SocialSettings::PROVIDERS, SocialSettings::order());
     }
@@ -467,8 +473,8 @@ class SocialSettingsTest extends TestCase
         $hosts = WalledGarden::hosts();
         $this->assertSame(SocialSettings::PROVIDERS, SocialSettings::enabledProviders());
 
-        SocialSettings::save(['order' => ['facebook', 'github', 'apple', 'google']]);
-        $this->assertSame(['facebook', 'github', 'apple', 'google'], SocialSettings::enabledProviders());
+        SocialSettings::save(['order' => ['facebook', 'github', 'microsoft', 'apple', 'google']]);
+        $this->assertSame(['facebook', 'github', 'microsoft', 'apple', 'google'], SocialSettings::enabledProviders());
         $this->assertSame($hosts, WalledGarden::hosts());
         // Reordering does not ask for the router script.
         $this->onZone('admin')->actingAs($this->admin())->post('/admin/settings/social', $this->form([
@@ -476,7 +482,8 @@ class SocialSettingsTest extends TestCase
             'apple' => ['enabled' => '1', 'client_id' => 'com.example.portal', 'team_id' => 'TEAM123456', 'key_id' => 'KEY1234567'],
             'facebook' => ['enabled' => '1', 'client_id' => '1234567890'],
             'github' => ['enabled' => '1', 'client_id' => 'gh-client-id'],
+            'microsoft' => ['enabled' => '1', 'client_id' => '11111111-2222-3333-4444-555555555555'],
         ]) + ['move' => 'google:up'])->assertSessionHasNoErrors()->assertSessionMissing('warning');
-        $this->assertSame(['facebook', 'github', 'google', 'apple'], SocialSettings::enabledProviders());
+        $this->assertSame(['facebook', 'github', 'microsoft', 'google', 'apple'], SocialSettings::enabledProviders());
     }
 }

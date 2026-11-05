@@ -21,6 +21,16 @@ final class WalledGarden
         ],
         SocialSettings::FACEBOOK => ['*.facebook.com', '*.fbcdn.net', '*.facebook.net', '*.fbsbx.com'],
         SocialSettings::GITHUB => ['github.com', '*.github.com', '*.githubassets.com', '*.githubusercontent.com'],
+        // Sign-in pages for work/school accounts (login.microsoftonline.com, login.microsoft.com) and personal
+        // accounts (login.live.com, account.live.com, auth.gfx.ms), their CDNs (*.msauth.net, *.msftauth.net) and
+        // the tenant branding images (*.msauthimages.net, *.msftauthimages.net). Taken from Microsoft's published
+        // Microsoft 365 endpoint list (learn.microsoft.com/microsoft-365/enterprise/urls-and-ip-address-ranges,
+        // endpoint sets 56, 59, 97 and 116), limited to what the browser sign-in needs; *.msecnd.net and the
+        // *.microsoftonline-p.com hosts of that list serve other clients and stay out.
+        SocialSettings::MICROSOFT => [
+            'login.microsoftonline.com', 'login.microsoft.com', 'login.live.com', 'account.live.com', 'auth.gfx.ms',
+            '*.msauth.net', '*.msftauth.net', '*.msauthimages.net', '*.msftauthimages.net',
+        ],
     ];
 
     /**

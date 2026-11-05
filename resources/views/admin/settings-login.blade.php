@@ -45,6 +45,7 @@
     <button type="submit" class="hidden" tabindex="-1" aria-hidden="true"></button>
     <h2 class="text-lg font-semibold">{{ __('portal.settings.social.title') }}</h2>
     <p class="text-xs text-slate-500">{{ __('portal.settings.social.help') }} {{ __('portal.settings.social.federation_hint') }}</p>
+    @include('admin.partials.social-secret-banner', ['entries' => $socialSecretAttention, 'class' => ''])
     <label class="label md:max-w-xs">{{ __('portal.settings.social.duration') }}
         <input name="social_duration_hours" type="number" step="0.25" min="0.25" max="8760" value="{{ old('social_duration_hours', $socialDurationHours) }}" required class="field">
         @error('social_duration_hours')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
@@ -80,6 +81,9 @@
                 @else
                     <span class="text-slate-500">{{ __('portal.settings.social.secret_none') }}</span>
                 @endif
+                @if ($cfg['expiry'] !== null)
+                    @include('admin.partials.social-secret-status', ['status' => $cfg['expiry']])
+                @endif
                 @if ($cfg['ready'])
                     <span class="text-green-700" data-social-ready>{{ __('portal.settings.social.ready') }}</span>
                 @else
@@ -100,6 +104,12 @@
                 <label class="label">{{ __($provider === 'apple' ? 'portal.settings.social.services_id' : 'portal.settings.social.client_id') }}
                     <input name="providers[{{ $provider }}][client_id]" value="{{ old('providers.'.$provider.'.client_id', $cfg['client_id']) }}" autocomplete="off" class="field">
                     @error('providers.'.$provider.'.client_id')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
+                @if ($provider === 'microsoft')
+                    <label class="label">{{ __('portal.settings.social.tenant') }}
+                        <input name="providers[microsoft][tenant]" value="{{ old('providers.microsoft.tenant', $cfg['tenant']) }}" maxlength="253" autocomplete="off" class="field font-mono" placeholder="common">
+                        <span class="text-xs text-slate-500">{{ __('portal.settings.social.tenant_help') }}</span>
+                        @error('providers.microsoft.tenant')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
+                @endif
                 @if ($provider === 'apple')
                     <label class="label">{{ __('portal.settings.social.team_id') }}
                         <input name="providers[apple][team_id]" value="{{ old('providers.apple.team_id', $cfg['team_id']) }}" maxlength="10" autocomplete="off" class="field font-mono">
@@ -123,6 +133,13 @@
                             <input type="checkbox" name="providers[{{ $provider }}][secret_clear]" value="1"> {{ __('portal.settings.social.secret_clear') }}</span>
                     @endif
                 </label>
+                @if (in_array($provider, \App\Auth\Social\SocialSettings::EXPIRING, true))
+                    <label class="label">{{ __('portal.social_secret.field') }}
+                        <input type="date" name="providers[{{ $provider }}][secret_expires_at]" value="{{ old('providers.'.$provider.'.secret_expires_at', $cfg['secret_expires_at']) }}"
+                            min="2000-01-01" max="{{ now()->addYears(30)->format('Y-m-d') }}" class="field" data-social-secret-date>
+                        <span class="text-xs text-slate-500">{{ __($provider === 'microsoft' ? 'portal.social_secret.help_microsoft' : 'portal.social_secret.help') }}</span>
+                        @error('providers.'.$provider.'.secret_expires_at')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
+                @endif
             </div>
 
             <div class="mt-4">

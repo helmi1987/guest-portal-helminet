@@ -144,8 +144,8 @@ class LoginMethodSettingsTest extends TestCase
         $this->assertMatchesRegularExpression('/value="code:up"[^>]*\sdisabled(?!:)/', $html);
         $this->assertMatchesRegularExpression('/value="social:down"[^>]*\sdisabled(?!:)/', $html);
         $this->assertDoesNotMatchRegularExpression('/value="code:down"[^>]*\sdisabled(?!:)/', $html);
-        // One order field per method (5) and per social provider (4).
-        $this->assertSame(9, substr_count($html, 'name="order[]"'));
+        // One order field per method (5) and per social provider (5).
+        $this->assertSame(10, substr_count($html, 'name="order[]"'));
 
         $post(['order' => LoginMethods::ALL, 'move' => 'sms:up']);
         $this->assertSame(['code', 'sms', 'account', 'approval', 'social'], LoginMethods::order());
