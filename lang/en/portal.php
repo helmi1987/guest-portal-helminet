@@ -1777,7 +1777,6 @@ return [
         'blocks_help' => 'Paste these blocks (they can be run again and change only their own objects), then query the router state again.',
         'router_script' => 'Open the router script of :router',
         'show' => 'To the router state',
-        'commands_disabled' => 'The commands stay greyed out until the router state is queried again ("Refresh" at the router state).',
         'notify' => [
             'title' => 'Update router',
             'router' => 'Router :router (site :site)',

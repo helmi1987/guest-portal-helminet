@@ -9,7 +9,8 @@ use App\Support\OutboundHttp;
 
 /**
  * Generic webhook: JSON POST signed with HMAC-SHA256 over "<timestamp>.<body>"
- * (headers X-Timestamp, X-Signature: sha256=<hex>); receivers should reject old timestamps.
+ * (headers X-Timestamp, X-Signature: sha256=<hex>); receivers should reject old timestamps. Events: approval.requested,
+ * approval.decided, test, router.outdated and router.unreachable (announce(), decision 2026-11-05, v0.30.0).
  */
 class WebhookChannel implements NotificationChannel
 {

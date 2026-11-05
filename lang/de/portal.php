@@ -1777,7 +1777,6 @@ return [
         'blocks_help' => 'Diese Blöcke einfügen (sie sind wiederholbar und ändern nur eigene Objekte), danach den Router-Status neu abfragen.',
         'router_script' => 'Router-Skript von :router öffnen',
         'show' => 'Zum Router-Status',
-        'commands_disabled' => 'Die Befehle sind ausgegraut, bis der Router-Status neu abgefragt ist («Aktualisieren» beim Router-Status).',
         'notify' => [
             'title' => 'Router aktualisieren',
             'router' => 'Router :router (Standort :site)',

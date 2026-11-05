@@ -87,7 +87,12 @@ class RouterFreshnessTest extends TestCase
 
     public function test_fetch_stores_fingerprint_and_time_per_page_and_a_changed_portal_url_outdates_them(): void
     {
-        $this->assertSame(['login', 'status', 'logout', 'alogin'], $this->check()['pages'], 'never fetched');
+        // Never fetched any page: still in setup, not outdated
+        $this->assertSame([], $this->check()['pages'], 'in setup');
+        $this->assertTrue($this->check()['upToDate']);
+        // Fetched before 0.30.0 (time, no fingerprints): every page is outdated
+        $this->nas->markSeen('login_page_fetched_at');
+        $this->assertSame(['login', 'status', 'logout', 'alogin'], $this->check()['pages'], 'fetched before 0.30.0');
         $this->fetchPage('status');
         $pages = $this->nas->fresh()->hotspot_pages;
         $this->assertSame(['status'], array_keys($pages));
@@ -292,15 +297,19 @@ class RouterFreshnessTest extends TestCase
             $this->fetchPage($page, $second);
         }
         $noApi = NasClient::find($this->site->nasClients()->create(['name' => 'Router C', 'nas_ip' => '192.0.2.3'])->id);
+        // Router C fetched its pages before 0.30.0 (no fingerprints); Router D never fetched anything (in setup)
+        $noApi->markSeen('login_page_fetched_at');
+        $inSetup = NasClient::find($this->site->nasClients()->create(['name' => 'Router D', 'nas_ip' => '192.0.2.4'])->id);
         $fail = null;
         $queried = [];
         $menus = ['/interface vlan' => [['name' => 'vlan-guest', 'interface' => 'bridge1', 'vlan-id' => '30', 'comment' => $k('net', 'vlan')]]];
         $this->fakeHttp($menus, $fail, $queried);
 
-        // Router C never fetched its pages: outdated, notified once; A and B up to date
+        // Router C: pages outdated, notified once; A and B up to date; D in setup: neither outdated nor notified
         $this->artisan('portal:router-state-check')->assertSuccessful()
             ->expectsOutputToContain('Site A / Router C: outdated pages: login.html, status.html, logout.html, alogin.html (notified)')
-            ->expectsOutputToContain('Site A / Router A: up to date');
+            ->expectsOutputToContain('Site A / Router A: up to date')
+            ->expectsOutputToContain('Site A / Router D: up to date');
         // One router after the other: all menus of A, then all of B; C is not queried
         $this->assertSame(['192.0.2.1', '192.0.2.2'], array_values(array_unique($queried)));
         $this->assertSame(count($queried) / 2, count(array_filter($queried, fn ($h) => $h === '192.0.2.1')));
@@ -311,11 +320,13 @@ class RouterFreshnessTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->url() === 'https://gotify.example.net/message' && $r['title'] === __('portal.router_fresh.notify.title', [], 'en')
             && str_contains($r['message'], 'Router C') && str_contains($r['message'], 'login.html')
             && $r['extras']['client::notification']['click']['url'] === 'https://portal.example.net:8443/admin/sites/'.$this->site->id.'/setup#router-update-'.$noApi->id);
-        Http::assertSent(fn (Request $r) => $r->url() === 'https://hooks.example.net/in' && $r['event'] === 'router_outdated'
+        Http::assertSent(fn (Request $r) => $r->url() === 'https://hooks.example.net/in' && $r['event'] === 'router.outdated'
             && $r['router']['name'] === 'Router C' && $r['site']['slug'] === 'site-a' && $r['pages'] === ['login', 'status', 'logout', 'alogin']
             && $r['blocks'] === [] && $r['unreachable'] === false && $r->hasHeader('X-Signature'));
         Http::assertSent(fn (Request $r) => str_ends_with($r->url(), '/sendMessage') && str_contains($r['text'], 'Router C'));
         $this->assertArrayHasKey('outdated', $noApi->fresh()->freshness_notified);
+        $this->assertNull($inSetup->fresh()->freshness_notified);
+        Http::assertNotSent(fn (Request $r) => $r->url() === 'https://hooks.example.net/in' && $r['router']['name'] === 'Router D');
 
         // Next run: still outdated, no second message
         $before = count($this->messages());
@@ -351,7 +362,7 @@ class RouterFreshnessTest extends TestCase
         $this->artisan('portal:router-state-check')->assertSuccessful()->expectsOutputToContain('Site A / Router A: unreachable (notified)');
         $this->assertCount($before + 6, $this->messages());
         Http::assertSent(fn (Request $r) => $r->url() === 'https://hooks.example.net/in' && $r['router']['name'] === 'Router A'
-            && $r['unreachable'] === true && $r['unreachable_since'] !== null);
+            && $r['event'] === 'router.unreachable' && $r['unreachable'] === true && $r['unreachable_since'] !== null);
         $this->artisan('portal:router-state-check')->assertSuccessful();
         $this->assertCount($before + 6, $this->messages());
         // Reachable again: the mark is gone
@@ -374,6 +385,29 @@ class RouterFreshnessTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->url() === 'https://hooks.example.net/in' && $r['blocks'] === ['net'] && $r['pages'] === []);
         Http::assertSent(fn (Request $r) => $r->url() === 'https://gotify.example.net/message'
             && str_contains($r['message'], __('portal.router_fresh.notify.blocks', ['blocks' => __('portal.router_api.blocks.net', [], 'en')], 'en')));
+    }
+
+    public function test_outdated_and_unreachable_in_one_check_send_both_events(): void
+    {
+        $k = MikrotikRos7Driver::key(...);
+        $this->channels();
+        $this->nas->markSeen('login_page_fetched_at');
+        $this->withApi();
+        $this->nas->storeRouterState($this->state(['/interface vlan' => [['name' => 'vlan-guest', 'interface' => 'bridge1', 'vlan-id' => '29', 'comment' => $k('net', 'vlan')]]]));
+        $this->nas->storeRouterState(null, ['kind' => 'connect', 'detail' => 'refused']);
+        $fail = 401;
+        $queried = [];
+        $this->fakeHttp([], $fail, $queried);
+        $this->artisan('portal:router-state-check')->assertSuccessful();
+        $hooks = array_values(array_filter($this->messages(), fn ($pair) => $pair[0]->url() === 'https://hooks.example.net/in'));
+        $this->assertSame(['router.outdated', 'router.unreachable'], array_map(fn ($pair) => $pair[0]['event'], $hooks));
+        // Same data fields in both; the outdated message names the pages, the unreachable one the time
+        $this->assertSame(['login', 'status', 'logout', 'alogin'], $hooks[1][0]['pages']);
+        $this->assertTrue($hooks[0][0]['unreachable']);
+        $this->assertStringContainsString('login.html', $hooks[0][0]['message']);
+        $this->assertStringContainsString(__('portal.router_fresh.notify.unreachable', ['since' => ''], 'en'), $hooks[1][0]['message']);
+        $this->assertCount(6, $this->messages());
+        $this->assertSame(['outdated', 'unreachable'], array_keys($this->nas->fresh()->freshness_notified));
     }
 
     public function test_routers_of_sites_served_elsewhere_are_neither_checked_nor_notified(): void
@@ -408,6 +442,7 @@ class RouterFreshnessTest extends TestCase
 
         // The job runs the check
         $this->assertNull($this->nas->fresh()->freshness_notified);
+        $this->nas->markSeen('login_page_fetched_at');
         (new CheckRouters)->handle(app(RouterCheck::class));
         $this->assertArrayHasKey('outdated', $this->nas->fresh()->freshness_notified);
     }

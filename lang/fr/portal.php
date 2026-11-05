@@ -1777,7 +1777,6 @@ return [
         'blocks_help' => 'Collez ces blocs (ils peuvent être relancés et ne modifient que leurs propres objets), puis relisez l’état du routeur.',
         'router_script' => 'Ouvrir le script du routeur :router',
         'show' => 'Vers l’état du routeur',
-        'commands_disabled' => 'Les commandes restent grisées jusqu’à une nouvelle lecture de l’état du routeur (« Actualiser » dans l’état du routeur).',
         'notify' => [
             'title' => 'Mettre à jour le routeur',
             'router' => 'Routeur :router (site :site)',

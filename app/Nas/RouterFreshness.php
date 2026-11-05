@@ -15,8 +15,9 @@ use Illuminate\Support\Collection;
  *
  * - Hotspot pages: the fingerprint of every page the router fetched (nas_clients.hotspot_pages) against the page the
  *   driver renders now (portal URL, site slug, ...). A page never fetched counts as outdated for drivers whose router
- *   fetches all its pages from the portal (ServesHotspotPages); other drivers' pages are uploaded by hand, so only a
- *   page that was fetched once is compared.
+ *   fetches all its pages from the portal (ServesHotspotPages), once the router fetched anything (a router that never
+ *   fetched a page is still in setup; one that fetched before 0.30.0 has a time but no fingerprints); other drivers'
+ *   pages are uploaded by hand, so only a page that was fetched once is compared.
  * - Configuration (routers with read-only API access and a RouterStateDriver): the stored router state compared with
  *   the site (compareState()); a block with a differing, legacy or missing object is outdated. The optional container
  *   block counts only when the container objects exist on the router. A state older than the setup inputs or the
@@ -128,6 +129,10 @@ class RouterFreshness
     /** @return list<string> */
     private function outdatedPages(Site $site, NasClient $nas): array
     {
+        // Never fetched any page (no time, no fingerprint): the router is still in setup, not outdated
+        if ($nas->login_page_fetched_at === null && $nas->hotspot_pages === null) {
+            return [];
+        }
         $fetchesAll = $site->driver() instanceof ServesHotspotPages;
         $stored = (array) $nas->hotspot_pages;
         $out = [];

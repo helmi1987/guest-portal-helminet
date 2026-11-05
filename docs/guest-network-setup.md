@@ -859,7 +859,8 @@ The portal notices when a router's hotspot pages or configuration no longer matc
 (v0.30.0). The router never fetches anything by itself; the admin pastes the shown command.
 - **Hotspot pages:** every page a router fetches (`/router-login/<router>/<page>.html`) is recorded with a
   fingerprint and the time. A page whose current content differs (portal URL, site id changed) or that was never
-  fetched is outdated. Pages fetched by versions before 0.30.0 have no fingerprint: run the fetch block once.
+  fetched is outdated. Pages fetched by versions before 0.30.0 have no fingerprint: run the fetch block once. A router
+  that never fetched any page is still in setup and is not reported.
 - **Configuration** (routers with API access): the stored router state is compared like on the setup page; a block
   with a differing, legacy or missing object is outdated. The optional RouterOS container block counts only when the
   container is installed. A state older than the last change of the inputs is "check pending", not outdated.
@@ -867,9 +868,11 @@ The portal notices when a router's hotspot pages or configuration no longer matc
   portal update (container start), queries every router with API access that this instance serves, one after
   another, read-only. Two failed queries in a row mark the router "unreachable since ...".
 - **Display:** dashboard (one line per router, admins only), site page and setup page ("Update router" with the fetch
-  block and the outdated command blocks; the router script as a link to its page).
+  block and the outdated command blocks, copyable: they belong to the compared state; the router script as a link to
+  its page).
 - **Notification:** when a router becomes outdated, and again when it becomes unreachable, one message goes to every
-  enabled notification channel (Telegram, Gotify, webhook event `router_outdated`) with a link to the commands. No
+  enabled notification channel (Telegram, Gotify, webhook events `router.outdated` and `router.unreachable`, signed like
+  `approval.requested`) with a link to the commands. No
   further message while it stays outdated; once up to date again (new fetch or a fresh state), the next change is
   notified again.
 

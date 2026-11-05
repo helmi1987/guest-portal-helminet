@@ -1777,7 +1777,6 @@ return [
         'blocks_help' => 'Incollare questi blocchi (si possono rieseguire e modificano solo i propri oggetti), poi rileggere lo stato del router.',
         'router_script' => 'Aprire lo script del router :router',
         'show' => 'Allo stato del router',
-        'commands_disabled' => 'I comandi restano disattivati finché lo stato del router non viene riletto («Aggiorna» nello stato del router).',
         'notify' => [
             'title' => 'Aggiornare il router',
             'router' => 'Router :router (sede :site)',

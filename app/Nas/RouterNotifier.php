@@ -44,36 +44,39 @@ class RouterNotifier
         if ($notified !== $before) {
             $nas->storeFreshnessNotified($notified);
         }
-        if ($new === []) {
-            return false;
+        // One message per transition (webhook events router.outdated and router.unreachable)
+        foreach ($new as $what) {
+            $this->send($nas, $result, $what);
         }
-        $this->send($nas, $result);
 
-        return true;
+        return $new !== [];
     }
 
-    /** One message per router naming what is outdated or unreachable, with the link to its router state. */
-    public function send(NasClient $nas, array $result): void
+    /**
+     * One message for one transition of a router ("outdated": the outdated pages and blocks; "unreachable": since
+     * when), with the link to its router state. Webhook event "router.<transition>", the data fields are the same.
+     */
+    public function send(NasClient $nas, array $result, string $transition): void
     {
         $locale = ApprovalSettings::locale();
         $site = $nas->site;
         $url = ApprovalSettings::adminUrl().route('admin.sites.setup', $site, false).'#router-update-'.$nas->id;
         $blockNames = array_map(fn ($b) => __('portal.router_api.blocks.'.$b, [], $locale), $result['blocks']);
         $lines = [__('portal.router_fresh.notify.router', ['router' => $nas->name, 'site' => $site->name], $locale)];
-        if ($result['pages'] !== []) {
+        if ($transition === 'outdated' && $result['pages'] !== []) {
             $lines[] = __('portal.router_fresh.notify.pages', ['pages' => self::files($result['pages'])], $locale);
         }
-        if ($result['blocks'] !== []) {
+        if ($transition === 'outdated' && $result['blocks'] !== []) {
             $lines[] = __('portal.router_fresh.notify.blocks', ['blocks' => implode(', ', $blockNames)], $locale);
         }
-        if ($result['unreachable']) {
+        if ($transition === 'unreachable') {
             $lines[] = __('portal.router_fresh.notify.unreachable', ['since' => $result['unreachableSince'] !== null
                 ? LocalTime::format($result['unreachableSince']) : '?'], $locale);
         }
         $lines[] = __('portal.router_fresh.notify.link', ['url' => $url], $locale);
         $title = __('portal.router_fresh.notify.title', [], $locale);
         $data = [
-            'event' => 'router_outdated',
+            'event' => 'router.'.$transition,
             'router' => ['id' => $nas->id, 'name' => $nas->name, 'nas_ip' => $nas->nas_ip],
             'site' => ['slug' => $site->slug, 'name' => $site->name],
             'pages' => $result['pages'],
@@ -90,7 +93,7 @@ class RouterNotifier
                     'driver' => $channel->driver, 'error' => Redact::secrets($e->getMessage())]);
             }
         }
-        Log::info('Router outdated notification', ['nas' => $nas->id, 'site' => $site->slug, 'pages' => $result['pages'],
+        Log::info('Router notification', ['nas' => $nas->id, 'site' => $site->slug, 'event' => 'router.'.$transition, 'pages' => $result['pages'],
             'blocks' => $result['blocks'], 'unreachable' => $result['unreachable']]);
     }
 
