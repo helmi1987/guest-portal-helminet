@@ -19,6 +19,11 @@
 
     @include('admin.sites.cert-checklist', ['site' => $site, 'verify' => $commands['diagnostics']['verify'] ?? ''])
 
+    {{-- Outdated routers with their commands (decision 2026-11-05, v0.30.0) --}}
+    @if ($routerAttention->isNotEmpty())
+        @include('admin.sites.partials.router-update', ['attention' => $routerAttention])
+    @endif
+
     {{-- Router state (read-only API): query, comparison, prefill; greys out the commands while missing or stale --}}
     @if ($stateSupported)
     <section id="step-state" class="card mb-6">

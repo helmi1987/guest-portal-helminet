@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AuditController;
 use App\Http\Controllers\Admin\BackupController;
 use App\Http\Controllers\Admin\BrandingController;
 use App\Http\Controllers\Admin\CertificateController;
+use App\Http\Controllers\Admin\DashboardController;
 use App\Http\Controllers\Admin\FederationController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\GuestController;
@@ -139,7 +140,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
         Route::middleware('two_factor')->group(function () {
             // Admin + manager (CONCEPT.md §9): codes/grants, site codes, approvals, guests and sessions, MAC whitelist.
             Route::middleware('role:admin,manager')->name('admin.')->group(function () {
-                Route::view('/', 'admin.dashboard')->name('dashboard');
+                Route::get('/', DashboardController::class)->name('dashboard');
                 Route::get('/grants/print', [GrantController::class, 'print'])->name('grants.print');
                 Route::resource('grants', GrantController::class)->only(['index', 'create', 'store', 'edit', 'update']);
                 Route::post('/grants/{grant}/extend', [GrantController::class, 'extend'])->name('grants.extend');

@@ -59,6 +59,19 @@ class GotifyChannel implements NotificationChannel
             ])->throw());
     }
 
+    /** Plain text message; the link (data "url") opens on a click on the notification. */
+    public function announce(Channel $channel, string $title, string $text, array $data): void
+    {
+        $url = is_string($data['url'] ?? null) ? $data['url'] : null;
+        OutboundHttp::rejectRedirect(OutboundHttp::client(10)->asJson()
+            ->withHeaders(['X-Gotify-Key' => $channel->conf('app_token')])
+            ->post(rtrim($channel->conf('url'), '/').'/message', [
+                'title' => $title,
+                'message' => $text,
+                'priority' => (int) $channel->conf('priority', 8),
+            ] + ($url !== null ? ['extras' => ['client::notification' => ['click' => ['url' => $url]]]] : []))->throw());
+    }
+
     /** Gotify messages cannot be edited. */
     public function decided(ApprovalRequest $request, Channel $channel, ?array $meta): void {}
 }

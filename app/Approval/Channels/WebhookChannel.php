@@ -43,6 +43,12 @@ class WebhookChannel implements NotificationChannel
         $this->post($channel, ['event' => 'test', 'message' => $text, 'sent_at' => now()->toIso8601String()]);
     }
 
+    /** $data as the body (its "event" names it) plus title, message and the sending time. */
+    public function announce(Channel $channel, string $title, string $text, array $data): void
+    {
+        $this->post($channel, $data + ['title' => $title, 'message' => $text, 'sent_at' => now()->toIso8601String()]);
+    }
+
     public static function signature(string $secret, string $timestamp, string $body): string
     {
         return 'sha256='.hash_hmac('sha256', $timestamp.'.'.$body, $secret);

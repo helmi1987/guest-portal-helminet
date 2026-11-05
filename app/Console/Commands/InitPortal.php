@@ -7,6 +7,7 @@ use App\Federation\Resync;
 use App\Federation\ResyncRequiredException;
 use App\Federation\Topology;
 use App\Models\User;
+use App\Nas\RouterCheck;
 use App\Support\LocalInstance;
 use App\Support\TrustedProxies;
 use Illuminate\Console\Command;
@@ -37,6 +38,10 @@ class InitPortal extends Command
             $this->warn('No admin user yet. Create one with: artisan portal:admin');
         }
         $this->checkProxySettings();
+        // Once per portal version: queue a router check (outdated pages or configuration, decision 2026-11-05, v0.30.0)
+        if (RouterCheck::afterVersionChange()) {
+            $this->line('Router check queued (portal version '.config('portal.version').').');
+        }
 
         return self::SUCCESS;
     }

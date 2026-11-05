@@ -53,7 +53,9 @@ final class Federation
         // Guest Wi-Fi masters of the setup assistant (per Wi-Fi mode), local like the router API access
         // Guest SSID per CAP: selected radios (radio-mac) per CAPsMAN mode (decision 2026-11-02)
         'sites' => ['wifi_password_local', 'wifi_masters_local', 'wifi_caps_local'],
+        // Outdated router detection (decision 2026-11-05, v0.30.0): page fingerprints, failed queries, notified state
         'nas_clients' => ['last_seen_at', 'cert_fetched_at', 'login_page_fetched_at', 'router_state', 'router_state_at', 'router_state_error',
+            'hotspot_pages', 'router_state_failures', 'router_state_failed_since', 'freshness_notified',
             'api_host', 'api_type', 'api_port', 'api_user', 'api_password', 'api_pin'],
     ];
 

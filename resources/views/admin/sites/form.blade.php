@@ -11,6 +11,11 @@
         @endif
     </div>
 
+    {{-- Outdated routers with their commands (decision 2026-11-05, v0.30.0) --}}
+    @if ($site->exists && isset($routerAttention) && $routerAttention->isNotEmpty())
+        @include('admin.sites.partials.router-update', $routerSetup + ['attention' => $routerAttention])
+    @endif
+
     <form method="POST" action="{{ $site->exists ? route('admin.sites.update', $site) : route('admin.sites.store') }}" class="card mb-6 grid gap-4 md:grid-cols-2">
         @csrf
         @if ($site->exists) @method('PUT') @endif

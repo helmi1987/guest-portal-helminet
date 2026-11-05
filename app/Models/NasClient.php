@@ -16,7 +16,9 @@ use Illuminate\Support\Str;
  * A router of a site (replicated for recovery, CONCEPT.md §10.3; secrets with the federation data key).
  * Only the site's home instance serves it: FreeRADIUS clients file, RADIUS, downloads, disconnects.
  * last_seen_at, cert_fetched_at, login_page_fetched_at and the router state (router_state*) are local
- * status (not replicated). Read-only router API access (api_*) is local to the instance (not
+ * status (not replicated), like the outdated router detection (decision 2026-11-05, v0.30.0): hotspot_pages
+ * (page => fingerprint and time of the last fetch), router_state_failures / router_state_failed_since
+ * (consecutive failed state queries) and freshness_notified (what the admins were last notified about). Read-only router API access (api_*) is local to the instance (not
  * replicated); user and password are encrypted with APP_KEY (`LocalEncrypted` cast; an undecryptable
  * value reads as null).
  */
@@ -34,7 +36,9 @@ class NasClient extends Model
         return ['radius_secret' => Federated::class, 'cert_token' => Federated::class, 'coa_port' => 'integer', 'legacy_id' => 'integer',
             'last_seen_at' => 'datetime', 'cert_fetched_at' => 'datetime', 'login_page_fetched_at' => 'datetime',
             'api_user' => LocalEncrypted::class, 'api_password' => LocalEncrypted::class, 'api_port' => 'integer',
-            'router_state' => 'array', 'router_state_at' => 'datetime', 'router_state_error' => 'array'];
+            'router_state' => 'array', 'router_state_at' => 'datetime', 'router_state_error' => 'array',
+            'hotspot_pages' => 'array', 'router_state_failures' => 'integer', 'router_state_failed_since' => 'datetime',
+            'freshness_notified' => 'array'];
     }
 
     protected static function booted(): void
@@ -80,6 +84,42 @@ class NasClient extends Model
         $this->syncOriginalAttribute($column);
     }
 
+    /**
+     * A hotspot page was delivered to the router (decision 2026-11-05, v0.30.0): its fingerprint and time per page,
+     * plus login_page_fetched_at (setup assistant). Local status, no model events (see markSeen()).
+     */
+    public function recordHotspotPage(string $page, string $hash): void
+    {
+        $this->markSeen('login_page_fetched_at');
+        // Re-read: the router fetches the pages one after another, each request adds its own page
+        $stored = static::query()->whereKey($this->id)->toBase()->value('hotspot_pages');
+        $pages = is_string($stored) ? (array) json_decode($stored, true) : [];
+        $pages[$page] = ['hash' => $hash, 'at' => now()->toIso8601String()];
+        $this->storeLocal(['hotspot_pages' => $pages]);
+    }
+
+    /** What the admins were last notified about (RouterNotifier), null when nothing is pending. */
+    public function storeFreshnessNotified(?array $notified): void
+    {
+        $this->storeLocal(['freshness_notified' => $notified === [] ? null : $notified]);
+    }
+
+    /**
+     * Write local status columns through the casts without model events (no clients file rewrite, no replication).
+     *
+     * @param  array<string, mixed>  $values
+     */
+    private function storeLocal(array $values): void
+    {
+        foreach ($values as $column => $value) {
+            $this->{$column} = $value;
+        }
+        static::query()->whereKey($this->id)->toBase()->update(array_intersect_key($this->getAttributes(), $values));
+        foreach (array_keys($values) as $column) {
+            $this->syncOriginalAttribute($column);
+        }
+    }
+
     /** Read-only router API configured (host, type, user and password); see App\Nas\RouterOs. */
     public function hasApiAccess(): bool
     {
@@ -95,23 +135,25 @@ class NasClient extends Model
 
     /**
      * Store the result of a router state query (local status, no model events: saving would rewrite the
-     * FreeRADIUS clients file and replicate). A failed query keeps the previous state and records the error.
+     * FreeRADIUS clients file and replicate). A failed query keeps the previous state and records the error;
+     * consecutive failures are counted with the time of the first one (decision 2026-11-05, v0.30.0: unreachable
+     * after two), a successful query resets the count.
      *
      * @param  array{kind: string, detail: string}|null  $error
      */
     public function storeRouterState(?array $state, ?array $error = null): void
     {
-        $values = $error === null
-            ? ['router_state' => $state, 'router_state_at' => now(), 'router_state_error' => null]
-            : ['router_state_error' => $error + ['at' => now()->toIso8601String()]];
-        foreach ($values as $column => $value) {
-            $this->{$column} = $value;
+        if ($error === null) {
+            $this->storeLocal(['router_state' => $state, 'router_state_at' => now(), 'router_state_error' => null,
+                'router_state_failures' => 0, 'router_state_failed_since' => null]);
+
+            return;
         }
-        $raw = array_intersect_key($this->getAttributes(), $values);
-        static::query()->whereKey($this->id)->toBase()->update($raw);
-        foreach (array_keys($values) as $column) {
-            $this->syncOriginalAttribute($column);
-        }
+        // Count from the stored row: a query of the scheduled check and one of the setup page may overlap
+        $row = static::query()->whereKey($this->id)->first(['router_state_failures', 'router_state_failed_since']);
+        $this->storeLocal(['router_state_error' => $error + ['at' => now()->toIso8601String()],
+            'router_state_failures' => (int) $row?->router_state_failures + 1,
+            'router_state_failed_since' => $row?->router_state_failed_since ?? now()]);
     }
 
     /** Client name in the FreeRADIUS clients file; passed back by FreeRADIUS to identify the NAS. */

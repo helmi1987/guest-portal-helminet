@@ -64,6 +64,12 @@ class TelegramChannel implements NotificationChannel
         $this->call($channel, 'sendMessage', ['chat_id' => $channel->conf('chat_id'), 'text' => $text]);
     }
 
+    /** Plain text message to the group (title, text; the link is part of the text). */
+    public function announce(Channel $channel, string $title, string $text, array $data): void
+    {
+        $this->call($channel, 'sendMessage', ['chat_id' => $channel->conf('chat_id'), 'text' => $title."\n".$text]);
+    }
+
     /** Callback data (max 64 bytes): request id, origin instance (federation), choice. */
     public static function callbackData(ApprovalRequest $request, string $choice): string
     {

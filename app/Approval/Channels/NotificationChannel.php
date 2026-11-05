@@ -25,4 +25,13 @@ interface NotificationChannel
 
     /** The request was decided or expired; $meta is what requested() returned. */
     public function decided(ApprovalRequest $request, Channel $channel, ?array $meta): void;
+
+    /**
+     * General message to the admins, not tied to an approval request (decision 2026-11-05, v0.30.0: outdated
+     * routers). $text is plain text; $data is the structured content (webhook body: "event" plus the event's
+     * fields; "url" is the link of the message when present). Throws on delivery errors.
+     *
+     * @param  array<string, mixed>  $data
+     */
+    public function announce(Channel $channel, string $title, string $text, array $data): void;
 }

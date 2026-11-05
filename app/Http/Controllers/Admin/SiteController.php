@@ -11,6 +11,7 @@ use App\Models\NasClient;
 use App\Models\Site;
 use App\Models\TermsVersion;
 use App\Nas\NasDrivers;
+use App\Nas\RouterFreshness;
 use App\Nas\RouterOs\RouterStateDriver;
 use App\Radius\ClientsFile;
 use App\Support\Audit;
@@ -54,10 +55,14 @@ class SiteController extends Controller
         return redirect()->route('admin.sites.edit', $site)->with('status', __('portal.saved'));
     }
 
-    public function edit(Site $site): View
+    public function edit(Site $site, RouterFreshness $freshness, SetupController $setup): View
     {
-        return view('admin.sites.form', ['site' => $site->load('nasClients'),
-            'instances' => Instance::query()->orderBy('name')->pluck('name', 'id')]);
+        $site->load('nasClients');
+        // Outdated routers (decision 2026-11-05, v0.30.0): the notice with the commands of the setup page
+        $attention = $freshness->attention([$site]);
+
+        return view('admin.sites.form', ['site' => $site, 'instances' => Instance::query()->orderBy('name')->pluck('name', 'id'),
+            'routerAttention' => $attention, 'routerSetup' => $attention->isNotEmpty() ? $setup->viewData($site) : null]);
     }
 
     public function update(Request $request, Site $site): RedirectResponse
@@ -167,6 +172,8 @@ class SiteController extends Controller
         if ($router->isDirty('api_pin')) {
             // A previous TLS error belongs to the old pin; keep the last successful state
             $router->router_state_error = null;
+            $router->router_state_failures = 0;
+            $router->router_state_failed_since = null;
         }
         if (($data['api_password'] ?? '') !== '') {
             $router->api_password = $data['api_password'];
@@ -188,6 +195,8 @@ class SiteController extends Controller
         $router->router_state = null;
         $router->router_state_at = null;
         $router->router_state_error = null;
+        $router->router_state_failures = 0;
+        $router->router_state_failed_since = null;
     }
 
     public function destroyRouter(Site $site, NasClient $router): RedirectResponse

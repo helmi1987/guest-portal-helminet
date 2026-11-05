@@ -10,6 +10,7 @@ use App\Models\Site;
 use App\Nas\Generic\GenericSettings;
 use App\Nas\GenericRadiusDriver;
 use App\Nas\NasDriver;
+use App\Nas\RouterFreshness;
 use App\Nas\RouterOs\ProvisioningEditor;
 use App\Nas\RouterOs\RouterStateDriver;
 use App\Nas\RouterOs\RouterStateQuery;
@@ -128,6 +129,8 @@ class SetupController extends Controller
             // Container step hint per router with a stored state: container package missing or device mode without containers
             'containerProblems' => $stateDriver ? $apiRouters->filter(fn (NasClient $nas) => is_array($nas->router_state))
                 ->mapWithKeys(fn (NasClient $nas) => [$nas->id => $stateDriver->containerProblem($nas->router_state)])->filter()->all() : [],
+            // Outdated hotspot pages or configuration, unreachable routers (decision 2026-11-05, v0.30.0)
+            'routerAttention' => app(RouterFreshness::class)->attention([$site]),
         ];
     }
 
