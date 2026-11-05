@@ -515,11 +515,11 @@ class SocialLoginTest extends TestCase
         TermsAcceptance::create(['guest_id' => $guest->id, 'terms_version_id' => $this->terms->id, 'grant_id' => $grant->id,
             'site_id' => $this->site->id, 'mac' => self::MAC, 'accepted_at' => now()]);
 
-        $admin = User::factory()->admin()->create();
+        $admin = User::factory()->admin()->create(['name' => 'Site Admin']);
         $this->onZone('admin')->actingAs($admin)->get('/admin/guests?method=social')->assertOk()
             ->assertSee('Social (Google)')->assertSee('gina@example.com')->assertDontSee('Carl')
             ->assertSee('<option value="social" selected', false);
-        $manager = User::factory()->create(['role' => 'manager']);
+        $manager = User::factory()->create(['role' => 'manager', 'name' => 'Site Manager']);
         $this->onZone('admin')->actingAs($manager)->get('/admin/guests')->assertOk()
             ->assertSee('g***@example.com')->assertDontSee('gina@example.com')->assertSee('Carl');
 
