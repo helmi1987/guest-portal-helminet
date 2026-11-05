@@ -2,12 +2,15 @@
      unreachable, next to it the fetch block for the pages and the command blocks of the outdated state blocks (the
      router script, which carries secrets, as a link to its page). Used by the setup page (router state) and the site
      page. Needs: $site, $attention (RouterFreshness::attention() of the site) and the setup view data ($commands,
-     $fetch, $apiAccess, $placeholders, $lineStatus, $cliDisabled, $secretsUrl). --}}
+     $fetch, $apiAccess, $placeholders, $lineStatus, $cliDisabled, $secretsUrl, $setup). The configuration blocks follow
+     the greying rule of the setup page (router state missing or stale). --}}
 @php($blockCommands = collect($commands)->collapse())
+{{-- The fetch block only writes the four pages: greyed out only while its html-directory is not saved (derived) --}}
+@php($fetchDisabled = $cliDisabled && ! isset($setup['html_directory']))
 <section id="router-update" class="card mb-6 border-2 border-amber-300" data-router-update>
     <h2 class="mb-2 text-lg font-semibold">{{ __('portal.router_fresh.title') }}</h2>
     <p class="mb-3 text-sm text-slate-600">{{ __('portal.router_fresh.intro') }}</p>
-    @if ($cliDisabled)
+    @if ($cliDisabled && $attention->contains(fn ($entry) => $entry['result']['blocks'] !== []))
         <p class="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm font-medium text-amber-900" role="status">{{ __('portal.router_fresh.commands_disabled') }}</p>
     @endif
     @foreach ($attention as $entry)
@@ -30,7 +33,7 @@
             </ul>
             @if ($result['pages'] !== [] && isset($fetch[$router->id]))
                 <p class="mb-2 text-xs text-slate-600">{{ __('portal.router_fresh.pages_help') }}</p>
-                <x-admin.code :disabled="$cliDisabled" :title="__('portal.router_fresh.pages_command', ['router' => $router->name])" :code="$fetch[$router->id]" :placeholders="$placeholders" />
+                <x-admin.code :disabled="$fetchDisabled" :title="__('portal.router_fresh.pages_command', ['router' => $router->name])" :code="$fetch[$router->id]" :placeholders="$placeholders" />
             @endif
             @if ($keys->isNotEmpty())
                 <p class="mb-2 text-xs text-slate-600">{{ __('portal.router_fresh.blocks_help') }}</p>
