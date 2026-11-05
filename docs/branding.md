@@ -127,7 +127,7 @@ and the HTML structure around them are **not** stable; do not target them.
 | `gp-theme-dark` / `gp-theme-light` | Colour scheme of the page (also on `<html>`, where the scheme defaults of the `--gp-*` variables are set, so `:root { ... }` in custom CSS overrides them) |
 | `gp-guest` / `gp-admin` | Guest port pages / admin UI (incl. login and signed approval link page) |
 | `gp-site-<slug>` | Guest page of a site (slug lower-case, other characters replaced by `-`), e.g. `gp-site-site-a` |
-| `gp-step-<step>` | Guest step: `landing`, `portal` (method chooser or login form), `sms` (SMS code entry), `approval` (waiting for approval), `social-name` (complete the name after a social login), `handoff` (login to the router), `waiting` (router confirmation), `status` (online), `error`; admin: `approval-link` |
+| `gp-step-<step>` | Guest step: `landing`, `portal` (method chooser or login form), `sms` (SMS code entry), `approval` (waiting for approval), `social-name` (complete the name after a social login), `handoff` (login to the router), `waiting` (router confirmation), `status` (online), `logged-out` (after the guest's logout, v0.29.0), `error`; admin: `approval-link` |
 | `gp-step-portal-<page>` | Page of the login step: `chooser` (method chooser), `code`, `sms`, `approval`, `social` |
 | `gp-step-error-<kind>` | Error page kind: `no_hotspot`, `misconfigured`, `expired`, `revoked`, `locked`, `router_failed`, `approval_denied`, `approval_expired`, `approval_busy`, `sms_busy`, `sms_failed`, `site_code_full`, `no_login_method`, `method_disabled`, `social_failed` |
 
@@ -159,6 +159,8 @@ and the HTML structure around them are **not** stable; do not target them.
 | `gp-error` | Validation error list |
 | `gp-success` | Success message (SMS resent; heading "You are online") |
 | `gp-remaining` | Remaining time line on the status page |
+| `gp-usage` | Usage card of the status page (v0.29.0): `gp-usage-list` connected time and data |
+| `gp-status-actions` | Card with the status page buttons: `gp-logout` (Log out, in `gp-logout-form`) and `gp-refresh` |
 | `gp-form` | Login form |
 | `gp-name-fields` | First/last name row |
 | `gp-email-field` | Email address label on the code login page (wraps a `gp-input`) |

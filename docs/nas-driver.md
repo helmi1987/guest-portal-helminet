@@ -22,8 +22,8 @@ driver; a dedicated driver is worth it when the vendor needs scripts, a state qu
 | Hand the one-time credentials to the NAS | `loginHandoff()` | Issues the credentials, renders `guest/handoff.blade.php` (browser POST) | Form fields `username`, `password`, `dst`, `popup` to `link-login-only` |
 | Vendor attributes in the Access-Accept | `replyAttributes()` | Adds `Session-Timeout` and `Acct-Interim-Interval` | `Mikrotik-Rate-Limit` when the grant has a rate limit |
 | Identify a session for Disconnect-Request | `disconnectAttributes()` | Sends it with `radclient` to `nas_ip:coa_port` | `Framed-IP-Address` only, not for stopped or stale sessions |
-| Page the NAS shows unauthenticated clients | `loginPage()` | Download in the site page, route `/router-login/{nas}/login.html` | `login.html` with a meta refresh to `/portal?site=...` |
-| Command that installs that page on the NAS | `loginPageFetch()` | Shown per router in the setup assistant | `/tool fetch` with `X-Portal-Token` |
+| Page the NAS shows unauthenticated clients | `loginPage()` | Download in the site page, route `/router-login/{nas}/login.html` | `login.html` with a meta refresh to `/portal?site=...`; with `ServesHotspotPages` also `status.html`, `logout.html`, `alogin.html` (2.7) |
+| Command that installs that page on the NAS | `loginPageFetch()` | Shown per router in the setup assistant | `/tool fetch` with `X-Portal-Token`, one per hotspot page |
 | Router configuration of one router | `configScript()` | "Router configuration" page of a router | RouterOS script (RADIUS, walled garden, hotspot, certificate script) |
 | Setup assistant inputs (validation rules) | `setupFields()` | Validates the assistant forms | VLAN, bridge, subnet, pool, SSID, Wi-Fi modes, container inputs |
 | Setup assistant command blocks | `setupCommands()` | Rendered with copy buttons, placeholders and line colours | RouterOS blocks per step |
@@ -158,13 +158,19 @@ without the interface gives no signals (guests see "no hotspot", no prefill from
   `<portal URL>/portal?site=<slug>` plus the NAS's parameters, without JavaScript (the MikroTik page uses a meta
   refresh and a link). Portal URL: site setting `portal_url`, else `config('app.url')`. Served as a download on the site
   page ([`SiteController.php:220`](../app/Http/Controllers/Admin/SiteController.php#L220)) and to the router at
-  `/router-login/{nas}/login.html` ([`RouterLoginPageController.php:22`](../app/Http/Controllers/RouterLoginPageController.php#L22)).
+  `/router-login/{nas}/login.html` ([`RouterLoginPageController.php:21`](../app/Http/Controllers/RouterLoginPageController.php#L21)).
 - `loginPageFetch()` returns the command that makes the NAS download that page itself. The route requires the header
   `X-Portal-Token: <$nas->certToken()>` and, by default, the router's NAS IP as source address. A NAS that cannot
   fetch files should return a short instruction to upload the downloaded file instead.
-- **MikroTik:** [`MikrotikRos7Driver.php:287`](../app/Nas/MikrotikRos7Driver.php#L287) (RouterOS `$(mac-esc)` style
-  variables in the URL) and [`:822`](../app/Nas/MikrotikRos7Driver.php#L822) (`/tool fetch` into the profile's
-  html-directory).
+- Optional interface [`ServesHotspotPages`](../app/Nas/ServesHotspotPages.php) (since v0.29.0): a NAS that hosts more
+  pages than the login page. `hotspotPages()` returns every page of `ServesHotspotPages::PAGES` (`login`, `status`,
+  `logout`, `alogin`) as name => HTML; the route `/router-login/{nas}/{page}.html` and the site page download serve
+  them, and `loginPage()` should return the same `login` page. `hotspotLoginUrl()` is the login URL the NAS's redirect
+  would send (the "Sign in again" link after a guest logout). Without the interface only `login` exists; the other
+  page names answer 404 after the router authentication.
+- **MikroTik:** [`MikrotikRos7Driver.php:315`](../app/Nas/MikrotikRos7Driver.php#L315) (four pages with RouterOS
+  `$(mac-esc)` style variables, `alogin.html` to `$(link-redirect)`; variables verified on a RouterOS 7.24.5 CHR) and
+  [`:871`](../app/Nas/MikrotikRos7Driver.php#L871) (one `/tool fetch` per page into the profile's html-directory).
 
 ### 2.8 `configScript(Site $site, NasClient $nas): string`
 

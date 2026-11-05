@@ -24,7 +24,7 @@ blocks. Each step shows its inputs and commands and a "Check" that queries the r
 them as present, routers without API access are confirmed by hand ("Done manually"), any step can be
 skipped. Order: router API access, RouterOS container (or "Not used (Docker host)", which counts as done),
 guest network, Wi-Fi, firewall and option 114, hotspot/DNS/walled garden, router script (with certificate
-checklist and RADIUS diagnostics; its check covers RADIUS, walled garden and certificate), `login.html`, status.
+checklist and RADIUS diagnostics; its check covers RADIUS, walled garden and certificate), hotspot pages, status.
 The router script (RADIUS secret, certificate token) is only linked, never shown in the wizard; it comes after
 the guest network steps because its hotspot part needs them.
 Removal: setup assistant, "Remove everything again".
@@ -471,19 +471,36 @@ AAAA for it.
   generated script (set `use-radius=yes`, `login-by=https,mac`, remove the local test user, no `trial`). The wizard also adds firewall/NAT rules of its own (not
   described in the docs **(to verify)**); check `/ip firewall filter print` and `nat print` for duplicates **(to verify)**.
 
-### 6.4 Upload the custom login page
-1. Download `login.html` from the admin UI (same site page).
-2. Upload it into the hotspot HTML directory of the router, replacing the default file. The
+### 6.4 Upload the hotspot pages
+The portal generates four pages of the hotspot HTML directory (since v0.29.0; before only `login.html`). Each is a
+meta refresh plus a link, no JavaScript. RouterOS replaces the `$(...)` variables when it serves a page (variables
+verified against the default pages of a RouterOS 7.24.5 CHR); `-esc` variants are URL-encoded.
+
+| File | RouterOS shows it | Sends the browser to |
+|---|---|---|
+| `login.html` | to a device that is not logged in | `<portal>/portal?site=<id>&mac=$(mac-esc)&ip=$(ip)&link-login-only=$(link-login-only-esc)&link-orig=$(link-orig-esc)` (login page) |
+| `status.html` | to a logged-in device that opens the hotspot name (e.g. the iOS captive sheet again) | `<portal>/portal/status?site=<id>&mac=$(mac-esc)&ip=$(ip)&link-login-only=$(link-login-only-esc)`: the portal status page of the device's open session (remaining time, usage, "Log out"); without an open session the login page |
+| `logout.html` | after a logout on the router (e.g. its logout link) | `<portal>/portal?site=<id>&mac=$(mac-esc)&ip=$(ip)&link-login-only=$(link-login-only-esc)`: the login page with the notice "You have logged out" |
+| `alogin.html` | right after a successful login | `$(link-redirect)` at once, the portal status page (the `dst` of the login); the RouterOS default waits 2 s and may open a status popup |
+
+Other default files (`rlogin.html`, `redirect.html`, `error.html`, `radvert.html`, `xml/`, CSS, images, `md5.js`) stay
+the RouterOS defaults. The pages must not contain `$(` except these variables (RouterOS reads every `$(` as a
+variable or directive).
+
+1. Download the four files from the admin UI (site page, router configuration, setup assistant step "Hotspot pages").
+2. Upload them into the hotspot HTML directory of the router, replacing the default files. The
    generated profile sets `html-directory` from the setup assistant field "Hotspot HTML directory":
    `hotspot` (RouterOS default) or `flash/hotspot` for devices with a flash folder; choose the value
-   shown by `/ip hotspot profile print where default=yes`. The fetch command of the assistant writes
-   to `<html-directory>/login.html`. `html-directory-override` exists as an alternative. RouterOS
+   shown by `/ip hotspot profile print where default=yes`. The fetch block of the assistant writes
+   `<html-directory>/login.html`, `status.html`, `logout.html` and `alogin.html` (route
+   `/router-login/<router>/<page>.html`, router token and router IP like the certificate download).
+   `html-directory-override` exists as an alternative. RouterOS
    creates the default files when a hotspot with a new html-directory starts (verified on CHR). Resetting the pages:
    `/ip hotspot reset-html` is not in the official docs (documented: Winbox button
    IP > Hotspot > Reset HTML) **(to verify the CLI command)**.
-3. Methods: Winbox -> Files drag & drop, or `/tool fetch` from an internal HTTP(S) server, or
-   SFTP. Example: `/tool fetch url="https://<INTERNAL_FILE_HOST>/login.html" dst-path=hotspot/login.html`.
-4. Re-upload `login.html` after every change of portal URL or site id in the admin UI.
+3. Methods: the fetch block of the setup assistant, Winbox -> Files drag & drop, `/tool fetch` from an internal
+   HTTP(S) server, or SFTP. Example: `/tool fetch url="https://<INTERNAL_FILE_HOST>/status.html" dst-path=hotspot/status.html`.
+4. Re-upload the four pages after every change of portal URL or site id in the admin UI.
 
 ### 6.5 RADIUS client and incoming
 The generated script contains `/radius add address=<INSTANCE_IP> secret=... service=hotspot
@@ -667,7 +684,7 @@ pin both names on each router. Pin the portal name as CNAME to an internal name 
 ```
 Why: a plain static A entry covers only A queries; AAAA queries still go upstream. If public DNS has an
 AAAA record (e.g. a wildcard `*.example.com`), the router's `/tool fetch ... src-address=<IPv4>` picks
-IPv6 and fails with "Address family not supported by protocol" (certificate script, login.html fetch).
+IPv6 and fails with "Address family not supported by protocol" (certificate script, hotspot pages fetch).
 With the CNAME the router answers AAAA with "no appropriate record". A static `type=NXDOMAIN` entry is
 not an alternative: it blocks the A record too.
 
@@ -704,9 +721,10 @@ openssl s_client -connect portal.example.com:443 -servername portal.example.com 
    central LAN.
 3. Per site: sections 2, 3, 4, 5 (guest SSID gets an address, internet works **without** hotspot
    first, isolated from LAN).
-4. Per site: section 6 (hotspot, script, login.html), then section 7 firewall rules if not done.
+4. Per site: section 6 (hotspot, script, hotspot pages), then section 7 firewall rules if not done.
 5. Phone test: join SSID -> captive popup -> portal -> login -> internet; check
-   `/ip hotspot active print`.
+   `/ip hotspot active print`. Open the hotspot name again: the portal status page with usage; "Log out" ends the
+   session (gone from `/ip hotspot active print` within seconds), the login page shows "You have logged out".
 6. Revoke the grant in the admin UI -> the session disappears within about a minute
    (`/ip hotspot active print`), proving Disconnect works.
 7. Repeat on the second site, and test roaming between a legacy and a wifi-package AP if mixed.
@@ -717,7 +735,7 @@ openssl s_client -connect portal.example.com:443 -servername portal.example.com 
 |---|---|---|
 | Phone gets no IP | VLAN 30 missing on a hop, `vlan-filtering` without tagged entry, DHCP server on wrong interface | `/interface bridge vlan print`, `/ip dhcp-server print`, check tagged on trunk and CAP bridge |
 | Phone gets IP but no captive popup | Hotspot not on `vlan-guest`, DNS not via router, firewall input drop blocks hotspot ports | `/ip hotspot print`, `/ip hotspot host print`; test a plain `http://` address; check dynamic hotspot rules |
-| Redirect goes to router default page | Custom `login.html` not uploaded / wrong `html-directory` | `/file print`, `/ip hotspot profile print`; re-upload |
+| Redirect goes to router default page ("Hi, g..." status, default logout or login page) | Hotspot pages (`login.html`, `status.html`, `logout.html`, `alogin.html`) not uploaded / wrong `html-directory` | `/file print where name~"(login\|status\|logout\|alogin).html"`, `/ip hotspot profile print`; re-run the fetch block of step "Hotspot pages" |
 | Certificate warning on hotspot name | Wrong/expired certificate, name not in certificate, profile `dns-name` mismatch, certificate not imported with key | `/certificate print`, `dns-name` must match `*.guest.example.com` |
 | Router certificate not updated | Download denied: wrong token (re-paste script after regenerating), request not from the router IP (NAT, `src-address`), portal certificate not trusted (`check-certificate=yes`), files missing on the instance | `/log print where message~"guest-portal"`, instance log "Router certificate download denied", `/system script run guest-portal-cert` |
 | Certificate warning on portal | Self-signed fallback active, wrong name, chain missing | Put `portal.crt` + `portal.key` in `/data/certs` (reload is automatic) |
@@ -757,12 +775,12 @@ Findings from a first real setup; the setup assistant shows the same checklist.
    ```
 3. **Code and SMS logins fail, MAC whitelist works.** Until the router certificate is imported the
    hotspot profile has only `login-by=mac`. Order: (1) portal certificate, (2) router certificate pulled
-   in the portal, (3) router script (certificate script) on the router, (4) `login.html` upload,
+   in the portal, (3) router script (certificate script) on the router, (4) hotspot pages upload,
    (5) verify:
    ```
    /certificate print where name~"guest-portal"
    /ip hotspot profile print where name=guest-portal         # expect login-by=https,mac and ssl-certificate
-   /file print where name~"login.html"
+   /file print where name~"(login|status|logout|alogin).html"
    ```
 4. **Certificate re-imported on every run / rename fails.** Older script versions imported the chain
    with `name=guest-portal-new`, which creates several certificates (leaf and CAs) and broke the rename
@@ -792,7 +810,8 @@ DHCP option 114 (only option `captive-portal` with comment `guest-portal`; its r
 network is cleared only if it is the only option, otherwise a hint is printed), firewall rules and address
 lists of the assistant. It is safe when entries do not exist and logs out connected guests.
 - `/radius incoming set accept=no` is only a commented hint (no comment on that menu; other uses).
-- `login.html` is not removed automatically (the html directory may be shared with other hotspots).
+- The hotspot pages (`login.html`, `status.html`, `logout.html`, `alogin.html`) are not removed automatically (the
+  html directory may be shared with other hotspots).
 - Optional blocks: the RouterOS container (veth, bridge, mounts, envs; data on the disk stays) and the
   guest network infrastructure (Wi-Fi configuration, DHCP server/network/pool, gateway address,
   interface list `GUEST`, bridge VLAN entry, VLAN interface): run a line only if it was created for the

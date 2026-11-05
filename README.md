@@ -27,6 +27,10 @@ experimental generic RADIUS captive-portal driver with vendor presets since v0.2
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.29: the portal generates all four MikroTik hotspot pages (`login.html`, `status.html`, `logout.html`,
+  `alogin.html`), so a logged-in guest who opens the hotspot again sees the portal status page instead of the RouterOS
+  default; the status page shows usage (connected time, data, as of the last accounting update) and a "Log out" that
+  ends the session but keeps the code usable; the login page then says "You have logged out".
 - v0.28: generic RADIUS captive-portal driver (experimental, presets for Cisco WLC, Aruba, pfSense, OPNsense,
   CoovaChilli, Ruckus) and a generic walled-garden checklist (docs/generic-captive-portal.md); v0.28.1: one-time adopt
   command for walled-garden entries with a comment of earlier versions (status "legacy"; the dynamic copy follows). v0.28.2: the
@@ -116,12 +120,13 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
 - Guest portal: `https://<host>/`, admin UI: `https://<host>:8443/admin`.
 - Router setup: admin UI → Sites → add site and router → "Set up" (setup assistant: guided steps
   with ready-to-copy RouterOS commands for container, guest network, hotspot, RADIUS/certificate,
-  `login.html` fetch, status per router and diagnostics; optional read-only router API to check the
+  hotspot pages fetch (`login.html`, `status.html`, `logout.html`, `alogin.html`), status per router and diagnostics;
+  optional read-only router API to check the
   router state and prefill the inputs, docs/guest-network-setup.md §10c), or "Router configuration"
-  (RouterOS script) and `login.html` download. "Guided wizard" (v0.19.0, site page and setup page):
+  (RouterOS script) and the hotspot pages download. "Guided wizard" (v0.19.0, site page and setup page):
   the same blocks one step at a time (router API access, container (or "not used" for a Docker
   host), guest network, Wi-Fi, firewall/DHCP option, hotspot/DNS/walled garden, router script with
-  certificate checklist and RADIUS diagnostics, `login.html`, status), each with its inputs, commands and a "Check" of only that step's objects on the router;
+  certificate checklist and RADIUS diagnostics, hotspot pages, status), each with its inputs, commands and a "Check" of only that step's objects on the router;
   "Next" once the step is complete, else "Skip"; progress is kept in the browser only.
 - `/data` holds the database, generated secrets (`.env`), certificates and backups.
   Certificates (PEM, full chain + key) go to `/data/certs`: `portal.crt` + `portal.key` for the guest
