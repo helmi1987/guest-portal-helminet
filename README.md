@@ -27,6 +27,11 @@ experimental generic RADIUS captive-portal driver with vendor presets since v0.2
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.30: the portal notices outdated hotspot pages (fingerprint per fetched page) and outdated router
+  configuration (stored router state, scheduled read-only check at 06:17 and 18:17 and after an update) and shows
+  "Update router" with the commands on the dashboard, site and setup page; the admins get one message per router
+  over the notification channels (also when a router is unreachable twice in a row). The fetch block of the hotspot
+  pages is one `{ ... }` block (pasted lines got lost) and ends with an `ok`/`MISSING` line per page.
 - v0.29: the portal generates all four MikroTik hotspot pages (`login.html`, `status.html`, `logout.html`,
   `alogin.html`), so a logged-in guest who opens the hotspot again sees the portal status page instead of the RouterOS
   default; the status page shows usage (connected time, data, as of the last accounting update) and a "Log out" that

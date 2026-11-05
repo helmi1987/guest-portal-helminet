@@ -23,7 +23,7 @@ driver; a dedicated driver is worth it when the vendor needs scripts, a state qu
 | Vendor attributes in the Access-Accept | `replyAttributes()` | Adds `Session-Timeout` and `Acct-Interim-Interval` | `Mikrotik-Rate-Limit` when the grant has a rate limit |
 | Identify a session for Disconnect-Request | `disconnectAttributes()` | Sends it with `radclient` to `nas_ip:coa_port` | `Framed-IP-Address` only, not for stopped or stale sessions |
 | Page the NAS shows unauthenticated clients | `loginPage()` | Download in the site page, route `/router-login/{nas}/login.html` | `login.html` with a meta refresh to `/portal?site=...`; with `ServesHotspotPages` also `status.html`, `logout.html`, `alogin.html` (2.7) |
-| Command that installs that page on the NAS | `loginPageFetch()` | Shown per router in the setup assistant | `/tool fetch` with `X-Portal-Token`, one per hotspot page |
+| Command that installs that page on the NAS | `loginPageFetch()` | Shown per router in the setup assistant | `/tool fetch` with `X-Portal-Token`, one per hotspot page, in one `{ ... }` block |
 | Router configuration of one router | `configScript()` | "Router configuration" page of a router | RouterOS script (RADIUS, walled garden, hotspot, certificate script) |
 | Setup assistant inputs (validation rules) | `setupFields()` | Validates the assistant forms | VLAN, bridge, subnet, pool, SSID, Wi-Fi modes, container inputs |
 | Setup assistant command blocks | `setupCommands()` | Rendered with copy buttons, placeholders and line colours | RouterOS blocks per step |
@@ -170,7 +170,10 @@ without the interface gives no signals (guests see "no hotspot", no prefill from
   page names answer 404 after the router authentication.
 - **MikroTik:** [`MikrotikRos7Driver.php:315`](../app/Nas/MikrotikRos7Driver.php#L315) (four pages with RouterOS
   `$(mac-esc)` style variables, `alogin.html` to `$(link-redirect)`; variables verified on a RouterOS 7.24.5 CHR) and
-  [`:871`](../app/Nas/MikrotikRos7Driver.php#L871) (one `/tool fetch` per page into the profile's html-directory).
+  [`:877`](../app/Nas/MikrotikRos7Driver.php#L877) (one `{ ... }` block with a `/tool fetch` per page into the profile's
+  html-directory and an `ok`/`MISSING` line per page). The portal records a fingerprint per delivered page; a page whose
+  current content differs is shown as outdated ("Update router"). Drivers without `ServesHotspotPages` have their page
+  compared only once a router fetched it (their pages are usually uploaded by hand).
 
 ### 2.8 `configScript(Site $site, NasClient $nas): string`
 

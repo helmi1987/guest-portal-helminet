@@ -498,9 +498,14 @@ variable or directive).
    creates the default files when a hotspot with a new html-directory starts (verified on CHR). Resetting the pages:
    `/ip hotspot reset-html` is not in the official docs (documented: Winbox button
    IP > Hotspot > Reset HTML) **(to verify the CLI command)**.
+   The fetch block is one `{ ... }` block (v0.30.0): paste it whole, RouterOS then runs the fetches one after
+   another (pasted as single lines the terminal does not wait for `/tool fetch` and the following lines get lost).
+   At the end it prints one line per page, `ok login.html (<size> bytes)` or `MISSING login.html`; a failed fetch
+   prints `FAILED fetch <page>.html` and the block goes on.
 3. Methods: the fetch block of the setup assistant, Winbox -> Files drag & drop, `/tool fetch` from an internal
    HTTP(S) server, or SFTP. Example: `/tool fetch url="https://<INTERNAL_FILE_HOST>/status.html" dst-path=hotspot/status.html`.
-4. Re-upload the four pages after every change of portal URL or site id in the admin UI.
+4. Re-upload the four pages after every change of portal URL or site id in the admin UI; the portal shows
+   "Update router" for routers whose pages are outdated (section 10d).
 
 ### 6.5 RADIUS client and incoming
 The generated script contains `/radius add address=<INSTANCE_IP> secret=... service=hotspot
@@ -847,6 +852,26 @@ configuration (print only) to check its blocks and to prefill empty inputs.
    The commands are greyed out while a router with API access has no query newer than 15 minutes
    (`PORTAL_ROUTER_STATE_MAX_AGE`) or than the last change of the inputs.
 5. Uninstall: the block removes the user and the group; set the service certificate back first.
+
+### 10d. Outdated routers ("Update router")
+
+The portal notices when a router's hotspot pages or configuration no longer match what it generates now
+(v0.30.0). The router never fetches anything by itself; the admin pastes the shown command.
+- **Hotspot pages:** every page a router fetches (`/router-login/<router>/<page>.html`) is recorded with a
+  fingerprint and the time. A page whose current content differs (portal URL, site id changed) or that was never
+  fetched is outdated. Pages fetched by versions before 0.30.0 have no fingerprint: run the fetch block once.
+- **Configuration** (routers with API access): the stored router state is compared like on the setup page; a block
+  with a differing, legacy or missing object is outdated. The optional RouterOS container block counts only when the
+  container is installed. A state older than the last change of the inputs is "check pending", not outdated.
+- **Scheduled check:** `portal:router-state-check` at 06:17 and 18:17 (container time zone UTC) and once after a
+  portal update (container start), queries every router with API access that this instance serves, one after
+  another, read-only. Two failed queries in a row mark the router "unreachable since ...".
+- **Display:** dashboard (one line per router, admins only), site page and setup page ("Update router" with the fetch
+  block and the outdated command blocks; the router script as a link to its page).
+- **Notification:** when a router becomes outdated, and again when it becomes unreachable, one message goes to every
+  enabled notification channel (Telegram, Gotify, webhook event `router_outdated`) with a link to the commands. No
+  further message while it stays outdated; once up to date again (new fetch or a fresh state), the next change is
+  notified again.
 
 ## 11. Sources and verification state
 

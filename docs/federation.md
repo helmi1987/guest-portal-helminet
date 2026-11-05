@@ -25,7 +25,10 @@ host; not yet tested across real sites and WAN links.
   the instance that made it, so the hub cannot forge changes of others.
 - **Local only:** sessions and accounting (the guest list asks the other instances live), RADIUS
   one-time credentials, OTP challenges, approval requests, SMS log, backups, branding files (fetched by
-  hash, see 8).
+  hash, see 8), the router status of the routers an instance serves (last RADIUS contact, downloads, router API
+  access and state, hotspot page fingerprints, failed queries, outdated notifications). Only the home instance of a
+  site checks its routers for outdated pages or configuration and notifies the admins ("Update router", v0.30.0);
+  other instances show nothing about them.
 
 ## 2. Requirements
 

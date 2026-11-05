@@ -69,7 +69,8 @@ dependencies. The run needs a router without configuration (fresh image or `load
   test portal CA imported as trusted (a foreign certificate as well).
 - Hotspot pages fetch (`login.html`, `status.html`, `logout.html`, `alogin.html`) into the profile's
   html-directory, each with its redirect target and the RouterOS variables intact; they survive re-creating the
-  hotspot; a foreign hotspot directory is untouched.
+  hotspot; a foreign hotspot directory is untouched. The fetch block is one `{ ... }` block (v0.30.0): its output
+  must show `ok <page>.html (<size> bytes)` for all four pages and no `FAILED fetch` or `MISSING` line.
 - Router state query (read-only API): the access block runs (and re-runs); with `www-ssl` and `api-ssl`
   set to the certificate `guest-portal` for the test (restored before the uninstall), the REST and the
   API-SSL client read the state through the forwarded ports (`ROS_REST_PORT` 2443, `ROS_APISSL_PORT`
