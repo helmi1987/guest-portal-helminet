@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Approval\ApprovalMessage;
+use App\Approval\Channels\WebhookChannel;
 use App\Auth\Social\LoginMethods;
 use App\Auth\Social\SocialSettings;
 use App\Auth\Social\WalledGarden;
 use App\Enums\GrantType;
 use App\Federation\Topology;
 use App\Http\Controllers\Guest\SocialLoginController;
+use App\Models\ApprovalRequest;
 use App\Models\Channel;
 use App\Models\Grant;
 use App\Models\Guest;
@@ -309,7 +312,7 @@ class SocialLoginTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->url() === 'https://github.com/login/oauth/access_token' && $r['code_verifier'] === $flow['verifier']);
     }
 
-    public function test_missing_name_is_completed_before_the_login(): void
+    public function test_missing_name_goes_straight_to_the_login(): void
     {
         $this->configure(['github']);
         $this->enter();
@@ -318,22 +321,58 @@ class SocialLoginTest extends TestCase
         Http::fake([
             'github.com/login/oauth/access_token' => Http::response(['access_token' => 'at-github']),
             'api.github.com/user/emails' => Http::response([]),
-            'api.github.com/user' => Http::response(['id' => 99, 'node_id' => 'n', 'login' => 'octo', 'name' => null, 'avatar_url' => '']),
+            'api.github.com/user' => Http::response(['id' => 99, 'node_id' => 'n', 'login' => '', 'name' => null, 'avatar_url' => '']),
         ]);
 
-        $this->providerCallback('github', ['code' => 'gh', 'state' => $flow['state']])->assertRedirect(route('guest.social.name'));
-        $this->assertSame(0, Guest::count());
-        $this->guest()->get('/portal/social/name')->assertOk()->assertSee('value="octo"', false)
-            ->assertSee(__('portal.guest.social_name_intro', ['provider' => 'GitHub']));
-        $this->guest()->post('/portal/social/name', ['first_name' => 'Otto', 'last_name' => ''])->assertSessionHasErrors('last_name');
-        $this->guest()->post('/portal/social/name', ['first_name' => ' Otto ', 'last_name' => 'Cat'])->assertOk()->assertViewHas('fields');
-
+        // No name page (decision 2026-11-05): grant and router handoff right away, the guest stays nameless.
+        $this->providerCallback('github', ['code' => 'gh', 'state' => $flow['state']])->assertOk()->assertViewHas('fields');
         $guest = Guest::sole();
-        $this->assertSame(['Otto', 'Cat', 'github', '99', null], [$guest->first_name, $guest->last_name, $guest->social_provider, $guest->social_subject, $guest->email]);
+        $this->assertSame(['', '', 'github', '99', null], [$guest->first_name, $guest->last_name, $guest->social_provider, $guest->social_subject, $guest->email]);
         $this->assertSame(GrantType::Social, Grant::sole()->type);
-        $this->assertNull(session(SocialLoginController::PENDING));
-        // Completed: the page is gone
-        $this->guest()->get('/portal/social/name')->assertRedirect(route('guest.portal', ['method' => 'social']));
+        $this->assertSame(1, TermsAcceptance::count());
+        $this->assertNull(session(SocialLoginController::FLOW));
+        // Fallback name: provider label and a short hash of provider and subject, never the raw ID.
+        $this->assertSame('GitHub #'.substr(hash('sha256', 'github|99'), 0, 6), $guest->displayName());
+        $this->assertMatchesRegularExpression('/^GitHub #[0-9a-f]{6}$/', $guest->displayName());
+    }
+
+    public function test_the_name_completion_page_is_gone(): void
+    {
+        $this->configure(['github']);
+        $this->enter();
+        $this->guest()->get('/portal/social/name')->assertNotFound();
+        $this->guest()->post('/portal/social/name', ['first_name' => 'Otto', 'last_name' => 'Cat'])->assertNotFound();
+        $this->assertSame(0, Guest::count());
+    }
+
+    public function test_display_name_falls_back_to_the_email_then_to_the_provider(): void
+    {
+        $named = new Guest(['first_name' => 'Gina', 'last_name' => 'Google', 'social_provider' => 'google', 'social_subject' => 'g-1']);
+        $this->assertSame('Gina Google', $named->displayName());
+        $this->assertSame('Google, Gina', $named->displayName(true));
+        $this->assertSame('octo', (new Guest(['first_name' => 'octo', 'last_name' => '']))->displayName(true));
+        $mailed = new Guest(['first_name' => '', 'last_name' => '', 'social_provider' => 'facebook', 'social_subject' => '123',
+            'email' => 'fay@example.com']);
+        $this->assertSame('fay@example.com', $mailed->displayName());
+        $this->assertSame('f***@example.com', $mailed->displayName(email: Redact::email(...)));
+        $bare = new Guest(['first_name' => '', 'last_name' => '', 'social_provider' => 'facebook', 'social_subject' => '123']);
+        $this->assertSame('Facebook #'.substr(hash('sha256', 'facebook|123'), 0, 6), $bare->displayName());
+    }
+
+    public function test_approval_messages_and_webhook_carry_the_display_name(): void
+    {
+        $guest = Guest::create(['first_name' => '', 'last_name' => '', 'locale' => 'en', 'social_provider' => 'apple', 'social_subject' => 'a-7']);
+        $request = ApprovalRequest::create(['guest_id' => $guest->id, 'site_id' => $this->site->id, 'mac' => self::MAC,
+            'expires_at' => now()->addMinutes(10)]);
+        $fallback = 'Apple #'.substr(hash('sha256', 'apple|a-7'), 0, 6);
+        $this->assertSame($fallback, $request->guestName());
+        $this->assertStringContainsString($fallback, ApprovalMessage::lines($request)[0]);
+
+        Http::fake(['hooks.example.com/*' => Http::response()]);
+        $channel = Channel::create(['kind' => 'notification', 'driver' => 'webhook', 'name' => 'Hook', 'enabled' => true,
+            'config' => ['url' => 'https://hooks.example.com/in', 'secret' => 'hook-secret']]);
+        (new WebhookChannel)->requested($request, $channel);
+        Http::assertSent(fn (Request $r) => $r['guest'] === ['first_name' => '', 'last_name' => '', 'display_name' => $fallback]);
     }
 
     public function test_state_mismatch_replay_and_provider_errors_show_the_error_page(): void
@@ -511,6 +550,11 @@ class SocialLoginTest extends TestCase
         $guest = Guest::create(['first_name' => 'Gina', 'last_name' => 'Google', 'locale' => 'en',
             'social_provider' => 'google', 'social_subject' => 'g-1', 'email' => 'gina@example.com']);
         Guest::create(['first_name' => 'Carl', 'last_name' => 'Code', 'locale' => 'en']);
+        // Nameless social guests: the (masked) email, else the provider fallback (decision 2026-11-05).
+        Guest::create(['first_name' => '', 'last_name' => '', 'locale' => 'en', 'social_provider' => 'facebook',
+            'social_subject' => 'fb-1', 'email' => 'fay@example.com']);
+        Guest::create(['first_name' => '', 'last_name' => '', 'locale' => 'en', 'social_provider' => 'github', 'social_subject' => '4711']);
+        $hash = substr(hash('sha256', 'github|4711'), 0, 6);
         $grant = app(GrantManager::class)->createTimedGrant(GrantType::Social, $this->site, 3600, 'Google');
         TermsAcceptance::create(['guest_id' => $guest->id, 'terms_version_id' => $this->terms->id, 'grant_id' => $grant->id,
             'site_id' => $this->site->id, 'mac' => self::MAC, 'accepted_at' => now()]);
@@ -521,7 +565,11 @@ class SocialLoginTest extends TestCase
             ->assertSee('<option value="social" selected', false);
         $manager = User::factory()->create(['role' => 'manager', 'name' => 'Site Manager']);
         $this->onZone('admin')->actingAs($manager)->get('/admin/guests')->assertOk()
-            ->assertSee('g***@example.com')->assertDontSee('gina@example.com')->assertSee('Carl');
+            ->assertSee('g***@example.com')->assertDontSee('gina@example.com')->assertSee('Code, Carl')
+            ->assertSee('f***@example.com')->assertDontSee('fay@example.com')->assertSee('GitHub #'.$hash)->assertDontSee('4711')
+            ->assertDontSee('<div class="font-medium">, </div>', false);
+        $this->onZone('admin')->actingAs($admin)->get('/admin/guests')->assertOk()
+            ->assertSee('fay@example.com')->assertSee('GitHub #'.$hash);
 
         $this->assertSame('a***@example.com', Redact::email('alice@example.com'));
         $this->assertSame('', Redact::email(null));

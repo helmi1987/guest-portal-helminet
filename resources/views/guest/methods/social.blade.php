@@ -1,7 +1,7 @@
-{{-- Social login (CONCEPT.md §7.2 D): terms, then one button per provider; the name comes from the provider. --}}
+{{-- Social login (CONCEPT.md §7.2 D): terms, then one button per provider; the name comes from the provider, if it reports one. --}}
 <form id="gp-login-form" method="POST" action="{{ $guestPreview?->action() ?? route('guest.social.start', $socialProviders[0] ?? 'google') }}" class="gp-form flex flex-col gap-4" @if ($guestPreview) novalidate @endif>
     @csrf
-    {{ $guestPreview?->fields('social_name') }}
+    {{ $guestPreview?->fields('status') }}
     @include('guest.partials.terms')
     @include('guest.partials.errors')
     <div class="gp-social-providers flex flex-col gap-3">

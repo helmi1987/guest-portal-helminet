@@ -3,7 +3,6 @@
 namespace App\Guest;
 
 use App\Auth\Social\LoginMethods;
-use App\Auth\Social\SocialLogin;
 use App\Auth\Social\SocialSettings;
 use App\Models\Site;
 use App\Models\TermsVersion;
@@ -20,13 +19,13 @@ use Illuminate\View\View;
  * data, never touching sessions, grants, throttles, drivers or RADIUS. While a preview renders, the
  * instance is shared with the views as `$guestPreview`; links and forms of the guest views then lead to
  * the next preview screen instead of the guest routes (code → status, account → status, sms → otp →
- * status, approval → waiting, social → name → status, status → logged out). Without a preview `$guestPreview` is null.
+ * status, approval → waiting, social → status, status → logged out). Without a preview `$guestPreview` is null.
  */
 final class GuestPreview
 {
     /** Screens besides the error pages ("error-<kind>", GuestTexts::ERROR_KINDS). */
     public const SCREENS = ['chooser', 'notices', 'code', 'account', 'sms', 'sms_otp', 'sms_resent', 'approval', 'approval_waiting',
-        'social', 'social_name', 'waiting', 'status', 'logged_out', 'landing'];
+        'social', 'waiting', 'status', 'logged_out', 'landing'];
 
     /** Demo values: masked phone number of the SMS page and remaining time of the status page. */
     public const DEMO_PHONE = '+41790000000';
@@ -96,7 +95,7 @@ final class GuestPreview
             $key === 'code', $key === 'email' => ['code'],
             $key === 'connect' => ['code', 'account', 'sms_otp', 'sms_resent'],
             str_starts_with($key, 'account_') => ['account'],
-            in_array($key, ['first_name', 'last_name'], true) => ['code', 'sms', 'approval', 'social_name'],
+            in_array($key, ['first_name', 'last_name'], true) => ['code', 'sms', 'approval'],
             in_array($key, ['phone', 'sms_request'], true) => ['sms'],
             $key === 'sms_resent' => ['sms_resent'],
             str_starts_with($key, 'sms_'), $key === 'otp' => ['sms_otp', 'sms_resent'],
@@ -104,7 +103,6 @@ final class GuestPreview
             str_starts_with($key, 'approval_waiting') => ['approval_waiting'],
             $key === 'social_with' => ['social', 'chooser'],
             $key === 'social_hint' => ['social'],
-            str_starts_with($key, 'social_name'), $key === 'continue' => ['social_name'],
             in_array($key, ['connecting', 'waiting'], true) => ['waiting'],
             in_array($key, ['online', 'remaining', 'online_hint', 'logout', 'refresh'], true), str_starts_with($key, 'usage_') => ['status'],
             str_starts_with($key, 'logged_out') => ['logged_out'],
@@ -164,9 +162,6 @@ final class GuestPreview
                 'statusMessage' => $this->screen === 'sms_resent' ? __('portal.guest.sms_resent') : null,
             ]),
             $this->screen === 'approval_waiting' => view('guest.approval'),
-            $this->screen === 'social_name' => view('guest.social-name', [
-                'provider' => SocialLogin::name($this->providers()[0]), 'first' => null, 'last' => null,
-            ]),
             $this->screen === 'waiting' => view('guest.waiting'),
             $this->screen === 'status' => view('guest.status', [
                 'remaining' => CarbonInterval::seconds(self::DEMO_REMAINING_S)->cascade()->locale($this->locale)

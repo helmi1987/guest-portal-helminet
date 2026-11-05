@@ -84,9 +84,6 @@ Route::middleware(['zone:guest', 'locale', 'guest.texts'])->group(function () {
 
     // Social login (CONCEPT.md §7.2 D): start (POST, terms) → go (GET, 302 to the provider) → callback.
     Route::prefix('/portal/social')->name('guest.social.')->group(function () {
-        Route::get('/name', [SocialLoginController::class, 'name'])->name('name');
-        Route::post('/name', [SocialLoginController::class, 'storeName'])->name('name.store')
-            ->middleware('throttle:20,1,guest-social-name');
         Route::post('/{provider}', [SocialLoginController::class, 'start'])->name('start')
             ->whereIn('provider', SocialSettings::PROVIDERS)->middleware('throttle:10,1,guest-social-start');
         Route::get('/{provider}/go', [SocialLoginController::class, 'go'])->name('go')

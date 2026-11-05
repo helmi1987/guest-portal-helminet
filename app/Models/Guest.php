@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Auth\Social\SocialLogin;
 use App\Enums\GrantType;
 use App\Models\Concerns\Replicated;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -11,7 +12,8 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 
 /**
  * A guest as entered at one login (name, optional phone; for a social login the provider, its subject
- * and the email it reported). Each login creates a new row.
+ * and the email it reported, the name as far as the provider reports it, else empty). Each login
+ * creates a new row.
  */
 #[Fillable(['first_name', 'last_name', 'phone_e164', 'locale', 'social_provider', 'social_subject', 'email'])]
 class Guest extends Model
@@ -56,5 +58,33 @@ class Guest extends Model
             $this->social_provider !== null => GrantType::Social,
             default => null,
         };
+    }
+
+    /**
+     * Name as shown and passed on (admin lists, approval messages, webhook `display_name`): "First Last",
+     * or "Last, First" with $lastFirst. Without a name (social login whose provider reported none, decision
+     * 2026-11-05) the email, else "<Provider> #<first 6 hex of a hash of provider and subject>" (never the
+     * raw provider ID). $email formats the email (e.g. User::displayEmail, masked for managers).
+     *
+     * @param  (callable(string): string)|null  $email
+     */
+    public function displayName(bool $lastFirst = false, ?callable $email = null): string
+    {
+        $first = trim((string) $this->first_name);
+        $last = trim((string) $this->last_name);
+        if ($first !== '' && $last !== '') {
+            return $lastFirst ? $last.', '.$first : $first.' '.$last;
+        }
+        if ($first !== '' || $last !== '') {
+            return $first.$last;
+        }
+        if (is_string($this->email) && $this->email !== '') {
+            return $email !== null ? $email($this->email) : $this->email;
+        }
+        if ($this->social_provider !== null) {
+            return SocialLogin::name($this->social_provider).' #'.substr(hash('sha256', $this->social_provider.'|'.$this->social_subject), 0, 6);
+        }
+
+        return '–';
     }
 }

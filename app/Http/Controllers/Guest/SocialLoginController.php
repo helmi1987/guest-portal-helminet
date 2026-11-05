@@ -32,7 +32,7 @@ use Throwable;
  * Guest social login (CONCEPT.md §7.2 D, decision 2026-11-03): terms accepted on the social page, then
  * POST start (flow with state, nonce and PKCE verifier in the session, single use, 10 minutes) → GET go
  * (302 to the provider; never the direct answer of the form POST, guest CSP form-action) → callback on the
- * same host (Apple: form_post bounced to the GET callback) → optional name completion → guest, terms
+ * same host (Apple: form_post bounced to the GET callback) → guest (name as far as the provider reports it), terms
  * acceptance, grant of type social and the router handoff like the other methods.
  */
 class SocialLoginController extends Controller
@@ -42,10 +42,7 @@ class SocialLoginController extends Controller
     /** Session key of the running login attempt (start → callback). */
     public const FLOW = 'social_login';
 
-    /** Session key of a verified identity whose name is being completed. */
-    public const PENDING = 'social_pending';
-
-    /** Lifetime of a login attempt and of a pending name completion. */
+    /** Lifetime of a login attempt. */
     public const TTL_MINUTES = 10;
 
     /** Max. age of an Apple form_post bounce (seconds). */
@@ -185,53 +182,9 @@ class SocialLoginController extends Controller
         $identity = new SocialIdentity($identity->provider, mb_substr($identity->subject, 0, 191), $identity->firstName,
             $identity->lastName, $identity->email);
 
-        if (! $identity->hasName()) {
-            $request->session()->put(self::PENDING, ['identity' => $identity->toArray()]
-                + array_intersect_key($flow, array_flip(['terms_version', 'site', 'mac', 'started_at'])));
-
-            return redirect()->route('guest.social.name');
-        }
-
+        // A missing name never stops the login: the guest stays nameless and is shown with a fallback
+        // (Guest::displayName(), decision 2026-11-05).
         return $this->complete($request, $identity, $flow['terms_version'], $site, $context, $grants, $throttle);
-    }
-
-    /** "Complete your name": the provider did not report a first or last name. */
-    public function name(Request $request): View|Response|RedirectResponse
-    {
-        $pending = $request->session()->get(self::PENDING);
-        if (! $this->fresh($pending)) {
-            return redirect()->route('guest.portal', ['method' => LoginMethods::SOCIAL]);
-        }
-        $identity = SocialIdentity::fromArray($pending['identity']);
-
-        return view('guest.social-name', [
-            'provider' => SocialLogin::name($identity->provider),
-            'first' => $identity->firstName,
-            'last' => $identity->lastName,
-        ]);
-    }
-
-    public function storeName(Request $request, GrantManager $grants, LoginThrottle $throttle): View|Response|RedirectResponse
-    {
-        $pending = $request->session()->get(self::PENDING);
-        if (! $this->fresh($pending)) {
-            return redirect()->route('guest.portal', ['method' => LoginMethods::SOCIAL]);
-        }
-        $data = $request->validate([
-            'first_name' => ['required', 'string', 'max:100'],
-            'last_name' => ['required', 'string', 'max:100'],
-        ]);
-        [$site, $context] = $this->current($request);
-        if (! $this->sameDevice($pending, $site, $context)) {
-            return redirect()->route('guest.portal');
-        }
-        $identity = SocialIdentity::fromArray($pending['identity'])
-            ->withName(SocialIdentity::clean($data['first_name']), SocialIdentity::clean($data['last_name']));
-        if (! $identity->hasName()) {
-            throw ValidationException::withMessages(['first_name' => __('validation.required', ['attribute' => __('portal.guest.first_name')])]);
-        }
-
-        return $this->complete($request, $identity, $pending['terms_version'] ?? null, $site, $context, $grants, $throttle);
     }
 
     /** Guest, terms acceptance, grant of type social and handoff, like the SMS verify path. */
@@ -244,7 +197,7 @@ class SocialLoginController extends Controller
         // The version accepted at the start must still be current.
         $terms = TermsVersion::current(app()->getLocale());
         if ($termsVersion !== $terms?->id) {
-            $request->session()->forget([self::FLOW, self::PENDING]);
+            $request->session()->forget(self::FLOW);
 
             return redirect()->route('guest.portal', ['method' => LoginMethods::SOCIAL])
                 ->withErrors(['terms' => __('portal.guest.errors.terms_changed')]);
@@ -275,7 +228,7 @@ class SocialLoginController extends Controller
 
             return [$grant, $token, $password];
         }));
-        $request->session()->forget([self::FLOW, self::PENDING]);
+        $request->session()->forget(self::FLOW);
         if ($result === false) {
             return $this->error('locked', 429);
         }
@@ -293,7 +246,7 @@ class SocialLoginController extends Controller
             ?? (in_array($provider, SocialSettings::enabledProviders(), true) ? null : $this->error('method_disabled', 403));
     }
 
-    /** A login attempt or pending completion of this session that has not expired. */
+    /** A login attempt of this session that has not expired. */
     private function fresh(mixed $entry): bool
     {
         return is_array($entry) && is_int($entry['started_at'] ?? null)

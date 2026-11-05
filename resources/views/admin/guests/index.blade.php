@@ -37,9 +37,10 @@
                     @php($method = $guest->loginMethod($grant))
                     <tr>
                         <td>
-                            <div class="font-medium">{{ $guest->last_name }}, {{ $guest->first_name }}</div>
+                            @php($nameless = trim($guest->first_name.$guest->last_name) === '')
+                            <div class="font-medium">{{ $guest->displayName(true, auth()->user()->displayEmail(...)) }}</div>
                             @if ($guest->phone_e164)<div class="font-mono text-xs">{{ auth()->user()->displayPhone($guest->phone_e164) }}</div>@endif
-                            @if ($guest->email)<div class="text-xs" title="{{ __('portal.guests.email') }}">{{ auth()->user()->displayEmail($guest->email) }}</div>@endif
+                            @if ($guest->email && ! $nameless)<div class="text-xs" title="{{ __('portal.guests.email') }}">{{ auth()->user()->displayEmail($guest->email) }}</div>@endif
                             <div class="text-xs text-slate-500">{{ \App\Support\LocalTime::format($guest->created_at, 'Y-m-d H:i') }}</div>
                         </td>
                         <td>

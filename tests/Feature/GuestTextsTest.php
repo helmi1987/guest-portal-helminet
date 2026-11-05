@@ -191,7 +191,9 @@ class GuestTextsTest extends TestCase
         $preview('code')->assertSee('action="/admin/texts/preview"', false)->assertSee('name="screen" value="status"', false)
             ->assertSee('novalidate', false)->assertDontSee(route('guest.redeem'), false);
         $preview('sms_otp')->assertSee('name="screen" value="sms_resent"', false)->assertSee('name="screen" value="status"', false);
-        $preview('social')->assertSee('name="screen" value="social_name"', false);
+        // Social login never asks for a name (decision 2026-11-05): the providers lead straight to the status screen.
+        $preview('social')->assertSee('name="screen" value="status"', false)->assertDontSee('social_name', false);
+        $this->assertNotContains('social_name', GuestPreview::screens());
         // Status with demo usage; its logout form leads to the logged-out screen (decision 2026-11-05).
         $preview('status')->assertSee(__('portal.guest.usage_title', [], 'de'))->assertSee('175.8 MiB')
             ->assertSee('name="screen" value="logged_out"', false)->assertSee('action="/admin/texts/preview"', false)

@@ -101,6 +101,7 @@ class ApprovalTest extends TestCase
         $webhook = Http::recorded()->map(fn (array $pair) => $pair[0])->first(fn (Request $r) => $r->url() === 'https://hooks.example.com/in');
         $this->assertSame(WebhookChannel::signature('hook-secret', $webhook->header('X-Timestamp')[0], $webhook->body()),
             $webhook->header('X-Signature')[0]);
+        $this->assertSame('Test Guest', $webhook['guest']['display_name']);
         $link = parse_url($webhook['links']['deny']);
         $path = $link['path'].'?'.$link['query'];
 

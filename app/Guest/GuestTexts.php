@@ -35,7 +35,7 @@ final class GuestTexts
         'sms' => ['guest.phone', 'guest.otp', 'guest.sms_request', 'guest.sms_title', 'guest.sms_sent', 'guest.sms_resend',
             'guest.sms_resent', 'guest.sms_change'],
         'approval' => ['guest.approval_request', 'guest.approval_waiting_title', 'guest.approval_waiting'],
-        'social' => ['guest.social_with', 'guest.social_hint', 'guest.social_name_title', 'guest.social_name_intro'],
+        'social' => ['guest.social_with', 'guest.social_hint'],
         'status' => ['guest.connecting', 'guest.waiting', 'guest.online', 'guest.remaining', 'guest.online_hint',
             'guest.continue', 'guest.noscript', 'guest.try_again', 'guest.controller_connected', 'guest.controller_unknown',
             'guest.controller_refresh', 'guest.controller_continue', 'guest.usage_title', 'guest.usage_connected',

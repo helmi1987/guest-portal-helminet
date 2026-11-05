@@ -53,7 +53,8 @@ class WebhookChannel implements NotificationChannel
         return [
             'event' => $event,
             'id' => $request->id,
-            'guest' => ['first_name' => $request->guest?->first_name, 'last_name' => $request->guest?->last_name],
+            'guest' => ['first_name' => $request->guest?->first_name, 'last_name' => $request->guest?->last_name,
+                'display_name' => $request->guestName()],
             'site' => ['slug' => $request->site?->slug, 'name' => $request->site?->name],
             'mac' => $request->mac,
             'created_at' => $request->created_at?->toIso8601String(),

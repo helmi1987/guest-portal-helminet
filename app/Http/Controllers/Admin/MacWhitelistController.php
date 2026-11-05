@@ -69,7 +69,7 @@ class MacWhitelistController extends Controller
         $device = is_string($request->query('device')) ? Device::query()->with('guest.latestAcceptance')->find($request->query('device')) : null;
         if ($device !== null) {
             $entry->mac = $device->mac;
-            $entry->comment = $device->guest ? mb_substr($device->guest->first_name.' '.$device->guest->last_name, 0, 255) : null;
+            $entry->comment = $device->guest ? mb_substr($device->guest->displayName(email: $request->user()->displayEmail(...)), 0, 255) : null;
             $site = SessionSummary::query()->where('grant_id', $device->grant_id)->where('mac', $device->mac)
                 ->latest('started_at')->value('site_id') ?? $device->guest?->latestAcceptance?->site_id;
         }

@@ -58,6 +58,6 @@ class ApprovalRequest extends Model
 
     public function guestName(): string
     {
-        return trim(($this->guest?->first_name ?? '').' '.($this->guest?->last_name ?? ''));
+        return $this->guest?->displayName() ?? '';
     }
 }

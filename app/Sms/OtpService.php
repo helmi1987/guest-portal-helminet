@@ -149,7 +149,7 @@ class OtpService
 
             $guest = $fresh->guest;
             $grant = $this->grants->createTimedGrant(GrantType::Sms, $fresh->site, SmsSettings::durationS(),
-                trim($guest->first_name.' '.$guest->last_name));
+                $guest->displayName());
             $fresh->update(['verified_at' => now(), 'grant_id' => $grant->id]);
             // Per model (not a query-builder update): each acceptance gets a new version and outbox event.
             TermsAcceptance::query()->where('guest_id', $fresh->guest_id)->whereNull('grant_id')->get()
