@@ -12,6 +12,8 @@ and decisions: [CONCEPT.md](../CONCEPT.md) §5 (RADIUS), §5.1 (NAS drivers), §
 external page and check the posted credentials with RADIUS PAP. Its parameter names, login URL and form fields are
 set per site, with presets for several vendors. Try it (and the NAS simulator in `tests/nas-sim`) before writing a
 driver; a dedicated driver is worth it when the vendor needs scripts, a state query or a controller API.
+A worked example of a device that cannot be driven at all is [fritzbox.md](fritzbox.md): the FRITZ!Box guest access
+has neither RADIUS nor a way to release or block a single guest device, so it can only sit in front of a MikroTik.
 
 ## 1. What a driver does and what the core does
 

@@ -41,11 +41,12 @@ body:
     id: routers
     attributes:
       label: Routers and roles
-      description: One line per device. Model, RouterOS version and role (hotspot router, CAPsMAN manager, CAP, ...).
+      description: One line per device. Model, RouterOS version and role (hotspot router, CAPsMAN manager, CAP, FRITZ!Box as internet router in front of the MikroTik, ...).
       placeholder: |
         - x86 / CHR, RouterOS 7.x, hotspot router (RADIUS client)
         - Chateau 5G, RouterOS 7.x, hotspot router with local guest Wi-Fi
         - hAP ax2, RouterOS 7.x, CAP
+        - FRITZ!Box 7590, FRITZ!OS 8.x, internet router in front of the MikroTik
     validations:
       required: true
 
@@ -58,6 +59,7 @@ body:
         - label: CAPsMAN v1 (legacy wireless)
         - label: CAPsMAN v2 (WiFi / wifiwave2)
         - label: Wired only / external access points
+        - label: FRITZ!Box in front of a MikroTik (LAN guest port)
         - label: Guest Wi-Fi password set (WPA2/WPA3)
 
   - type: checkboxes

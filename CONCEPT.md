@@ -251,6 +251,18 @@ Disconnect-Request support completes the job once and marks the session (`discon
 (`tests/nas-sim`, Docker and Playwright) checks the driver against the documented conventions, not against real
 devices. Guide: [docs/generic-captive-portal.md](docs/generic-captive-portal.md).
 
+Decision 2026-11-05 (v0.29.3, owner): **no FRITZ!Box driver**, not even experimental. A desk study (AVM TR-064
+specifications, knowledge base, FRITZ!OS release notes up to 8.25, Home Assistant source; no hardware) found that
+FRITZ!OS has no RADIUS, no redirect to an external portal and no per-device internet control for guest devices
+(`X_AVM-DE_HostFilter:DisallowWANAccessByIP` is reserved for home network devices; the consent page puts the device
+fully online before it forwards to a fixed URL without MAC or IP), so neither the RADIUS handoff nor
+`AuthorizesViaController` (`authorizeClient`/`deauthorizeClient` per client) can be met. The owner had decided in
+advance to build nothing in that case. A home-network variant with default-deny access profiles was rejected (no
+guest isolation, IPv4-keyed, hits the owner's devices). Documented instead: the FRITZ!Box as the internet router in
+front of a MikroTik (WAN on a LAN port, the LAN guest port, or PPPoE passthrough), with RADIUS and Disconnect kept
+off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik initiates):
+[docs/fritzbox.md](docs/fritzbox.md).
+
 ## 6. TLS
 
 - Guest and admin ports use a publicly trusted certificate for a public DNS name resolving to an

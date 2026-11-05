@@ -23,7 +23,9 @@ Built and tested for MikroTik RouterOS 7. The RADIUS core is vendor-neutral; oth
 can be supported via drivers (contributions welcome, see [docs/nas-driver.md](docs/nas-driver.md)); an
 experimental Ubiquiti UniFi driver exists since v0.27.0 ([docs/unifi-setup.md](docs/unifi-setup.md)) and an
 experimental generic RADIUS captive-portal driver with vendor presets since v0.28.0
-([docs/generic-captive-portal.md](docs/generic-captive-portal.md)).
+([docs/generic-captive-portal.md](docs/generic-captive-portal.md)). An AVM FRITZ!Box is not supported as a NAS (its
+guest access has no RADIUS and no per-device release); it works as the internet router in front of a MikroTik
+([docs/fritzbox.md](docs/fritzbox.md)).
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
