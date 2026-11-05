@@ -143,7 +143,7 @@ class GuestPortalTest extends TestCase
             ->assertSee(__('portal.guest.usage_title', [], 'de'))
             ->assertSee('30 Minuten')
             // Download = output of the NAS (155 MiB), upload = input (1.5 MiB); as of the newest update.
-            ->assertSee('↓ 155.0 MiB · ↑ 1.5 MiB')
+            ->assertSee('↓ 155.0 MiB</span> · <span class="whitespace-nowrap">↑ 1.5 MiB', false)
             ->assertSee(__('portal.guest.usage_as_of', ['time' => LocalTime::format(now()->subMinutes(3), 'H:i')], 'de'))
             ->assertSee(__('portal.guest.usage_hint', ['minutes' => 5], 'de'))
             ->assertSee('action="/status/'.$grant->id.'/'.$token->id.'/logout?expires=', false)

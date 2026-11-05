@@ -26,7 +26,7 @@
                 <dd class="font-medium" data-usage-connected>{{ $usage['connected'] }}</dd>
                 @if ($usage['down'] !== null)
                     <dt class="opacity-80">{{ __('portal.guest.usage_data') }}</dt>
-                    <dd class="font-medium" data-usage-data>↓ {{ $usage['down'] }} · ↑ {{ $usage['up'] }}</dd>
+                    <dd class="font-medium" data-usage-data><span class="whitespace-nowrap">↓ {{ $usage['down'] }}</span> · <span class="whitespace-nowrap">↑ {{ $usage['up'] }}</span></dd>
                 @endif
             </dl>
             @if ($usage['as_of'] !== null)

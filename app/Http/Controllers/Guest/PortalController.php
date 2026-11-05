@@ -642,8 +642,9 @@ class PortalController extends Controller
         $asOf = $session->accounting_max_last_update_at;
 
         return [
-            'connected' => CarbonInterval::seconds(max(0, (int) $session->started_at->diffInSeconds(now())))->cascade()
-                ->locale(app()->getLocale())->forHumans(['parts' => 2, 'join' => true]),
+            // Whole minutes (at least one), like the remaining time.
+            'connected' => CarbonInterval::seconds(max(60, (int) $session->started_at->diffInSeconds(now())))->cascade()
+                ->locale(app()->getLocale())->forHumans(['parts' => 2, 'join' => true, 'minimumUnit' => 'minute']),
             'down' => $session->accounting_sum_bytes_out === null ? null : Bytes::binary($session->accounting_sum_bytes_out),
             'up' => $session->accounting_sum_bytes_in === null ? null : Bytes::binary($session->accounting_sum_bytes_in),
             'as_of' => $asOf === null ? null : LocalTime::format(Carbon::parse($asOf), 'H:i'),
