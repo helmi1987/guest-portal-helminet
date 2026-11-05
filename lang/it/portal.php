@@ -438,7 +438,7 @@ return [
         ],
         'info' => [
             'dynamic' => 'dinamico (hotspot)',
-            'dynamic_copy' => 'presente anche come copia dinamica (D) in /ip hotspot walled-garden, lì non modificabile: eseguire lo script del router',
+            'dynamic_copy' => 'presente anche come copia dinamica (D) in /ip hotspot walled-garden, lì non modificabile: eseguire il comando di adozione qui sotto o l\'intera parte walled garden dello script del router (con la riga del menu)',
         ],
         'to_commands' => 'Vai ai comandi',
         'command_blocks' => 'Comandi',
@@ -448,8 +448,8 @@ return [
         'access_commands' => 'Comandi: accesso API in sola lettura',
         'access_help' => 'Eseguire una volta sul router (mai in grigio): gruppo guest-portal-ro con le policy read, api, rest-api e l\'utente. Sostituire <API_PASSWORD> con la password salvata sopra.',
         'access_block' => 'Accesso API in sola lettura: :name',
-        'adopt_title' => 'Adottare oggetti senza commento (una volta)',
-        'adopt_help' => 'Questi oggetti hanno il nome di un oggetto generato ma nessun commento (creati dalle versioni da 0.6.0 a 0.12.6 o a mano). Gli script non li modificano mai, quindi il loro add fallisce ("already exists" / "must use unique name"). Se appartengono alla rete ospiti, eseguire questi comandi una volta: ognuno imposta la chiave di commento solo su quell\'oggetto e solo finché il suo commento è vuoto. Poi interrogare di nuovo lo stato ed eseguire i blocchi. Oggetti di altri: rinominarli o rimuoverli.',
+        'adopt_title' => 'Adottare oggetti (una volta)',
+        'adopt_help' => 'Gli oggetti senza commento hanno il nome di un oggetto generato (creati dalle versioni da 0.6.0 a 0.12.6 o a mano). Gli script non li modificano mai, quindi il loro add fallisce ("already exists" / "must use unique name"). Se appartengono alla rete ospiti, eseguire questi comandi una volta: ognuno imposta la chiave di commento solo su quell\'oggetto e solo finché il suo commento è vuoto. Anche le voci walled garden con il commento delle versioni precedenti (stato «vecchio») ricevono un comando: imposta solo la chiave sulla voce statica, la copia dinamica (D) in /ip hotspot walled-garden la segue (lì non si può modificare nulla); in alternativa la parte walled garden dello script del router sostituisce la voce. Poi interrogare di nuovo lo stato ed eseguire i blocchi. Oggetti di altri: rinominarli o rimuoverli.',
         'adopt_ambiguous' => 'corrispondono più oggetti, impostare il commento a mano',
     ],
     'setup' => [

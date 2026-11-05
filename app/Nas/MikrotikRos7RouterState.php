@@ -97,6 +97,14 @@ trait MikrotikRos7RouterState
     private const LEGACY_NO_COMMENT = ['guest-portal:cert:script', 'guest-portal:cert:scheduler'];
 
     /**
+     * Menus whose legacy entries (comment of earlier versions) get a one-time adopt command too (decision
+     * 2026-11-05): the admin sees the walled-garden ip entry mainly as its read-only dynamic copy in
+     * /ip hotspot walled-garden and tries to edit the comment there. The command sets the key on the
+     * static entry (the copy follows); the router script replaces the entry anyway on its next run.
+     */
+    private const ADOPT_LEGACY = ['/ip hotspot walled-garden', '/ip hotspot walled-garden ip'];
+
+    /**
      * Menus with dynamic entries of the hotspot (decision 2026-11-02): those rows are never own, legacy,
      * foreign or unmanaged (filtered before the comparison; the adopt command skips them too). Verified on
      * the CHR (RouterOS 7.24.5, decision 2026-11-03): RouterOS lists every /ip hotspot walled-garden ip entry
@@ -593,6 +601,7 @@ trait MikrotikRos7RouterState
             return ['status' => 'missing', 'diff' => []];
         }
         $n = self::NAME;
+        $legacy = [];
         foreach ($rows as $row) {
             $comment = (string) ($row['comment'] ?? '');
             $noComment = $comment === '' && in_array($key, self::LEGACY_NO_COMMENT, true);
@@ -601,8 +610,16 @@ trait MikrotikRos7RouterState
             }
             $fits = $ident !== null ? ($row[$ident] ?? null) === ($expect[$ident] ?? null) : $diff($row) === [];
             if ($fits) {
-                return ['status' => 'legacy', 'diff' => $diff($row)];
+                $legacy[] = $row;
             }
+        }
+        if ($legacy !== []) {
+            $item = ['status' => 'legacy', 'diff' => $diff($legacy[0])];
+            if ($path !== null && in_array($path, self::ADOPT_LEGACY, true)) {
+                $item['adopt'] = count($legacy) === 1 ? self::legacyAdopt($path, $key, (string) ($legacy[0]['comment'] ?? ''), $expect) : null;
+            }
+
+            return $item;
         }
 
         if (in_array($key, self::GUARDED, true) && $expect !== []) {
@@ -665,6 +682,26 @@ trait MikrotikRos7RouterState
 
         return ['status' => 'unmanaged', 'diff' => [],
             'adopt' => count($found) === 1 ? "{$path} set [find where {$cond} && {$empty}{$static}] comment=\"{$key}\"" : null];
+    }
+
+    /**
+     * Adopt command of a legacy walled-garden entry (ADOPT_LEGACY, decision 2026-11-05): sets the comment key
+     * on the one static entry with that comment and the expected values. Values are quoted: RouterOS 7.24.5
+     * compares protocol=tcp in `find where` as a different type and matches nothing, protocol="tcp" matches
+     * (verified on the 7.24.5 and 7.25 CHRs). A comment or value with characters outside the plain set
+     * (quotes, backslashes, control characters) gives no command: set by hand.
+     */
+    private static function legacyAdopt(string $path, string $key, string $comment, array $expect): ?string
+    {
+        $cond = ['comment' => $comment] + $expect;
+        foreach ($cond as $value) {
+            if (! preg_match('/^[A-Za-z0-9 ._:\/-]+$/D', $value)) {
+                return null;
+            }
+        }
+        $where = implode(' && ', array_map(fn ($p, $v) => $p.'="'.$v.'"', array_keys($cond), $cond));
+
+        return "{$path} set [find where {$where} && !dynamic] comment=\"{$key}\"";
     }
 
     private static function same(string $prop, string $want, string $actual): bool

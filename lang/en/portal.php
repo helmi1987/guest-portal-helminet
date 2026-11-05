@@ -438,7 +438,7 @@ return [
         ],
         'info' => [
             'dynamic' => 'dynamic (hotspot)',
-            'dynamic_copy' => 'also listed as a dynamic copy (D) in /ip hotspot walled-garden, read-only there: run the router script',
+            'dynamic_copy' => 'also listed as a dynamic copy (D) in /ip hotspot walled-garden, read-only there: run the adopt command below or the whole walled-garden part of the router script (with its menu line)',
         ],
         'to_commands' => 'Go to the commands',
         'command_blocks' => 'Commands',
@@ -448,8 +448,8 @@ return [
         'access_commands' => 'Commands: read-only API access',
         'access_help' => 'Run once on the router (never greyed out): group guest-portal-ro with the policies read, api, rest-api and the user. Replace <API_PASSWORD> with the password stored above.',
         'access_block' => 'Read-only API access: :name',
-        'adopt_title' => 'Adopt objects without comment (once)',
-        'adopt_help' => 'These objects have the name of a generated object but no comment (created by versions 0.6.0 to 0.12.6 or by hand). The scripts never change them, so their add fails ("already exists" / "must use unique name"). If they belong to the guest network, run these commands once: each sets the comment key only on that object and only while its comment is empty. Then query the state again and run the blocks. Objects of others: rename or remove them instead.',
+        'adopt_title' => 'Adopt objects (once)',
+        'adopt_help' => 'Objects without comment have the name of a generated object (created by versions 0.6.0 to 0.12.6 or by hand). The scripts never change them, so their add fails ("already exists" / "must use unique name"). If they belong to the guest network, run these commands once: each sets the comment key only on that object and only while its comment is empty. Walled-garden entries with the comment of earlier versions (status "legacy") get a command too: it only sets the key on the static entry, the dynamic copy (D) in /ip hotspot walled-garden follows (nothing can be edited there); alternatively the walled-garden part of the router script replaces the entry. Then query the state again and run the blocks. Objects of others: rename or remove them instead.',
         'adopt_ambiguous' => 'several objects match, set the comment by hand',
     ],
     'setup' => [

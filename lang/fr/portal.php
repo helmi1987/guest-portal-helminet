@@ -438,7 +438,7 @@ return [
         ],
         'info' => [
             'dynamic' => 'dynamique (hotspot)',
-            'dynamic_copy' => 'aussi listé comme copie dynamique (D) dans /ip hotspot walled-garden, non modifiable là : exécuter le script du routeur',
+            'dynamic_copy' => 'aussi listé comme copie dynamique (D) dans /ip hotspot walled-garden, non modifiable là : exécuter la commande d\'adoption ci-dessous ou toute la partie walled garden du script du routeur (avec sa ligne de menu)',
         ],
         'to_commands' => 'Aller aux commandes',
         'command_blocks' => 'Commandes',
@@ -448,8 +448,8 @@ return [
         'access_commands' => 'Commandes : accès API en lecture seule',
         'access_help' => 'À exécuter une fois sur le routeur (jamais grisé) : groupe guest-portal-ro avec les politiques read, api, rest-api et l\'utilisateur. Remplacez <API_PASSWORD> par le mot de passe enregistré ci-dessus.',
         'access_block' => 'Accès API en lecture seule : :name',
-        'adopt_title' => 'Adopter les objets sans commentaire (une fois)',
-        'adopt_help' => 'Ces objets portent le nom d\'un objet généré mais n\'ont pas de commentaire (créés par les versions 0.6.0 à 0.12.6 ou à la main). Les scripts ne les modifient jamais, leur add échoue donc ("already exists" / "must use unique name"). S\'ils appartiennent au réseau invités, exécuter ces commandes une fois : chacune pose la clé de commentaire uniquement sur cet objet et seulement tant que son commentaire est vide. Puis interroger à nouveau l\'état et exécuter les blocs. Objets d\'autres : les renommer ou les supprimer.',
+        'adopt_title' => 'Adopter les objets (une fois)',
+        'adopt_help' => 'Les objets sans commentaire portent le nom d\'un objet généré (créés par les versions 0.6.0 à 0.12.6 ou à la main). Les scripts ne les modifient jamais, leur add échoue donc ("already exists" / "must use unique name"). S\'ils appartiennent au réseau invités, exécuter ces commandes une fois : chacune pose la clé de commentaire uniquement sur cet objet et seulement tant que son commentaire est vide. Les entrées walled garden portant le commentaire des versions antérieures (statut « ancien ») reçoivent aussi une commande : elle pose seulement la clé sur l\'entrée statique, la copie dynamique (D) dans /ip hotspot walled-garden suit (rien n\'y est modifiable) ; sinon la partie walled garden du script du routeur remplace l\'entrée. Puis interroger à nouveau l\'état et exécuter les blocs. Objets d\'autres : les renommer ou les supprimer.',
         'adopt_ambiguous' => 'plusieurs objets correspondent, poser le commentaire à la main',
     ],
     'setup' => [

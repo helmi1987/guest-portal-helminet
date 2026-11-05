@@ -438,7 +438,7 @@ return [
         ],
         'info' => [
             'dynamic' => 'dynamisch (Hotspot)',
-            'dynamic_copy' => 'auch als dynamische Kopie (D) in /ip hotspot walled-garden, dort nicht änderbar: Router-Skript ausführen',
+            'dynamic_copy' => 'auch als dynamische Kopie (D) in /ip hotspot walled-garden, dort nicht änderbar: Übernahme-Befehl unten ausführen oder den ganzen Walled-Garden-Teil des Router-Skripts (mit der Menüzeile)',
         ],
         'to_commands' => 'Zu den Befehlen',
         'command_blocks' => 'Befehle',
@@ -448,8 +448,8 @@ return [
         'access_commands' => 'Befehle: API-Zugang nur lesen',
         'access_help' => 'Einmal auf dem Router ausführen (nie ausgegraut): Gruppe guest-portal-ro mit den Policies read, api, rest-api und der Benutzer. <API_PASSWORD> durch das oben gespeicherte Passwort ersetzen.',
         'access_block' => 'API-Zugang nur lesen: :name',
-        'adopt_title' => 'Objekte ohne Kommentar übernehmen (einmalig)',
-        'adopt_help' => 'Diese Objekte haben den Namen eines erzeugten Objekts, aber keinen Kommentar (angelegt von den Versionen 0.6.0 bis 0.12.6 oder von Hand). Die Skripte ändern sie nie, daher schlägt ihr add fehl ("already exists" / "must use unique name"). Gehören sie zum Gästenetz, diese Befehle einmal ausführen: jeder setzt den Kommentar-Schlüssel nur auf diesem Objekt und nur solange sein Kommentar leer ist. Danach den Zustand neu abfragen und die Blöcke ausführen. Objekte anderer: stattdessen umbenennen oder entfernen.',
+        'adopt_title' => 'Objekte übernehmen (einmalig)',
+        'adopt_help' => 'Objekte ohne Kommentar haben den Namen eines erzeugten Objekts (angelegt von den Versionen 0.6.0 bis 0.12.6 oder von Hand). Die Skripte ändern sie nie, daher schlägt ihr add fehl ("already exists" / "must use unique name"). Gehören sie zum Gästenetz, diese Befehle einmal ausführen: jeder setzt den Kommentar-Schlüssel nur auf diesem Objekt und nur solange sein Kommentar leer ist. Walled-Garden-Einträge mit dem Kommentar früherer Versionen (Status «alt») erhalten ebenfalls einen Befehl: er setzt nur den Schlüssel am statischen Eintrag, die dynamische Kopie (D) in /ip hotspot walled-garden folgt (dort ist nichts änderbar); alternativ ersetzt der Walled-Garden-Teil des Router-Skripts den Eintrag. Danach den Zustand neu abfragen und die Blöcke ausführen. Objekte anderer: stattdessen umbenennen oder entfernen.',
         'adopt_ambiguous' => 'mehrere Objekte passen, Kommentar von Hand setzen',
     ],
     'setup' => [
