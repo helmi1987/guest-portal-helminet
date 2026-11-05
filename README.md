@@ -29,7 +29,9 @@ experimental generic RADIUS captive-portal driver with vendor presets since v0.2
 
 - v0.28: generic RADIUS captive-portal driver (experimental, presets for Cisco WLC, Aruba, pfSense, OPNsense,
   CoovaChilli, Ruckus) and a generic walled-garden checklist (docs/generic-captive-portal.md); v0.28.1: one-time adopt
-  command for walled-garden entries with a comment of earlier versions (status "legacy"; the dynamic copy follows).
+  command for walled-garden entries with a comment of earlier versions (status "legacy"; the dynamic copy follows). v0.28.2: the
+  firewall block and the uninstall skip the dynamic hs-unauth rules RouterOS derives from walled-garden ip entries (a legacy
+  entry made the firewall block fail with "can't remove dynamic object").
 - v0.27: experimental Ubiquiti UniFi driver (controller API, no RADIUS; untested on hardware, feedback welcome;
   docs/unifi-setup.md).
 - v0.26: SMS providers modelled on Uptime Kuma's list (Twilio, seven.io, ClickSend, SMSAPI, 46elks,

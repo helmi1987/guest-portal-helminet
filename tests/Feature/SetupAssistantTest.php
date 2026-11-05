@@ -128,7 +128,7 @@ class SetupAssistantTest extends TestCase
             $this->assertContains($comment, $keys);
         }
         $exact = '('.implode(' || ', array_map(fn ($k) => 'comment="'.$k.'"', $rules[2])).')';
-        $this->assertStringContainsString('/ip firewall filter remove [find where '.substr($exact, 0, -1).' || comment="guest-portal" || comment~"^guest-portal: ")]', $firewall);
+        $this->assertStringContainsString('/ip firewall filter remove [find where ('.substr($exact, 0, -1).' || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]', $firewall);
 
         // Moved rule by rule before the first static foreign rule: keeps the own order.
         $this->assertStringContainsString(':foreach fwChain in={"input";"forward"} do={', $firewall);
@@ -305,8 +305,8 @@ class SetupAssistantTest extends TestCase
             '/ip dns static remove [find where ((comment="guest-portal:dns:hotspot-name" || comment="guest-portal:dns:portal-a" || comment="guest-portal:dns:portal-cname" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]',
             '/ip dhcp-server network find where address="10.30.0.0/24" && (comment="guest-portal:net:dhcp-network" || comment="guest-portal" || comment~"^guest-portal: ")]',
             '/ip dhcp-server network set $gpNet dhcp-option=""', '/ip dhcp-server option remove [find where name="captive-portal" && (comment="guest-portal:net:option-114" || comment="guest-portal" || comment~"^guest-portal: ")]',
-            '/ip firewall nat remove [find where comment~"^guest-portal: "]',
-            '/ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal:fw:addr-portal" || comment="guest-portal:fw:addr-radius" || comment="guest-portal:fw:addr-rfc1918-10" || comment="guest-portal:fw:addr-rfc1918-172" || comment="guest-portal:fw:addr-rfc1918-192" || comment="guest-portal" || comment~"^guest-portal: ")]'] as $line) {
+            '/ip firewall nat remove [find where comment~"^guest-portal: " && !dynamic]',
+            '/ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && ((comment="guest-portal:fw:addr-portal" || comment="guest-portal:fw:addr-radius" || comment="guest-portal:fw:addr-rfc1918-10" || comment="guest-portal:fw:addr-rfc1918-172" || comment="guest-portal:fw:addr-rfc1918-192" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]'] as $line) {
             $this->assertStringContainsString($line, $script);
         }
         // Order: hotspot before profile, profile before certificates, option reference before the option.
@@ -354,7 +354,7 @@ class SetupAssistantTest extends TestCase
         // An existing RFC1918 entry without our comment made "add" fail ("already have such entry").
         $this->assertStringContainsString(':if ([:len [find where list=RFC1918 && address=10.0.0.0/8]] = 0) do={ add list=RFC1918 address=10.0.0.0/8 comment="guest-portal:fw:addr-rfc1918-10" }', $firewall);
         $this->assertStringContainsString(':if ([:len [/interface list find where name=GUEST]] = 0) do={ /interface list add name=GUEST comment="guest-portal:fw:list-guest" }', $firewall);
-        $this->assertStringContainsString('remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && (comment="guest-portal:fw:addr-portal" || comment="guest-portal:fw:addr-radius" || comment="guest-portal:fw:addr-rfc1918-10" || comment="guest-portal:fw:addr-rfc1918-172" || comment="guest-portal:fw:addr-rfc1918-192" || comment="guest-portal" || comment~"^guest-portal: ")]', $firewall);
+        $this->assertStringContainsString('remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && ((comment="guest-portal:fw:addr-portal" || comment="guest-portal:fw:addr-radius" || comment="guest-portal:fw:addr-rfc1918-10" || comment="guest-portal:fw:addr-rfc1918-172" || comment="guest-portal:fw:addr-rfc1918-192" || comment="guest-portal" || comment~"^guest-portal: ") && !dynamic)]', $firewall);
         $this->assertDoesNotMatchRegularExpression('/^add list=/m', $firewall);
 
         // Option 114: updated in place when it is ours, the network is matched by subnet and comment.

@@ -194,6 +194,9 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
      * walled-garden copy of every walled-garden ip entry with its comment, e.g. "guest-portal" of a legacy
      * ip entry; the A entry of the hotspot dns-name); they cannot be removed and are never ours. The ip menu
      * has no "dynamic" property: there "!dynamic" matches every entry (verified on the CHR, RouterOS 7.24.5).
+     * Also the firewall menus (decision 2026-11-05, v0.28.2): RouterOS derives dynamic filter and nat rules
+     * (chains hs-unauth, hs-unauth-to) from every walled-garden ip entry with the entry's comment, so a legacy
+     * entry ("guest-portal") made the firewall block and the uninstall fail with "can't remove dynamic object".
      */
     private static function ownedStatic(string ...$keys): string
     {
@@ -524,8 +527,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         // Firewall: exact keys of the address-list entries and filter rules
         $addrKeys = self::keys('fw', array_keys(self::FW_ADDRESSES));
         $ruleKeys = self::keys('fw', array_keys(self::FW_RULES));
-        $addrOwned = self::owned(...$addrKeys);
-        $rulesOwned = self::owned(...$ruleKeys);
+        $addrOwned = self::ownedStatic(...$addrKeys);
+        $rulesOwned = self::ownedStatic(...$ruleKeys);
         // Exactly the current rule keys (legacy rules are removed before the adds)
         $rulesExact = '('.implode(' || ', array_map(fn ($r) => 'comment="'.$r.'"', $ruleKeys)).')';
         $kDhcpNet = $k('net', 'dhcp-network');
@@ -772,7 +775,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
                 # Firewall rules and address-list entries of the assistant (its keys and lists only; "{$n}-old"
                 # or entries without comment are not ours and stay)
                 /ip firewall filter remove [find where {$rulesOwned}]
-                /ip firewall nat remove [find where comment~"^{$n}: "]
+                /ip firewall nat remove [find where comment~"^{$n}: " && !dynamic]
                 /ip firewall address-list remove [find where (list=PORTAL || list=PORTAL_RADIUS || list=RFC1918) && {$addrOwned}]
                 # Read-only API access of the portal: its users (group {$apiGroup}), then the group
                 /user remove [find where group={$apiGroup} && {$o('api', 'user')}]
