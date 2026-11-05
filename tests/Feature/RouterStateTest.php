@@ -801,8 +801,9 @@ class RouterStateTest extends TestCase
         // on the read-only dynamic copy the admin sees in /ip hotspot walled-garden
         $state = $walled([$copy('guest-portal: walled garden'), $hostRow($kHost)], [$ipRow('guest-portal: walled garden')]);
         $this->assertSame('present', $state[$kHost]['status']);
-        // ... and a one-time adopt command on the static entry (decision 2026-11-05): quoted values, never a dynamic row
-        $adoptIp = '/ip hotspot walled-garden ip set [find where comment="guest-portal: walled garden" && dst-address="10.0.0.10" && protocol="tcp" && dst-port="443" && action="accept" && !dynamic] comment="'.$kIp.'"';
+        // ... and a one-time adopt command on the static entry (decision 2026-11-05): comment and dst-address only,
+        // no !dynamic (the ip menu has no dynamic rows; the full condition matched nothing on a 7.24.5 router, v0.29.1)
+        $adoptIp = '/ip hotspot walled-garden ip set [find where comment="guest-portal: walled garden" && dst-address="10.0.0.10"] comment="'.$kIp.'"';
         $this->assertSame(['path' => '/ip hotspot walled-garden ip', 'name' => null, 'status' => 'legacy', 'diff' => [], 'adopt' => $adoptIp, 'info' => 'dynamic_copy'], $state[$kIp]);
         // Two legacy entries: ambiguous, no command; a comment with characters outside the plain set: none either
         $state = $walled([$hostRow($kHost)], [$ipRow('guest-portal'), ['.id' => '*4'] + $ipRow('guest-portal: old')]);
@@ -857,7 +858,7 @@ class RouterStateTest extends TestCase
         $this->assertStringContainsString('data-state-info="dynamic_copy">'.e(__('portal.router_api.info.dynamic_copy')).'</span>', $page);
         $this->assertStringContainsString('data-state-item="'.$kHost.'" data-status="present"', $page);
         // The adopt command of the legacy entry is shown on the card and in the adopt block of the router
-        $adoptIp = '/ip hotspot walled-garden ip set [find where comment="guest-portal" && dst-address="10.0.0.10" && protocol="tcp" && dst-port="443" && action="accept" && !dynamic] comment="'.$kIp.'"';
+        $adoptIp = '/ip hotspot walled-garden ip set [find where comment="guest-portal" && dst-address="10.0.0.10"] comment="'.$kIp.'"';
         $this->assertStringContainsString('data-adopt="'.$kIp.'"><code>'.e($adoptIp).'</code>', $page);
         $this->assertStringContainsString('data-adopt-commands="'.$this->nas->id.'"', $page);
     }

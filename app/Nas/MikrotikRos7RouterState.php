@@ -690,9 +690,16 @@ trait MikrotikRos7RouterState
      * compares protocol=tcp in `find where` as a different type and matches nothing, protocol="tcp" matches
      * (verified on the 7.24.5 and 7.25 CHRs). A comment or value with characters outside the plain set
      * (quotes, backslashes, control characters) gives no command: set by hand.
+     * The /ip hotspot walled-garden ip menu has no dynamic rows and no "dynamic" property (DYNAMIC_MENUS):
+     * its command matches only comment and dst-address, without !dynamic (decision 2026-11-05, v0.29.1: the
+     * full condition matched nothing on a RouterOS 7.24.5 x86 router, comment + dst-address did).
      */
     private static function legacyAdopt(string $path, string $key, string $comment, array $expect): ?string
     {
+        $ipMenu = $path === '/ip hotspot walled-garden ip';
+        if ($ipMenu) {
+            $expect = array_intersect_key($expect, ['dst-address' => true]);
+        }
         $cond = ['comment' => $comment] + $expect;
         foreach ($cond as $value) {
             if (! preg_match('/^[A-Za-z0-9 ._:\/-]+$/D', $value)) {
@@ -701,7 +708,9 @@ trait MikrotikRos7RouterState
         }
         $where = implode(' && ', array_map(fn ($p, $v) => $p.'="'.$v.'"', array_keys($cond), $cond));
 
-        return "{$path} set [find where {$where} && !dynamic] comment=\"{$key}\"";
+        $static = $ipMenu ? '' : ' && !dynamic';
+
+        return "{$path} set [find where {$where}{$static}] comment=\"{$key}\"";
     }
 
     private static function same(string $prop, string $want, string $actual): bool
