@@ -28,7 +28,9 @@ host; not yet tested across real sites and WAN links.
   hash, see 8), the router status of the routers an instance serves (last RADIUS contact, downloads, router API
   access and state, hotspot page fingerprints, failed queries, outdated notifications). Only the home instance of a
   site checks its routers for outdated pages or configuration and notifies the admins ("Update router", v0.30.0);
-  other instances show nothing about them.
+  other instances show nothing about them. The reminder state of the social login secrets (which stage was sent
+  for which expiry date, local setting `social_secret_reminders`, v0.31.0) is local too; only the hub sends these
+  reminders, since the social login settings are hub-only.
 
 ## 2. Requirements
 

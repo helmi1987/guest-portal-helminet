@@ -558,6 +558,12 @@ entries (and own entries of providers no longer offered) as "apply" lines.
 | Apple | `appleid.apple.com`, `appleid.cdn-apple.com`, `idmsa.apple.com`, `gsa.apple.com`, `*.cdn-apple.com` |
 | Facebook | `*.facebook.com`, `*.fbcdn.net`, `*.facebook.net`, `*.fbsbx.com` |
 | GitHub | `github.com`, `*.github.com`, `*.githubassets.com`, `*.githubusercontent.com` |
+| Microsoft | `login.microsoftonline.com`, `login.microsoft.com`, `login.live.com`, `account.live.com` (personal accounts), `auth.gfx.ms`, `*.msauth.net`, `*.msftauth.net` (sign-in page CDNs), `*.msauthimages.net`, `*.msftauthimages.net` (tenant branding) |
+
+The Microsoft hosts (v0.31.0) are the browser sign-in hosts from Microsoft's published Microsoft 365 endpoint list
+(learn.microsoft.com, "Microsoft 365 URLs and IP address ranges", endpoint sets 56, 59, 97 and 116). Work or school
+accounts whose organisation signs in through its own federation server (for example AD FS) also need that server's
+host, which the portal cannot know; add it as an own walled-garden entry.
 
 The list lives in `app/Auth/Social/WalledGarden.php`. Providers change the hosts their sign-in pages load
 from: when a sign-in page stays blank or half-loaded before login, check the blocked hosts in the browser's
@@ -875,6 +881,23 @@ The portal notices when a router's hotspot pages or configuration no longer matc
   `approval.requested`) with a link to the commands. No
   further message while it stays outdated; once up to date again (new fetch or a fresh state), the next change is
   notified again.
+
+### 10e. Social login secrets about to expire
+
+Each social login provider except Apple can carry the expiry date of its secret (Settings → Social login, "Secret
+valid until", v0.31.0). Microsoft secrets expire after at most 24 months (the date is shown under Certificates &
+secrets of the app registration); Google, Facebook and GitHub secrets do not expire by themselves, enter a date only
+when you rotate them. Apple's `.p8` key does not expire.
+- **Display:** the provider card shows the date, amber from 30 days before, red once it has passed; the dashboard and
+  the social login settings show a banner for admins listing the enabled providers within 30 days or past. The
+  provider stays switched on: press "Check" to see whether the provider still accepts the secret.
+- **Reminders:** `portal:secret-reminders` runs daily at 08:10 (container time zone UTC) and sends one message per
+  provider at 90, 60, 30, 14, 7, 3, 2, 1 and 0 days before the date and once after it, to every enabled notification
+  channel (Telegram, Gotify, webhook events `social.secret_expiring` and `social.secret_expired` with `provider`,
+  `provider_name`, `expires_at`, `days`, `url`, signed like `approval.requested`). Each stage is sent once; a new date
+  starts over. In a federation only the hub sends. `php artisan portal:secret-reminders --dry-run` shows what would be
+  sent without sending or storing anything.
+- **Renewing:** create a new secret at the provider, enter it together with its new date, save, press "Check".
 
 ## 11. Sources and verification state
 

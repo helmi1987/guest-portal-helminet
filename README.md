@@ -2,7 +2,7 @@
 
 A self-hosted captive portal ("guest login") for MikroTik RouterOS 7 hotspots across multiple sites.
 Guests authenticate with an admin-issued code, an SMS one-time password, a social login (Google,
-Apple, Facebook, GitHub) or an admin push approval; the router enforces access via RADIUS. Laravel web app and FreeRADIUS ship together in a single
+Apple, Facebook, GitHub, Microsoft) or an admin push approval; the router enforces access via RADIUS. Laravel web app and FreeRADIUS ship together in a single
 multi-arch container image that runs either as a RouterOS container or on any regular Docker host.
 One instance can serve several sites, or each site runs its own instance and instances form a
 federation so access grants are valid at every site.
@@ -29,6 +29,11 @@ guest access has no RADIUS and no per-device release); it works as the internet 
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.31: Microsoft (Entra ID) is the fifth social login provider (work, school and personal accounts, tenant
+  setting, setup guide with every redirect URI, ID token checks, configuration check, walled-garden hosts); each
+  provider secret except Apple's can carry an expiry date, shown on the provider card and as a banner for admins
+  within 30 days, and `portal:secret-reminders` (daily at 08:10) reminds the admins over the notification channels
+  at 90, 60, 30, 14, 7, 3, 2, 1 and 0 days and once after expiry (hub only, one message per provider and stage).
 - v0.30: the portal notices outdated hotspot pages (fingerprint per fetched page) and outdated router
   configuration (stored router state, scheduled read-only check at 06:17 and 18:17 and after an update) and shows
   "Update router" with the commands on the dashboard, site and setup page; the admins get one message per router

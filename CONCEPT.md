@@ -8,7 +8,7 @@ are marked **(to verify)**; proposals not yet confirmed by the maintainer are ma
 
 - Guests on a hotspot network get internet access only after logging in through the portal.
 - Login methods: admin-issued code, SMS one-time password (OTP), push approval by an admin, social login
-  (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0), user account of the site's Active
+  (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0; Microsoft since v0.31.0), user account of the site's Active
   Directory / LDAP (decision 2026-11-03, v0.24.0).
 - Every login requires first name, last name and acceptance of the current terms of use.
 - Multi-site: one instance can serve several sites, or each site runs its own self-sufficient
@@ -355,7 +355,7 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
   order is stored in the existing replicated settings (`login_methods.order`, `social_login.order`, lists of
   keys) and applies to the chooser (the first available method keeps the primary button), the social box, the
   admin settings lists and the guest text preview. Default: the previous fixed order (code, account, SMS,
-  approval, social; Google, Apple, Facebook, GitHub). Stored values are read leniently (unknown and duplicate
+  approval, social; Google, Apple, Facebook, GitHub, Microsoft). Stored values are read leniently (unknown and duplicate
   entries dropped, missing keys appended in default order); form input must list every key exactly once.
   Without JS an arrow button submits the form with `move=<key>:<up|down>` and saves it; with JS the row moves
   in place and is saved with the form. The walled-garden host list keeps the fixed provider order (reordering
@@ -523,7 +523,7 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
    device is reused.
 5. Step 5 of A, triggered automatically from the waiting page.
 
-**D. Social login (Google, Apple, Facebook, GitHub; decision 2026-11-03, v0.22.0)**
+**D. Social login (Google, Apple, Facebook, GitHub, Microsoft; decision 2026-11-03, v0.22.0)**
 1. Guest accepts the terms on the social page and picks a provider (one form button per configured
    provider). Decision 2026-11-05 (v0.30.2): the chooser shows the configured providers as round logos
    (links to the social page, label in `aria-label`/`title`); the social page shows full buttons with logo
@@ -543,6 +543,22 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
    the first space, login as fallback first name), Apple (own provider: `name email`, `response_mode=
    form_post`, nonce, client secret = ES256 JWT of the .p8 key; ID token verified against Apple's JWKS,
    cached 1 h: RS256 signature, iss, aud, exp, nonce; name from the `user` JSON of the first authorisation).
+   Decision 2026-11-05 (v0.31.0, owner): Microsoft (Entra ID) is the fifth provider (default order after GitHub;
+   own provider `App\Auth\Social\MicrosoftProvider`, laravel/socialite has none): `openid profile email`, PKCE,
+   nonce, `response_mode=query`, endpoints `https://login.microsoftonline.com/{tenant}/oauth2/v2.0/authorize` and
+   `.../token` with the tenant from the settings (`common` = work/school and personal accounts, default;
+   `consumers`; `organizations`; a tenant ID or a verified domain). Identity from the ID token of the token response
+   (TLS, as for Google; no Graph call): `iss` must be `https://login.microsoftonline.com/{tid}/v2.0` with the token's
+   own `tid` (with a configured tenant ID also equal to it; the personal-account tenant is not hard-coded), `aud` =
+   client ID, `nonce`, non-empty `sub`. Subject = `sub` (pairwise per application, immutable); `oid` is not used
+   because it correlates the user across applications and adds nothing for a guest login. Names from
+   `given_name`/`family_name` (optional claims of the app registration), else `name` split at the first space; email
+   from `email`, else `preferred_username` only when it contains `@`. Several redirect URIs per app registration
+   are allowed (Microsoft: up to 100 when personal accounts are included, 256 for work or school accounts only;
+   HTTPS, exact match, no wildcards), so every guest origin is registered as for the other providers.
+   Federation: instances before 0.31.0 ignore the Microsoft entry and secret (unknown provider) and leave its
+   walled-garden hosts out of their router scripts, so every instance that serves sites runs 0.31.0 before
+   Microsoft is switched on; the secret `social_secret_microsoft` is a hub-only security setting like the others.
    Outbound requests as in §12 (TLS verified, 10 s, no redirects). Provider errors and failed checks show a
    generic error page; the log gets the reason without tokens or codes.
 4. Apple posts the callback cross-site (`form_post`), without the SameSite=Lax session cookie: that POST
@@ -567,6 +583,10 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
    Guest list: method "Social (provider)", email in full for admins, masked for managers.
 7. Walled garden: the router script adds the sign-in hosts of the configured providers (§13; list in
    `App\Auth\Social\WalledGarden`, docs/guest-network-setup.md 6.6); limited mode does not change it.
+   Decision 2026-11-05 (v0.31.0, owner): the Microsoft hosts are the browser sign-in hosts of Microsoft's published
+   Microsoft 365 endpoint list (sets 56, 59, 97, 116): `login.microsoftonline.com`, `login.microsoft.com`,
+   `login.live.com`, `account.live.com`, `auth.gfx.ms`, `*.msauth.net`, `*.msftauth.net`, `*.msauthimages.net`,
+   `*.msftauthimages.net`; the broad `*.msecnd.net` and the `*.microsoftonline-p.com` hosts of that list stay out.
 
 **E. Directory account (Active Directory / LDAP; decision 2026-11-03, v0.24.0)**
 1. Per site an optional directory (site setting `directory`, site page, admin only): server, port (636),
@@ -615,7 +635,7 @@ every instance of a federation must run 0.24.0 or later before the method is swi
 | Interface | Drivers (initial) | Notes |
 |---|---|---|
 | `SmsDriver` | Twilio, seven.io, ClickSend, Clickatell, SMSAPI, 46elks, Cellsynt, Octopush, SMS Partner, SMS Planet, PromoSMS, SerwerSMS, SMSC, SmsManager, GTX Messaging, ASPSMS, eCall, SMSEagle, Free Mobile (test only), generic SMS webhook | Outbound only, one class per provider in `app/Sms/Drivers` on `HttpSmsDriver` (OutboundHttp, 15 s, errors as HTTP status or provider code only, `SmsFailure` with the recipient flag for the failover, §7.2 B). Selection (decision 2026-11-04, v0.26.0): the SMS providers of Uptime Kuma with a plain HTTPS API, plus ASPSMS and eCall (Switzerland); not taken: providers with time-based request signing and SDKs (Aliyun, also Huawei and similar), chat/push services (WhatsApp, Signal, Telegram etc. are not SMS), regional ones outside the scope (SMS.ir, AmootSMS, EgoSMS, BearSMS, Ooredoo Maldives), device gateways that need a reachable phone or router (Android SMS gateway, Teltonika); Plivo and Telnyx would fit and can follow. Each driver's docblock cites the provider docs it was verified against (2026-11-04) and names the unverified points (notably PromoSMS: no public docs, format from Uptime Kuma's driver; Cellsynt: parameter details from the PDF manual; Free Mobile: community sources). Numbers in the provider's notation (E.164 with or without "+", Cellsynt 00-prefix), text UTF-8, unicode flag where the provider needs one (GSM 03.38 check). Clickatell: API key in `Authorization` header, endpoint configurable; request/response format **(to verify)** with a real account. SMS webhook: JSON `{event, to, text}` signed like the notification webhook. |
-| `NotificationChannel` | Telegram, Gotify, generic webhook | Webhook: JSON + `X-Signature` HMAC-SHA256, timestamp header against replay. Events (`event`): `approval.requested`, `approval.decided`, `test`, and since v0.30.0 `router.outdated` and `router.unreachable` (outdated routers, §10.5). |
+| `NotificationChannel` | Telegram, Gotify, generic webhook | Webhook: JSON + `X-Signature` HMAC-SHA256, timestamp header against replay. Events (`event`): `approval.requested`, `approval.decided`, `test`, since v0.30.0 `router.outdated` and `router.unreachable` (outdated routers, §10.5), since v0.31.0 `social.secret_expiring` and `social.secret_expired` (§9). |
 
 ## 8. Codes / access grants
 
@@ -740,8 +760,8 @@ All login methods produce a **grant**; a code is a grant created in advance.
   a switched-on method whose prerequisite is missing (enabled SMS provider, enabled notification channel,
   a ready social provider, hub reachable) shows a hint, because guests are only offered available
   methods. Settings → "Social login": access duration (hours, from login) and one card per provider
-  (Google, Apple, Facebook, GitHub): enabled, client ID (Apple: services ID), secret (Apple: the `.p8`
-  private key, validated as EC P-256; plus team ID and key ID, 10 characters each), status (secret
+  (Google, Apple, Facebook, GitHub, Microsoft): enabled, client ID (Apple: services ID), secret (Apple: the `.p8`
+  private key, validated as EC P-256; plus team ID and key ID, 10 characters each; Microsoft: plus the tenant), status (secret
   stored / unreadable / none, ready or what is missing, warning when ready but the social switch is
   off), the redirect URIs to register and a translated setup guide. Secrets are encrypted with the
   federation data key (§10.2), masked, never logged, audited (`settings.social` records only
@@ -758,6 +778,34 @@ All login methods produce a **grant**; a code is a grant created in advance.
   data gives `incomplete` without a request, transport errors or other answers `unreachable` with the
   HTTP status. Apple's client secret is an ES256 JWT built per request (`AppleClientSecret`, 5 minutes).
   Only provider, outcome and HTTP status are logged; audited `settings.social_checked`.
+  Decision 2026-11-05 (v0.31.0, owner): Microsoft's check posts the token request to the tenant's token endpoint;
+  `invalid_client` (client authentication failed) and `unauthorized_client` (application unknown in the tenant) mean
+  rejected, `invalid_grant` (invalid code) means accepted; an invalid stored tenant gives `incomplete` (missing
+  item "tenant" on the card, provider not ready).
+  Decision 2026-11-05 (v0.31.0, owner): every provider secret except Apple's can carry an optional expiry date
+  ("Secret valid until", `secret_expires_at` Y-m-d in the provider's public fields of `social_login`; between
+  2000-01-01 and today + 30 years; removing the secret removes the date; audited as `valid_until`). Apple's `.p8` key
+  does not expire, so Apple has no date. Google, Facebook and GitHub secrets do not expire by themselves (the date
+  is for admins who rotate them); Microsoft secrets expire after at most 24 months. Status on the card: "Secret valid
+  until d.m.Y", amber "expires in N days" from 30 days, "expires today", red "Secret expired on ...". The date only
+  informs: the provider stays enabled and ready when it has passed (the date may be wrong; the check button tells
+  the truth). Banner "Social login secrets expire" for admins only (dashboard next to "Update router", and above the
+  social login settings): the enabled providers whose date is within 30 days or past, in display order, each with a
+  link to `#social-<provider>`. Reminders: see the bullet "Social login secret reminders" below. The admin OIDC
+  login secret (`oidc_client_secret`) has no date (out of scope).
+- **Social login secret reminders** (decision 2026-11-05, v0.31.0, owner): `portal:secret-reminders` (daily at
+  08:10 UTC, without overlapping, `--dry-run` prints what would be sent and stores nothing) sends one message per
+  enabled provider with a date at the stages 90, 60, 30, 14, 7, 3, 2, 1 and 0 days before it (0 = expires today)
+  and once after it ("expired"), over every enabled notification channel (`announce()`, as for outdated routers):
+  title "Social login: secret expires" / "... expired", lines provider, date, days left, link
+  `<admin URL>/admin/settings#social-<provider>`, language of the notification setting; webhook events
+  `social.secret_expiring` and `social.secret_expired` with `provider`, `provider_name`, `expires_at`, `days`, `url`.
+  Each stage is sent once per provider and date: the local setting `social_secret_reminders` (`local_settings`,
+  never replicated) keeps per provider the date and the last stage sent; another date starts over; only the latest
+  reached stage is sent (stages missed while the scheduler was down are not sent afterwards). Switched-off
+  providers get none. In a federation only the hub sends (`Topology::isHub()`; a standalone instance is its own
+  hub), since `social_login` is a hub-only setting; after a hub change the new hub may repeat the current stage
+  once. One info log line per message, a warning per failed channel (secrets redacted).
 - First-start web setup: first admin (one-time setup token in container log), URLs, TLS source,
   "create federation" or "join federation".
   Until it exists (and later as fallback), `artisan portal:admin` creates an admin or manager
@@ -783,7 +831,7 @@ Features:
 | MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
 | Approvals | Pending requests (approve/deny in UI as well). |
 | Channels | Notification channels and SMS providers (v0.26.0: provider list with badges «Aktiv» / «Reserve n» / «Aus», buttons «Aktiv setzen» and «Nach oben/unten», outage banner, help line per driver; §7.2 B), test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
-| Login methods | Decision 2026-11-03 (v0.22.0, admin only, Settings): switch per guest login method with prerequisite hints; social login providers (Google, Apple, Facebook, GitHub) with encrypted secrets, redirect URIs per guest origin, setup guide and check button (see the bullet above); switch and default access duration of the account login (v0.24.0, directory per site, §7.2 E). |
+| Login methods | Decision 2026-11-03 (v0.22.0, admin only, Settings): switch per guest login method with prerequisite hints; social login providers (Google, Apple, Facebook, GitHub, Microsoft) with encrypted secrets, redirect URIs per guest origin, setup guide and check button (see the bullet above); switch and default access duration of the account login (v0.24.0, directory per site, §7.2 E). |
 | Terms | Text per language, versioned; new version requires re-acceptance on next login; default texts in all languages (shown until published, publishable by button). |
 | Guest texts | Decision 2026-11-03 (v0.23.0, admin only, System → Guest texts, `/admin/texts`): labels and texts of the guest pages editable per language, with a live preview. Storage: replicated setting `guest_texts` (key → locale → text), not a security setting, so any instance may edit it (like `sms_text`); global for all sites (site-specific texts are out of scope). Only an allowlist of lang keys (`App\Guest\GuestTexts::KEYS`: titles, intros, method buttons, form labels, SMS/approval/social/status texts, notices, error pages) is editable; plain text, one line, max. 500 characters; empty or equal to the default = default (only differences are stored); every placeholder of the default (`:provider`, `:phone`, `:minutes`, `:version`) must stay. Saving is per language and audited (`settings.guest_texts` with locale and changed keys). Applied by the middleware `guest.texts` of the guest routes only (`Lang::addLines` for the guest's locale, undone after the response); admin pages, voucher prints, SMS and notification texts keep their own texts. Preview: an iframe on the admin page loads `/admin/texts/preview` (admin listener, admin only), which renders the real guest views with demo data (`App\Guest\GuestPreview`: first site or the selected one for branding, demo phone and remaining time, current terms) and never creates sessions, grants, audit rows or driver calls; links and forms of the guest views lead to the next preview screen. The admin page posts its unsaved drafts to the iframe (debounced 300 ms, `POST /admin/texts/preview`, never stored); a click inside the preview asks the page by `postMessage` to re-post the drafts for the next screen. Without JS the preview shows the saved texts and its links work. Framing: §12. |
 | Retention | Retention period (default 1 year); nightly purge job. |
