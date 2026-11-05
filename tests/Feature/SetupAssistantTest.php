@@ -236,13 +236,23 @@ class SetupAssistantTest extends TestCase
         }
         $this->assertStringNotContainsString('popup', $alogin);
 
-        // The fetch block of the assistant writes all four into the html-directory.
+        // The fetch block of the assistant writes all four into the html-directory: one { ... } block (pasted into the
+        // terminal, RouterOS runs the fetches one after another, decision 2026-11-05, v0.30.0), then one check per page.
         $fetch = $this->site->driver()->loginPageFetch($this->site, $this->nas);
         $this->assertSame(4, substr_count($fetch, '/tool fetch '));
+        $code = array_values(array_filter(explode("\n", $fetch), fn ($line) => ! str_starts_with($line, '#')));
+        $this->assertSame('{', $code[0]);
+        $this->assertSame('}', end($code));
+        $this->assertSame(1, substr_count($fetch, "\n{\n"));
+        $this->assertSame(4, preg_match_all('/^    :if \(\[:len \[\/file find where name="hotspot\/[a-z]+\.html"\]\] > 0\) do=\{:put /m', $fetch));
         foreach (['login', 'status', 'logout', 'alogin'] as $page) {
             $this->assertStringContainsString("/router-login/{$this->nas->id}/{$page}.html\"", $fetch);
-            $this->assertStringContainsString("dst-path=hotspot/{$page}.html", $fetch);
+            $this->assertStringContainsString("dst-path=hotspot/{$page}.html} on-error={:put \"FAILED fetch {$page}.html\"}", $fetch);
+            $this->assertStringContainsString(":put (\"ok {$page}.html (\" . [/file get [find where name=\"hotspot/{$page}.html\"] size] . \" bytes)\")", $fetch);
+            $this->assertStringContainsString("else={:put \"MISSING {$page}.html\"}", $fetch);
         }
+        // The fetches come before the checks
+        $this->assertLessThan(strpos($fetch, ':if ('), strrpos($fetch, '/tool fetch '));
 
         // Admin download offers every page.
         $admin = User::factory()->admin()->create();

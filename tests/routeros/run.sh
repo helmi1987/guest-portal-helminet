@@ -567,6 +567,13 @@ for MODE in "${MODES[@]}"; do
 
     log "[$MODE] hotspot pages fetch ($PAGES)"
     run_block "$R/login_fetch.rsc" "[$MODE] login_fetch"
+    # One { ... } block (decision 2026-11-05, v0.30.0): the fetches run one after another, then one line per page
+    for p in $PAGES; do
+        check "[$MODE] login_fetch reports ok $p.html with its size" \
+            grep -qE "(^|[[:space:]])ok $p\.html \([0-9]+ bytes\)" "$WORK/out-login_fetch.rsc.txt"
+    done
+    check "[$MODE] login_fetch reports no FAILED or MISSING page" \
+        bash -c "! grep -qE '(^|[[:space:]])(FAILED fetch|MISSING) [a-z]+\.html' '$WORK/out-login_fetch.rsc.txt'"
     sleep 2
     html=$(ros ":foreach f in=[/file find where name~\"(login|status|logout|alogin).html\\\$\"] do={ :put ([/file get \$f name] . \" \" . [/file get \$f size]) }")
     echo "$html" | sed 's/^/    | /'

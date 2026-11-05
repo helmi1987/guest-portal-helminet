@@ -868,6 +868,12 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         ];
     }
 
+    /**
+     * Fetch of the hotspot pages (decision 2026-11-05, v0.30.0): one { ... } block, so a paste into the terminal runs
+     * the fetches one after another (pasted as single lines, the terminal does not wait for /tool fetch and the
+     * following lines get lost). A failed fetch prints FAILED and the block goes on; at the end one line per page:
+     * "ok <page>.html (<size> bytes)" or "MISSING <page>.html".
+     */
     public function loginPageFetch(Site $site, NasClient $nas): string
     {
         $url = rtrim(self::url($this->portalUrl($site)), '/').'/router-login/'.$nas->id.'/';
@@ -876,14 +882,21 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         $dir = $this->guestValues($site)['html_directory'];
         $n = self::NAME;
         $fetch = implode("\n", array_map(fn (string $page) => <<<RSC
-            /tool fetch url="{$url}{$page}.html" http-header-field="X-Portal-Token: {$token}" \\
-                src-address={$nasIp} check-certificate=yes dst-path={$dir}/{$page}.html
+                :do {/tool fetch url="{$url}{$page}.html" http-header-field="X-Portal-Token: {$token}" \\
+                    src-address={$nasIp} check-certificate=yes dst-path={$dir}/{$page}.html} on-error={:put "FAILED fetch {$page}.html"}
+            RSC, self::PAGES));
+        $check = implode("\n", array_map(fn (string $page) => <<<RSC
+                :if ([:len [/file find where name="{$dir}/{$page}.html"]] > 0) do={:put ("ok {$page}.html (" . [/file get [find where name="{$dir}/{$page}.html"] size] . " bytes)")} else={:put "MISSING {$page}.html"}
             RSC, self::PAGES));
 
         return <<<RSC
         # Hotspot pages (login, status, logout, alogin) into the html-directory of the hotspot profile "{$n}"
         # (setup assistant: {$dir}); must match /ip hotspot profile print where name={$n}
+        # Paste the whole block at once: the fetches inside { } run one after another, then one line per page.
+        {
         {$fetch}
+        {$check}
+        }
         RSC;
     }
 
