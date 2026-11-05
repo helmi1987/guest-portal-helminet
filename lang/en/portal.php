@@ -70,8 +70,8 @@ return [
         'logout' => 'Log out',
         'refresh' => 'Refresh',
         'logged_out_title' => 'Logged out',
-        'logged_out' => 'You are logged out. The connection ends within a few seconds. To go online again, open the guest Wi-Fi login and enter your code again.',
-        'logged_out_timeout' => 'You are logged out. This Wi-Fi ends the connection only when the session time of your login is over. To go online again later, open the guest Wi-Fi login and enter your code again.',
+        'logged_out' => 'You are logged out. The connection ends within a few seconds. To go online again, open the guest Wi-Fi login and sign in again.',
+        'logged_out_timeout' => 'You are logged out. This Wi-Fi ends the connection only when the session time of your login is over. To go online again later, open the guest Wi-Fi login and sign in again.',
         'router_failed_notice' => 'The last login did not complete at the router. Please try again.',
         'access_ended' => [
             'logged_out' => 'You have logged out.',

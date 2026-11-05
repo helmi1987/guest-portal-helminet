@@ -70,8 +70,8 @@ return [
         'logout' => 'Se déconnecter',
         'refresh' => 'Actualiser',
         'logged_out_title' => 'Déconnecté',
-        'logged_out' => 'Vous êtes déconnecté. La connexion se termine dans quelques secondes. Pour revenir en ligne, ouvrez la page de connexion du Wi-Fi invités et saisissez à nouveau votre code.',
-        'logged_out_timeout' => 'Vous êtes déconnecté. Ce Wi-Fi ne termine la connexion qu\'à la fin de la durée de session de votre connexion. Pour revenir en ligne plus tard, ouvrez la page de connexion du Wi-Fi invités et saisissez à nouveau votre code.',
+        'logged_out' => 'Vous êtes déconnecté. La connexion se termine dans quelques secondes. Pour revenir en ligne, ouvrez la page de connexion du Wi-Fi invités et reconnectez-vous.',
+        'logged_out_timeout' => 'Vous êtes déconnecté. Ce Wi-Fi ne termine la connexion qu\'à la fin de la durée de session de votre connexion. Pour revenir en ligne plus tard, ouvrez la page de connexion du Wi-Fi invités et reconnectez-vous.',
         'router_failed_notice' => 'La dernière connexion n\'a pas abouti sur le routeur. Veuillez réessayer.',
         'access_ended' => [
             'logged_out' => 'Vous vous êtes déconnecté.',

@@ -70,8 +70,8 @@ return [
         'logout' => 'Disconnetti',
         'refresh' => 'Aggiorna',
         'logged_out_title' => 'Disconnesso',
-        'logged_out' => 'Sei disconnesso. La connessione termina entro pochi secondi. Per tornare online, apri la pagina di accesso del Wi-Fi ospiti e inserisci di nuovo il tuo codice.',
-        'logged_out_timeout' => 'Sei disconnesso. Questo Wi-Fi termina la connessione solo alla fine della durata della sessione del tuo accesso. Per tornare online più tardi, apri la pagina di accesso del Wi-Fi ospiti e inserisci di nuovo il tuo codice.',
+        'logged_out' => 'Sei disconnesso. La connessione termina entro pochi secondi. Per tornare online, apri la pagina di accesso del Wi-Fi ospiti e accedi di nuovo.',
+        'logged_out_timeout' => 'Sei disconnesso. Questo Wi-Fi termina la connessione solo alla fine della durata della sessione del tuo accesso. Per tornare online più tardi, apri la pagina di accesso del Wi-Fi ospiti e accedi di nuovo.',
         'router_failed_notice' => 'L\'ultimo accesso non è stato completato dal router. Riprova.',
         'access_ended' => [
             'logged_out' => 'Ti sei disconnesso.',

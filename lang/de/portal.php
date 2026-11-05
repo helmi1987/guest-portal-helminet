@@ -70,8 +70,8 @@ return [
         'logout' => 'Abmelden',
         'refresh' => 'Aktualisieren',
         'logged_out_title' => 'Abgemeldet',
-        'logged_out' => 'Du bist abgemeldet. Die Verbindung endet in wenigen Sekunden. Um wieder online zu gehen, öffne die Anmeldung des Gäste-WLANs und gib deinen Code erneut ein.',
-        'logged_out_timeout' => 'Du bist abgemeldet. Dieses WLAN beendet die Verbindung erst, wenn die Sitzungszeit deiner Anmeldung abgelaufen ist. Um später wieder online zu gehen, öffne die Anmeldung des Gäste-WLANs und gib deinen Code erneut ein.',
+        'logged_out' => 'Du bist abgemeldet. Die Verbindung endet in wenigen Sekunden. Um wieder online zu gehen, öffne die Anmeldung des Gäste-WLANs und melde dich erneut an.',
+        'logged_out_timeout' => 'Du bist abgemeldet. Dieses WLAN beendet die Verbindung erst, wenn die Sitzungszeit deiner Anmeldung abgelaufen ist. Um später wieder online zu gehen, öffne die Anmeldung des Gäste-WLANs und melde dich erneut an.',
         'router_failed_notice' => 'Die letzte Anmeldung wurde vom Router nicht abgeschlossen. Bitte versuche es erneut.',
         'access_ended' => [
             'logged_out' => 'Du hast dich abgemeldet.',
