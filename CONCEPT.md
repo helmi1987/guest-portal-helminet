@@ -251,7 +251,7 @@ Disconnect-Request support completes the job once and marks the session (`discon
 (`tests/nas-sim`, Docker and Playwright) checks the driver against the documented conventions, not against real
 devices. Guide: [docs/generic-captive-portal.md](docs/generic-captive-portal.md).
 
-Decision 2026-11-05 (v0.29.3, owner): **no FRITZ!Box driver**, not even experimental. A desk study (AVM TR-064
+Decision 2026-11-05 (v0.30.1, owner): **no FRITZ!Box driver**, not even experimental. A desk study (AVM TR-064
 specifications, knowledge base, FRITZ!OS release notes up to 8.25, Home Assistant source; no hardware) found that
 FRITZ!OS has no RADIUS, no redirect to an external portal and no per-device internet control for guest devices
 (`X_AVM-DE_HostFilter:DisallowWANAccessByIP` is reserved for home network devices; the consent page puts the device

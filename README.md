@@ -34,6 +34,8 @@ guest access has no RADIUS and no per-device release); it works as the internet 
   "Update router" with the commands on the dashboard, site and setup page; the admins get one message per router
   and transition over the notification channels (also when a router is unreachable twice in a row). The fetch block of the hotspot
   pages is one `{ ... }` block (pasted lines got lost) and ends with an `ok`/`MISSING` line per page.
+  v0.30.1 documents why an AVM FRITZ!Box cannot be a NAS and how it works as the internet router in front of a
+  MikroTik ([docs/fritzbox.md](docs/fritzbox.md)).
 - v0.29: the portal generates all four MikroTik hotspot pages (`login.html`, `status.html`, `logout.html`,
   `alogin.html`), so a logged-in guest who opens the hotspot again sees the portal status page instead of the RouterOS
   default; the status page shows usage (connected time, data, as of the last accounting update) and a "Log out" that
