@@ -31,6 +31,7 @@ use App\Http\Controllers\Guest\PortalController;
 use App\Http\Controllers\Guest\SocialLoginController;
 use App\Http\Controllers\LocaleController;
 use App\Livewire\Admin\Login;
+use App\Nas\ServesHotspotPages;
 use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\Support\Facades\Route;
@@ -207,7 +208,8 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     ->whereIn('locale', config('portal.locales'));
 
                 Route::resource('sites', SiteController::class)->except(['show']);
-                Route::get('/sites/{site}/login.html', [SiteController::class, 'loginPage'])->name('sites.login-page');
+                Route::get('/sites/{site}/{page}.html', [SiteController::class, 'loginPage'])->name('sites.login-page')
+                    ->whereIn('page', ServesHotspotPages::PAGES);
                 Route::post('/sites/{site}/branding', [BrandingController::class, 'updateSite'])->name('sites.branding');
                 Route::post('/sites/{site}/take-over', [SiteController::class, 'takeOver'])->name('sites.take-over');
                 // Directory for the account login (CONCEPT.md §7.2 E): settings and check button.

@@ -159,7 +159,9 @@ foreach ($wifiModes as $i => $mode) {
     $files['router.rsc'] = $driver->configScript($site, $nas);
     $files['login_fetch.rsc'] = $driver->loginPageFetch($site, $nas);
     $files['api_access.rsc'] = $driver->apiAccessCommands($site, $nas);
-    file_put_contents($dir.'/login.html', $driver->loginPage($site));
+    foreach ($driver->hotspotPages($site) as $page => $html) {
+        file_put_contents($dir.'/'.$page.'.html', $html);
+    }
     file_put_contents($dir.'/nas_id', (string) $nas->id);
     file_put_contents($dir.'/keys', implode("\n", array_unique(array_merge(...array_map(fn ($objects) => array_map(fn ($id, $o) => $o['key'] ?? $id,
         array_keys($objects), $objects), array_values($driver->managedObjects($site))))))."\n");

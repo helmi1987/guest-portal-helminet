@@ -3,7 +3,8 @@
 
 Serves, like RouterCertController / RouterLoginPageController:
   /router-cert/<id>/fingerprint | router.crt | router.key   (files from <cert-dir>, read on each request)
-  /router-login/<id>/login.html                              (from <login-dir>/<id>/login.html or <login-dir>/login.html)
+  /router-login/<id>/<page>.html, page login|status|logout|alogin
+                                                             (from <login-dir>/<id>/<page>.html or <login-dir>/<page>.html)
 Only with header "X-Portal-Token: <token>" (403 otherwise). The source IP is logged but not checked:
 with qemu user networking every request arrives from the NAT address, not from the router's src-address.
 
@@ -48,11 +49,14 @@ class Handler(BaseHTTPRequestHandler):
             if name == "fingerprint":
                 return self.send(200, fingerprint().encode())
             return self.send(200, open(os.path.join(CERT_DIR, name), "rb").read(), "application/x-pem-file")
-        m = re.fullmatch(r"/router-login/([0-9A-Za-z]+)/login\.html", self.path)
+        m = re.fullmatch(r"/router-login/([0-9A-Za-z]+)/(login|status|logout|alogin)\.html", self.path)
         if m:
-            path = os.path.join(LOGIN_DIR, m.group(1), "login.html")
+            page = m.group(2) + ".html"
+            path = os.path.join(LOGIN_DIR, m.group(1), page)
             if not os.path.exists(path):
-                path = os.path.join(LOGIN_DIR, "login.html")
+                path = os.path.join(LOGIN_DIR, page)
+            if not os.path.exists(path):
+                return self.send(404, b"not found")
             return self.send(200, open(path, "rb").read(), "text/html; charset=utf-8")
         return self.send(404, b"not found")
 

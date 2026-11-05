@@ -3,25 +3,43 @@
 namespace App\Http\Controllers;
 
 use App\Http\Controllers\Concerns\AuthorizesRouter;
+use App\Models\Site;
+use App\Nas\ServesHotspotPages;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
 
 /**
- * Generated hotspot login.html for /tool fetch on the router (setup assistant, CONCEPT.md §9).
- * Same authentication as the router certificate download (token + NAS IP).
+ * Generated hotspot pages for /tool fetch on the router (setup assistant, CONCEPT.md §9): login.html, and for
+ * drivers with ServesHotspotPages also status.html, logout.html and alogin.html (decision 2026-11-05, v0.29.0).
+ * Same authentication as the router certificate download (token + NAS IP); a page the driver does not have is
+ * 404 (after the authentication, so unknown routers still get 403).
  */
 class RouterLoginPageController extends Controller
 {
     use AuthorizesRouter;
 
-    public function __invoke(Request $request, string $nas): Response
+    public function __invoke(Request $request, string $nas, string $page): Response
     {
-        $nas = $this->authorizeRouter($request, $nas, 'Router login page download');
+        $nas = $this->authorizeRouter($request, $nas, 'Router hotspot page download');
+        $html = self::pages($nas->site)[$page] ?? null;
+        abort_if($html === null, 404);
         $nas->markSeen('login_page_fetched_at');
 
-        return response($nas->site->driver()->loginPage($nas->site), 200, [
+        return response($html, 200, [
             'Content-Type' => 'text/html; charset=utf-8',
             'Cache-Control' => 'no-store',
         ]);
+    }
+
+    /**
+     * Hotspot pages of the site's driver, page name => HTML: all of ServesHotspotPages, else the login page only.
+     *
+     * @return array<string, string>
+     */
+    public static function pages(Site $site): array
+    {
+        $driver = $site->driver();
+
+        return $driver instanceof ServesHotspotPages ? $driver->hotspotPages($site) : ['login' => $driver->loginPage($site)];
     }
 }

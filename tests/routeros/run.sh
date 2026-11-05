@@ -77,6 +77,19 @@ snapshot() { # <file>
     } > "$1"
 }
 
+# Hotspot pages of the portal (decision 2026-11-05, v0.29.0) and the redirect target each must contain, with the
+# RouterOS variables unexpanded in the file (they are expanded only when the hotspot serves the page).
+PAGES="login status logout alogin"
+expected_target() { # <page>; site slug of the current $MODE
+    local q='&amp;mac=$(mac-esc)&amp;ip=$(ip)&amp;link-login-only=$(link-login-only-esc)'
+    case $1 in
+        login) printf '%s' "/portal?site=site-$MODE$q"'&amp;link-orig=$(link-orig-esc)' ;;
+        status) printf '%s' "/portal/status?site=site-$MODE$q" ;;
+        logout) printf '%s' "/portal?site=site-$MODE$q\"" ;;
+        alogin) printf '%s' 'url=$(link-redirect)' ;;
+    esac
+}
+
 certs() { ros ':foreach c in=[/certificate find] do={ :put ([/certificate get $c name] . "|" . $c . "|" . [/certificate get $c fingerprint] . "|key=" . [/certificate get $c private-key]) }' | sort; }
 profile() { ros ":put ([/ip hotspot profile get [find where name=\"$N\"] ssl-certificate] . \"|\" . [:tostr [/ip hotspot profile get [find where name=\"$N\"] login-by]])" | tr ';' ','; }
 profile_ok() { # <label>
@@ -436,7 +449,7 @@ echo "router IP $ROUTER_IP, portal stub https://portal.example.com:$PORTAL_PORT 
 ros '/system resource print' | grep -E 'version|board-name|uptime'
 bash ./pki.sh "$WORK/pki" >/dev/null || { echo "PKI generation failed"; exit 1; }
 (cd "$REPO" && php tests/routeros/render.php "$WORK/rsc" "$ROUTER_IP" "$PORTAL_IP" "$PORTAL_PORT") || { echo "render failed"; exit 1; }
-for m in "${MODES[@]}"; do mkdir -p "$WORK/login/$(cat "$WORK/rsc/$m/nas_id")"; cp "$WORK/rsc/$m/login.html" "$WORK/login/$(cat "$WORK/rsc/$m/nas_id")/"; done
+for m in "${MODES[@]}"; do mkdir -p "$WORK/login/$(cat "$WORK/rsc/$m/nas_id")"; for p in $PAGES; do cp "$WORK/rsc/$m/$p.html" "$WORK/login/$(cat "$WORK/rsc/$m/nas_id")/"; done; done
 
 python3 "$HERE/stub_portal.py" "$PORTAL_PORT" "$WORK/pki/portal/leaf.crt" "$WORK/pki/portal/router.key" \
     "$WORK/pki/current" "$WORK/login" "$TOKEN" "$WORK/stub.log" &
@@ -552,16 +565,18 @@ for MODE in "${MODES[@]}"; do
     check_cert_state "[$MODE] after rotation" "$WORK/pki/leaf2"
     check "[$MODE] no leftover .crt/.key files" test "$(ros ":put [:len [/file find where name=\"$N.crt\" || name=\"$N.key\"]]")" = 0
 
-    log "[$MODE] login.html fetch"
+    log "[$MODE] hotspot pages fetch ($PAGES)"
     run_block "$R/login_fetch.rsc" "[$MODE] login_fetch"
     sleep 2
-    html=$(ros ":foreach f in=[/file find where name~\"login.html\\\$\"] do={ :put ([/file get \$f name] . \" \" . [/file get \$f size]) }")
+    html=$(ros ":foreach f in=[/file find where name~\"(login|status|logout|alogin).html\\\$\"] do={ :put ([/file get \$f name] . \" \" . [/file get \$f size]) }")
     echo "$html" | sed 's/^/    | /'
     check "[$MODE] foreign hotspot-other/login.html untouched" \
         test "$(ros ':put [/file get [find name="hotspot-other/login.html"] contents]')" = "foreign login page"
     hdir=$(ros ":put [/ip hotspot profile get [find where name=\"$N\"] html-directory]")
-    check "[$MODE] login.html in the profile's html-directory ($hdir) is the portal page" \
-        grep -q "portal.example.com" <<<"$(ros ":put [/file get [find name=\"$hdir/login.html\"] contents]")"
+    for p in $PAGES; do
+        check "[$MODE] $p.html in the profile's html-directory ($hdir) is the portal page, variables intact" \
+            grep -qF "$(expected_target "$p")" <<<"$(ros ":put [/file get [find name=\"$hdir/$p.html\"] contents]")"
+    done
 
     log "[$MODE] diagnostics blocks (read-only)"
     # (output shortened: the prints are in $WORK/out-diagnostics.*)
@@ -573,11 +588,13 @@ for MODE in "${MODES[@]}"; do
     check "[$MODE] diagnostics print the default profile (html-directory)" \
         grep -q 'name="default".*html-directory=' <(tr -d '\n' < "$WORK/out-diagnostics.verify.rsc.txt")
 
-    log "[$MODE] hotspot block again after the login.html upload"
+    log "[$MODE] hotspot block again after the hotspot pages upload"
     run_block "$R/hotspot.hotspot.rsc" "[$MODE] hotspot.hotspot (re-run)"
     wait_cert_script
-    check "[$MODE] uploaded login.html survives re-creating the hotspot" \
-        grep -q "portal.example.com" <<<"$(ros ":put [/file get [find name=\"$hdir/login.html\"] contents]")"
+    for p in $PAGES; do
+        check "[$MODE] uploaded $p.html survives re-creating the hotspot" \
+            grep -qF "$(expected_target "$p")" <<<"$(ros ":put [/file get [find name=\"$hdir/$p.html\"] contents]")"
+    done
     check "[$MODE] re-created profile has no certificate yet only if missing (cert exists: https set)" \
         test "$(profile | cut -d'|' -f1)" = "$N"
 
@@ -674,7 +691,7 @@ for MODE in "${MODES[@]}"; do
     #   global settings /radius incoming, /interface wifi capsman enabled, /caps-man manager enabled;
     #   created by RouterOS itself: the CAPsMAN certificates of "/interface wifi capsman set enabled=yes",
     #   the disabled "place hotspot rules here" placeholders and the default files of the hotspot
-    #   html-directory (shared with other hotspots, login.html is not removed)
+    #   html-directory (shared with other hotspots, the hotspot pages are not removed)
     allowed='/radius incoming set|/interface wifi capsman set|/caps-man manager set|WiFi-CAPsMAN-|.*comment="place hotspot rules here"|(flash/)?hotspot(/|\|)|flash\|'
     d=$(diff "$WORK/before.txt" "$WORK/after-$MODE.txt" | grep '^[<>]' | grep -vE "^[<>] ($allowed)")
     if [ -z "$d" ]; then

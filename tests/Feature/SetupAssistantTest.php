@@ -208,6 +208,50 @@ class SetupAssistantTest extends TestCase
         $this->assertNotNull($this->nas->fresh()->login_page_fetched_at);
     }
 
+    public function test_router_fetches_four_hotspot_pages_with_their_redirect_targets(): void
+    {
+        $get = fn (string $page, string $ip = '10.0.1.1', ?string $token = null) => $this->withServerVariables(['PORTAL_ZONE' => 'guest', 'REMOTE_ADDR' => $ip])
+            ->withHeader('X-Portal-Token', $token ?? $this->nas->cert_token)->get("/router-login/{$this->nas->id}/{$page}.html");
+        $vars = '&amp;mac=$(mac-esc)&amp;ip=$(ip)&amp;link-login-only=$(link-login-only-esc)';
+
+        // Same authentication for every page; an unknown page is 404, also before the token check.
+        $get('status', '10.0.9.9')->assertForbidden();
+        $get('logout', token: 'wrong')->assertForbidden();
+        $get('rlogin')->assertNotFound();
+        $this->assertNull($this->nas->fresh()->login_page_fetched_at);
+
+        $get('status')->assertOk()->assertHeader('Cache-Control', 'no-store, private')
+            ->assertSee('url=https://portal.example.com/portal/status?site=site-a'.$vars.'"', false);
+        $this->assertNotNull($this->nas->fresh()->login_page_fetched_at);
+        $get('logout')->assertOk()->assertSee('url=https://portal.example.com/portal?site=site-a'.$vars.'"', false);
+        $get('login')->assertOk()->assertSee('url=https://portal.example.com/portal?site=site-a'.$vars.'&amp;link-orig=$(link-orig-esc)"', false);
+        $alogin = $get('alogin')->assertOk()->assertSee('url=$(link-redirect)"', false)->assertSee('<a href="$(link-redirect)">', false)->getContent();
+        // No JavaScript, no popup, and no "$(" besides the RouterOS variables (RouterOS reads every "$(" as one).
+        foreach (['login', 'status', 'logout', 'alogin'] as $page) {
+            $html = $get($page)->getContent();
+            $this->assertStringNotContainsString('<script', $html);
+            $this->assertSame([], array_diff(preg_match_all('/\$\(([a-z-]+)\)/', $html, $m) ? $m[1] : [],
+                ['mac-esc', 'ip', 'link-login-only-esc', 'link-orig-esc', 'link-redirect']));
+            $this->assertSame(substr_count($html, '$('), count($m[1]));
+        }
+        $this->assertStringNotContainsString('popup', $alogin);
+
+        // The fetch block of the assistant writes all four into the html-directory.
+        $fetch = $this->site->driver()->loginPageFetch($this->site, $this->nas);
+        $this->assertSame(4, substr_count($fetch, '/tool fetch '));
+        foreach (['login', 'status', 'logout', 'alogin'] as $page) {
+            $this->assertStringContainsString("/router-login/{$this->nas->id}/{$page}.html\"", $fetch);
+            $this->assertStringContainsString("dst-path=hotspot/{$page}.html", $fetch);
+        }
+
+        // Admin download offers every page.
+        $admin = User::factory()->admin()->create();
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/setup")->assertOk()
+            ->assertSee('data-hotspot-page="alogin"', false)->assertSee(__('portal.sites.download_page', ['file' => 'status.html']));
+        $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/alogin.html")->assertOk()
+            ->assertHeader('Content-Disposition', 'attachment; filename="alogin.html"')->assertSee('$(link-redirect)', false);
+    }
+
     public function test_radius_request_updates_last_seen_without_rewriting_clients_file(): void
     {
         $this->assertNull($this->nas->last_seen_at);
@@ -289,7 +333,7 @@ class SetupAssistantTest extends TestCase
             ->assertSee('/certificate print where name="guest-portal" || name~"^guest-portal-ca-[0-9]+\\$"')
             ->assertSee('/ip hotspot profile print where default=yes', false)
             ->assertSee('/ip hotspot walled-garden ip print', false)
-            ->assertSee('/file print where name~"login.html"')
+            ->assertSee('/file print where name~"(login|status|logout|alogin).html"')
             ->assertSee(__('portal.setup.uninstall.title'));
         $this->onZone('admin')->actingAs($admin)->get("/admin/sites/{$this->site->id}/edit")->assertOk()
             ->assertSee(__('portal.setup.checklist.warning'))->assertSee(__('portal.sites.nas_ip'));

@@ -330,6 +330,14 @@ class GenericRadiusDriverTest extends TestCase
         $this->site->update(['settings' => $settings]);
         $this->assertStringNotContainsString('alert(1)', $this->driver()->loginPage($this->site->fresh()));
         $this->assertStringContainsString('upload the downloaded login page', $this->driver()->loginPageFetch($this->site, $this->nas));
+
+        // Only the login page (decision 2026-11-05): the MikroTik hotspot pages are 404 for this driver.
+        $nas = NasClient::find($this->nas->id);
+        $get = fn (string $page) => $this->withServerVariables(['PORTAL_ZONE' => 'guest', 'REMOTE_ADDR' => '10.0.0.1'])
+            ->withHeader('X-Portal-Token', $nas->certToken())->get("/router-login/{$nas->id}/{$page}.html");
+        $get('login')->assertOk()->assertSee('portal/g/site-g', false);
+        $get('status')->assertNotFound();
+        $get('alogin')->assertNotFound();
     }
 
     public function test_checklist_lists_radius_redirect_and_walled_garden_with_social_hosts(): void

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Federation\Pairing;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\RouterLoginPageController;
 use App\Models\Instance;
 use App\Models\LocalSetting;
 use App\Models\NasClient;
@@ -215,11 +216,15 @@ class SiteController extends Controller
         ]);
     }
 
-    public function loginPage(Site $site): Response
+    /** Download of one hotspot page (login.html; MikroTik also status, logout, alogin; decision 2026-11-05). */
+    public function loginPage(Site $site, string $page = 'login'): Response
     {
-        return response($site->driver()->loginPage($site), 200, [
+        $html = RouterLoginPageController::pages($site)[$page] ?? null;
+        abort_if($html === null, 404);
+
+        return response($html, 200, [
             'Content-Type' => 'text/html; charset=utf-8',
-            'Content-Disposition' => 'attachment; filename="login.html"',
+            'Content-Disposition' => 'attachment; filename="'.$page.'.html"',
         ]);
     }
 

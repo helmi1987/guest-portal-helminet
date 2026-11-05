@@ -14,7 +14,7 @@ Not part of `php artisan test`; CI: `.github/workflows/routeros.yml` (optional, 
 | `unmanaged.rsc` | Objects as created by versions 0.6.0 to 0.12.6 without comment (VLAN interface, DHCP server, `dp-guest`, `cfg-guest`): router state "unmanaged", adopt commands |
 | `seed.rsc` | "Foreign" defconf-like configuration: firewall, interface lists, bridge, certificates, hotspot profiles, DNS, DHCP, address lists, RADIUS, Wi-Fi/CAPsMAN, scripts; some names start with `guest-portal` on purpose |
 | `pki.sh` | Throw-away test PKI: portal CA + portal server certificate, router chain (root, intermediate, two leaves: RSA PKCS#1, EC PKCS#8) |
-| `stub_portal.py` | HTTPS stand-in for `/router-cert/<id>/...` and `/router-login/<id>/login.html` with the `X-Portal-Token` check |
+| `stub_portal.py` | HTTPS stand-in for `/router-cert/<id>/...` and `/router-login/<id>/<page>.html` (login, status, logout, alogin) with the `X-Portal-Token` check |
 | `guard.sh`, `paste.py` | Placeholder guard test of the Wi-Fi block and the API access block (`{ }` + `:error` while the password placeholder is left): terminal paste (`paste.py`, interactive ssh session, line by line) and `/import`; placeholder left = error and nothing changed, filled = objects created, run twice = idempotent; capsman1: whole block filled appends `cfg-guest` to the selected rules (existing slave kept), twice = identical; the network uninstall takes it out again (slave kept, only-`cfg-guest` rule empty), twice = identical. Needs a router without configuration (`loadvm clean`) |
 | `run.sh` | The test: seed, snapshot, run blocks, assertions, uninstall, compare with the snapshot |
 | `chr.sh` | Download/prepare (wireless + container packages), boot (KVM or TCG), VM snapshots, stop |
@@ -67,8 +67,9 @@ dependencies. The run needs a router without configuration (fresh image or `load
   new leaf; foreign certificates (also `guest-portal-ca-x`, `guest-portal-backup`,
   `guest-portal.example.com`) and the default hotspot profile untouched. `check-certificate=yes` with the
   test portal CA imported as trusted (a foreign certificate as well).
-- `login.html` fetch into the profile's html-directory; survives re-creating the hotspot; a foreign
-  hotspot directory is untouched.
+- Hotspot pages fetch (`login.html`, `status.html`, `logout.html`, `alogin.html`) into the profile's
+  html-directory, each with its redirect target and the RouterOS variables intact; they survive re-creating the
+  hotspot; a foreign hotspot directory is untouched.
 - Router state query (read-only API): the access block runs (and re-runs); with `www-ssl` and `api-ssl`
   set to the certificate `guest-portal` for the test (restored before the uninstall), the REST and the
   API-SSL client read the state through the forwarded ports (`ROS_REST_PORT` 2443, `ROS_APISSL_PORT`

@@ -88,7 +88,7 @@ class WizardController extends Controller
         foreach ($keys as $i => $key) {
             $def = self::STEPS[$key];
             $scoped = $this->scopedStates($data['states'], $routers, $def['scope'], $def['info'] ?? []);
-            // Steps without a router scope are checked in the portal (login.html fetch) or are the summary
+            // Steps without a router scope are checked in the portal (hotspot pages fetch) or are the summary
             $hasScope = $def['scope'] !== [];
             $apiOk = $routers->isNotEmpty() && $apiRouters->every(fn (NasClient $nas) => $data['states'][$nas->id]['fresh']
                 && $scoped[$nas->id] !== null && self::green($scoped[$nas->id]['required']));
@@ -165,7 +165,7 @@ class WizardController extends Controller
     }
 
     /**
-     * Portal-side preconditions per step (inputs saved, certificates present, login.html fetched).
+     * Portal-side preconditions per step (inputs saved, certificates present, hotspot pages fetched).
      *
      * @return array<string, bool>
      */

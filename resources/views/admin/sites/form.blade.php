@@ -90,7 +90,7 @@
         <section class="card mb-6">
             <div class="mb-4 flex items-center justify-between">
                 <h2 class="text-lg font-semibold">{{ __('portal.sites.routers') }}</h2>
-                <a href="{{ route('admin.sites.login-page', $site) }}" class="btn-light">{{ __('portal.sites.download_login') }}</a>
+                <span class="flex flex-wrap justify-end gap-2"><x-admin.hotspot-pages :site="$site" /></span>
             </div>
             <table class="data-table mb-4">
                 <thead><tr><th>{{ __('portal.sites.name') }}</th><th>{{ __('portal.sites.nas_ip') }}</th><th>{{ __('portal.sites.nas_identifier') }}</th><th>{{ __('portal.sites.coa_port') }}</th><th></th></tr></thead>

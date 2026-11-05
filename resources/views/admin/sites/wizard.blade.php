@@ -262,7 +262,7 @@
                         <x-admin.code :disabled="$cliDisabled" :title="$router->name.' ('.$router->nas_ip.')'" :code="$fetch[$router->id]" :placeholders="$placeholders" :lines="$lineStatus($fetch[$router->id])" />
                         <p class="mb-4 text-sm"><x-admin.step-status :ok="$router->login_page_fetched_at !== null" :label="__('portal.setup.login_fetched').': '.$when($router->login_page_fetched_at)" /></p>
                     @endforeach
-                    <p class="text-sm"><a href="{{ route('admin.sites.login-page', $site) }}" class="btn-light">{{ __('portal.sites.download_login') }}</a></p>
+                    <p class="flex flex-wrap gap-2 text-sm"><x-admin.hotspot-pages :site="$site" /></p>
                     @break
 
                 @case('status')

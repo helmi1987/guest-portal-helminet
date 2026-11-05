@@ -240,7 +240,7 @@
         @endforelse
     </section>
 
-    {{-- 5. login.html --}}
+    {{-- 5. Hotspot pages --}}
     <section id="step-login" class="card mb-6">
         <h2 class="mb-2 text-lg font-semibold">5. {{ __('portal.setup.login.title') }}
             <x-admin.step-status :ok="$allLogin" :label="$allLogin ? __('portal.setup.done') : __('portal.setup.open')" /></h2>
@@ -248,7 +248,7 @@
         @foreach ($routers as $router)
             <x-admin.code :disabled="$cliDisabled" :title="$router->name.' ('.$router->nas_ip.')'" :code="$fetch[$router->id]" :placeholders="$placeholders" :lines="$lineStatus($fetch[$router->id])" />
         @endforeach
-        <p class="text-sm"><a href="{{ route('admin.sites.login-page', $site) }}" class="btn-light">{{ __('portal.sites.download_login') }}</a></p>
+        <p class="flex flex-wrap gap-2 text-sm"><x-admin.hotspot-pages :site="$site" /></p>
     </section>
 
     {{-- 6. Check --}}

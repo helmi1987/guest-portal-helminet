@@ -16,7 +16,7 @@ use Illuminate\Support\Facades\Log;
 /**
  * MikroTik RouterOS 7 hotspot (CONCEPT.md §2.1, §5.1).
  */
-class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirectSignals, RouterStateDriver
+class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirectSignals, RouterStateDriver, ServesHotspotPages
 {
     use MikrotikRos7Provisioning;
     use MikrotikRos7RouterState;
@@ -297,9 +297,44 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
 
     public function loginPage(Site $site): string
     {
-        // RouterOS replaces $(...) variables; the -esc variants are URL-encoded (to verify per version).
-        $url = rtrim($this->portalUrl($site), '/').'/portal?site='.rawurlencode($site->slug)
-            .'&mac=$(mac-esc)&ip=$(ip)&link-login-only=$(link-login-only-esc)&link-orig=$(link-orig-esc)';
+        return $this->hotspotPages($site)['login'];
+    }
+
+    /**
+     * The four hotspot pages of the html-directory (decision 2026-11-05, v0.29.0), each a meta refresh plus a link,
+     * no JavaScript. RouterOS replaces $(...) in these files (verified on a RouterOS 7.24.5 CHR with the default
+     * pages): $(mac-esc) (URL-encoded MAC) and $(ip) exist on every page; $(link-login-only-esc) and
+     * $(link-orig-esc) are the URL-encoded links of the redirect; $(link-redirect) on alogin.html is the target after
+     * the login (the dst of the handoff = the signed status page). Every other "$(" would be read as a variable or
+     * directive, so the pages contain none.
+     *   login.html  -> <portal>/portal?site=<slug>&mac=..&ip=..&link-login-only=..&link-orig=..
+     *   status.html -> <portal>/portal/status?site=<slug>&mac=..&ip=..&link-login-only=.. (logged-in device)
+     *   logout.html -> <portal>/portal?site=<slug>&mac=..&ip=..&link-login-only=.. (after a router-side logout)
+     *   alogin.html -> $(link-redirect) at once (the default waits 2 s and may open a status popup)
+     */
+    public function hotspotPages(Site $site): array
+    {
+        $base = rtrim($this->portalUrl($site), '/');
+        $query = '?site='.rawurlencode($site->slug).'&mac=$(mac-esc)&ip=$(ip)&link-login-only=$(link-login-only-esc)';
+
+        return [
+            'login' => self::redirectPage($base.'/portal'.$query.'&link-orig=$(link-orig-esc)', 'Continue to the guest login'),
+            'status' => self::redirectPage($base.'/portal/status'.$query, 'Show the connection status'),
+            'logout' => self::redirectPage($base.'/portal'.$query, 'Continue to the guest login'),
+            'alogin' => self::redirectPage('$(link-redirect)', 'Continue'),
+        ];
+    }
+
+    /** https://<first hotspot host name>/login: the link-login-only RouterOS sends for this hotspot. */
+    public function hotspotLoginUrl(Site $site): ?string
+    {
+        $host = self::token(((array) $site->setting('hotspot_hosts', []))[0] ?? null);
+
+        return $host !== '' ? 'https://'.$host.'/login' : null;
+    }
+
+    private static function redirectPage(string $url, string $link): string
+    {
         $html = e($url, false);
 
         return <<<HTML
@@ -312,7 +347,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         <title>Guest Wi-Fi</title>
         </head>
         <body>
-        <p><a href="{$html}">Continue to the guest login</a></p>
+        <p><a href="{$html}">{$link}</a></p>
         </body>
         </html>
 
@@ -380,9 +415,9 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         add dst-address={$portalIp} protocol=tcp dst-port=443 action=accept comment="{$kIp}"
 
         {$certScript}
-        # Finally upload login.html into the html-directory of the profile ({$hotspotDir}),
-        # replacing the existing login.html: download it from the admin UI or use the fetch command
-        # of the setup assistant.
+        # Finally upload the hotspot pages (login.html, status.html, logout.html, alogin.html) into the
+        # html-directory of the profile ({$hotspotDir}), replacing the RouterOS defaults: download them from
+        # the admin UI or use the fetch commands of the setup assistant.
 
         RSC;
     }
@@ -428,7 +463,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         # certificate "{$n}" already exists, otherwise by the certificate script after the import.
         # IMPORTANT: until the router certificate is imported the profile has only login-by=mac, so code
         # and SMS logins of the portal CANNOT work yet. Order: (1) portal certificate, (2) router
-        # certificate pulled in the portal, (3) certificate script on this router, (4) login.html upload,
+        # certificate pulled in the portal, (3) certificate script on this router, (4) hotspot pages upload,
         # (5) check: /ip hotspot profile print where name={$n}  (login-by=https,mac + ssl-certificate)
         # login-by=mac: MAC authentication for the MAC whitelist of the portal and for roaming devices
         # (federation: a device logged in at another site with a code valid here), active from the
@@ -704,13 +739,14 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
                 'verify' => <<<RSC
                 # Certificate and login checklist (in this order):
                 # 1. portal certificate, 2. router certificate pulled in the portal, 3. certificate script
-                # on this router, 4. login.html uploaded, 5. these checks:
+                # on this router, 4. hotspot pages uploaded, 5. these checks:
                 # imported router certificate (leaf "{$n}" with flag K = private key, CAs "{$n}-ca-<n>")
                 /certificate print where name="{$n}" || name~"^{$n}-ca-[0-9]+\\$"
                 # expected: login-by=mac,https and ssl-certificate={$n}
                 /ip hotspot profile print where name={$n}
-                # expected: login.html in the html-directory of the profile ({$g['html_directory']}/login.html)
-                /file print where name~"login.html"
+                # expected: login.html, status.html, logout.html, alogin.html in the html-directory of the profile
+                # ({$g['html_directory']}/login.html etc.)
+                /file print where name~"(login|status|logout|alogin).html"
                 # html-directory of the default profile: where this device keeps hotspot files ("hotspot", or
                 # "flash/hotspot" on devices with a flash folder); the assistant setting must match it
                 /ip hotspot profile print where default=yes
@@ -783,10 +819,10 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
                 # Older assistant versions used other comments; check and remove manually if present:
                 # /ip firewall filter print where comment~"^(guest|portal): |^stateful\\$|^nothing initiates"
                 # /ip firewall address-list print where list=PORTAL || list=PORTAL_RADIUS || list=RFC1918
-                # login.html: the html-directory ({$g['html_directory']}) may be shared with other hotspots, so
-                # it is not removed here. Delete it only if no other hotspot uses it (RouterOS creates the
-                # default files again for a newly created hotspot):
-                # /file remove [find where name="{$g['html_directory']}/login.html"]
+                # Hotspot pages (login, status, logout, alogin): the html-directory ({$g['html_directory']}) may be
+                # shared with other hotspots, so they are not removed here. Delete them only if no other hotspot
+                # uses it (RouterOS creates the default files again for a newly created hotspot):
+                # /file remove [find where name="{$g['html_directory']}/login.html" || name="{$g['html_directory']}/status.html" || name="{$g['html_directory']}/logout.html" || name="{$g['html_directory']}/alogin.html"]
                 # RouterOS adds disabled placeholder rules "place hotspot rules here" (filter, nat, walled
                 # garden) with the first hotspot; they are not removed here (other hotspots may use them).
                 RSC,
@@ -834,17 +870,20 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
 
     public function loginPageFetch(Site $site, NasClient $nas): string
     {
-        $url = rtrim(self::url($this->portalUrl($site)), '/').'/router-login/'.$nas->id.'/login.html';
+        $url = rtrim(self::url($this->portalUrl($site)), '/').'/router-login/'.$nas->id.'/';
         $token = self::safe($nas->certToken());
         $nasIp = self::safe($nas->nas_ip);
         $dir = $this->guestValues($site)['html_directory'];
         $n = self::NAME;
+        $fetch = implode("\n", array_map(fn (string $page) => <<<RSC
+            /tool fetch url="{$url}{$page}.html" http-header-field="X-Portal-Token: {$token}" \\
+                src-address={$nasIp} check-certificate=yes dst-path={$dir}/{$page}.html
+            RSC, self::PAGES));
 
         return <<<RSC
-        # html-directory of the hotspot profile "{$n}" (setup assistant: {$dir}); must match
-        # /ip hotspot profile print where name={$n}
-        /tool fetch url="{$url}" http-header-field="X-Portal-Token: {$token}" \\
-            src-address={$nasIp} check-certificate=yes dst-path={$dir}/login.html
+        # Hotspot pages (login, status, logout, alogin) into the html-directory of the hotspot profile "{$n}"
+        # (setup assistant: {$dir}); must match /ip hotspot profile print where name={$n}
+        {$fetch}
         RSC;
     }
 

@@ -7,7 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 
 /**
- * Downloads requested by a router itself (router certificate, login.html): per-router token in the
+ * Downloads requested by a router itself (router certificate, hotspot pages): per-router token in the
  * header X-Portal-Token and, by default, the router's NAS IP as source (the generated fetch commands
  * use src-address). Only PORTAL_ROUTER_IP_CHECK=false switches the IP check off (portal.router_cert.check_source_ip).
  */
