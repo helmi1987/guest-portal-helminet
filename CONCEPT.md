@@ -532,8 +532,19 @@ devices. Guide: [docs/generic-captive-portal.md](docs/generic-captive-portal.md)
 4. Apple posts the callback cross-site (`form_post`), without the SameSite=Lax session cookie: that POST
    route runs without session and CSRF and answers a page that forwards code, state and `user` encrypted
    with the instance key (valid 5 min) to the GET callback as a same-site navigation (meta refresh).
-5. First or last name missing: a small page asks for it (identity kept in the session for 10 min).
-6. Like the SMS verify path: guest (names, locale, provider, provider subject, email), terms acceptance (the
+5. Decision 2026-11-05 (v0.29.2, owner): social login never asks for a name. The name is stored as far as
+   the provider reports it (Facebook first/last name need `public_profile`; Apple sends it only at the first
+   authorisation and only when the guest shares it; GitHub falls back to the login), otherwise first and last
+   name stay empty (the columns stay NOT NULL, empty strings, so older federation instances read the rows) and
+   the login continues to step 6 without interruption. The former "complete your name" page, its routes
+   (`/portal/social/name`, now 404) and its texts (`guest.social_name_*`, preview screen `social_name`) are
+   removed. Display: `Guest::displayName()` gives "First Last" (guest list "Last, First"), without a name
+   the email (masked for managers like the email line), else "<Provider> #<6 hex>" (first 6 characters of
+   SHA-256 of provider and subject, never the raw provider ID). It is used in the guest list, the devices of a
+   grant, the MAC whitelist comment prefill, the SMS grant label and the approval texts (Telegram, Gotify,
+   approval link page, admin approvals); the approval webhook keeps `guest.first_name` / `last_name` and adds
+   `guest.display_name`. Other login methods keep their required name fields.
+6. Like the SMS verify path: guest (names as far as known, locale, provider, provider subject, email), terms acceptance (the
    version accepted at the start must still be current, otherwise back to the social page), grant type
    `social` restricted to the site with the duration from the settings, time from login, label = provider;
    recorded as login attempt `social`. Each login gets a new grant (the same device too). Then step 5 of A.

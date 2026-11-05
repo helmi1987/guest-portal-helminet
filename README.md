@@ -31,7 +31,8 @@ experimental generic RADIUS captive-portal driver with vendor presets since v0.2
   `alogin.html`), so a logged-in guest who opens the hotspot again sees the portal status page instead of the RouterOS
   default; the status page shows usage (connected time, data, as of the last accounting update) and a "Log out" that
   ends the session but keeps the code usable; the login page then says "You have logged out". v0.29.1: the adopt command of a
-  legacy `/ip hotspot walled-garden ip` entry matches only comment and dst-address (the full condition matched nothing).
+  legacy `/ip hotspot walled-garden ip` entry matches only comment and dst-address (the full condition matched nothing). v0.29.2: social login never asks for a name; a guest
+  without a name from the provider is shown with the email or "Provider #abc123" (webhook field `display_name`).
 - v0.28: generic RADIUS captive-portal driver (experimental, presets for Cisco WLC, Aruba, pfSense, OPNsense,
   CoovaChilli, Ruckus) and a generic walled-garden checklist (docs/generic-captive-portal.md); v0.28.1: one-time adopt
   command for walled-garden entries with a comment of earlier versions (status "legacy"; the dynamic copy follows). v0.28.2: the
