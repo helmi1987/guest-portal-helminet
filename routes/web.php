@@ -75,6 +75,12 @@ Route::middleware(['zone:guest', 'locale', 'guest.texts'])->group(function () {
         ->middleware('throttle:5,1,guest-sms-resend');
     Route::get('/status/{grant}/{token}', [PortalController::class, 'status'])->name('guest.status')
         ->whereNumber('token')->middleware('signed:relative');
+    // Guest logout (decision 2026-11-05, v0.29.0): ends the session, not the grant. Signed like the status page, CSRF.
+    Route::post('/status/{grant}/{token}/logout', [PortalController::class, 'logout'])->name('guest.logout')
+        ->whereNumber('token')->middleware(['signed:relative', 'throttle:10,1,guest-logout']);
+    // Target of the router's status.html: the signed status page of the device's open session, else the login page.
+    Route::get('/portal/status', [PortalController::class, 'currentStatus'])->name('guest.status.current')
+        ->middleware('throttle:30,1,guest-status-current');
 
     // Social login (CONCEPT.md §7.2 D): start (POST, terms) → go (GET, 302 to the provider) → callback.
     Route::prefix('/portal/social')->name('guest.social.')->group(function () {

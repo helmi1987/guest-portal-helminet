@@ -130,6 +130,17 @@ class SiteRulesTest extends TestCase
         $this->macAuth($this->otherNas)->assertOk();
     }
 
+    public function test_guest_logout_blocks_roaming_at_that_site_like_an_admin_disconnect(): void
+    {
+        $this->redeemedGrant();
+        $this->macAuth($this->otherNas)->assertOk();
+        $this->radius($this->otherNas, 'accounting', ['Acct-Status-Type' => 'Start', 'Acct-Session-Id' => 'l1',
+            'User-Name' => self::MAC, 'Calling-Station-Id' => self::MAC, 'Framed-IP-Address' => '10.5.50.23'])->assertNoContent();
+        // Logout on the status page (decision 2026-11-05): the router's MAC re-authentication does not log it in again.
+        SessionSummary::query()->where('site_id', $this->other->id)->sole()->update(['logged_out_at' => now()]);
+        $this->macAuth($this->otherNas)->assertStatus(401);
+    }
+
     public function test_roaming_without_expiry_sends_no_session_timeout(): void
     {
         $grant = $this->redeemedGrant();

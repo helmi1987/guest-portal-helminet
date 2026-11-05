@@ -91,6 +91,14 @@ class ToolboxPortalPreviewTest extends TestCase
         $this->assertCount(count(GuestPreview::screens()), $grouped);
     }
 
+    public function test_logged_out_page_is_a_status_screen(): void
+    {
+        $this->assertSame(['waiting', 'status', 'logged_out', 'landing'], GuestPreview::screenGroups()['status']);
+        $this->admin()->get('/admin/toolbox/portal?screen=logged_out')->assertOk()
+            ->assertSee('<option value="logged_out" selected', false)
+            ->assertSee(__('portal.texts.screens.logged_out', [], 'de'));
+    }
+
     public function test_toolbox_index_links_the_page(): void
     {
         $this->admin()->get('/admin/toolbox')->assertOk()

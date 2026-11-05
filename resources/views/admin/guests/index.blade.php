@@ -104,7 +104,7 @@
                                         <a href="{{ route('admin.whitelist.create', ['device' => $device->id]) }}" class="underline">{{ __('portal.whitelist.allow_device') }}</a>
                                     @endif
                                     @if ($session)
-                                        <div>IP {{ $session->ip ?? '–' }} · {{ __('portal.grants.started_at') }} {{ \App\Support\LocalTime::format($session->started_at, 'Y-m-d H:i') }}@if ($session->stopped_at) · {{ __('portal.grants.stopped_at') }} {{ \App\Support\LocalTime::format($session->stopped_at, 'Y-m-d H:i') }}@endif</div>
+                                        <div>IP {{ $session->ip ?? '–' }} · {{ __('portal.grants.started_at') }} {{ \App\Support\LocalTime::format($session->started_at, 'Y-m-d H:i') }}@if ($session->stopped_at) · {{ __('portal.grants.stopped_at') }} {{ \App\Support\LocalTime::format($session->stopped_at, 'Y-m-d H:i') }}@endif@if ($session->logged_out_at) · <span class="text-slate-500" title="{{ __('portal.guests.logged_out_help') }}" data-logged-out>{{ __('portal.guests.logged_out') }}</span>@endif</div>
                                         @if ($viaController)
                                             <div class="text-slate-500" data-controller-session>{{ __('portal.guests.controller_session') }}</div>
                                         @endif

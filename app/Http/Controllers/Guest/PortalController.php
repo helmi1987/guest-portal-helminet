@@ -12,11 +12,13 @@ use App\Enums\GrantType;
 use App\Federation\Topology;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\Guest\Concerns\GuestLogin;
+use App\Jobs\DisconnectSession;
 use App\Models\ApprovalRequest;
 use App\Models\Grant;
 use App\Models\Guest;
 use App\Models\OtpChallenge;
 use App\Models\RadiusToken;
+use App\Models\SessionSummary;
 use App\Models\Site;
 use App\Models\SiteCode;
 use App\Models\TermsAcceptance;
@@ -25,6 +27,8 @@ use App\Nas\ControllerSessions;
 use App\Nas\GenericRadiusDriver;
 use App\Nas\HotspotContext;
 use App\Nas\RedirectSignals;
+use App\Nas\ReportsDisconnectSupport;
+use App\Nas\ServesHotspotPages;
 use App\Nas\Unifi\UnifiSettings;
 use App\Services\AccessEndedNotice;
 use App\Services\GrantManager;
@@ -33,12 +37,15 @@ use App\Services\SiteCodeManager;
 use App\Sms\OtpService;
 use App\Sms\PhoneNumber;
 use App\Sms\SmsSettings;
+use App\Support\Bytes;
+use App\Support\LocalTime;
 use App\Support\Redact;
 use Carbon\CarbonInterval;
 use Illuminate\Contracts\Cache\LockTimeoutException;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\URL;
@@ -499,7 +506,10 @@ class PortalController extends Controller
         return $this->handoff($request, $grant, $site, $context, $token, $password);
     }
 
-    /** Target of the router after the login (dst): remaining time of the grant. Signed URL, no cookie needed. */
+    /**
+     * Target of the router after the login (dst) and of status.html: remaining time of the grant, usage of the open
+     * session of this device (decision 2026-11-05, v0.29.0) and the logout. Signed URL, no cookie needed.
+     */
     public function status(Request $request, string $grant, int $token): View|Response
     {
         $grant = Grant::find($grant);
@@ -523,10 +533,16 @@ class PortalController extends Controller
                 : $this->error('router_failed');
         }
 
+        $site = $token !== null ? Site::find($token->site_id) : null;
+        // Reloaded after the guest's logout (and no newer session of this device): the logged-out page again.
+        $last = $token !== null ? $this->deviceSessions($grant, $token)->latest('started_at')->first() : null;
+        if ($last?->logged_out_at !== null && $site !== null) {
+            return $this->loggedOut($site, $token, $last);
+        }
+
         $remaining = $grant->remainingSeconds();
         // Controller sites (decision 2026-11-04): state from the controller on each load (no JavaScript),
         // the original URL of the redirect only as a link.
-        $site = $token !== null ? Site::find($token->site_id) : null;
         $controller = $token !== null && ControllerSessions::supports($site);
 
         return view('guest.status', [
@@ -535,7 +551,119 @@ class PortalController extends Controller
             'controller' => $controller,
             'controllerStatus' => $controller ? $site->driver()->clientStatus($site, $token->mac) : null,
             'origUrl' => $controller ? $request->session()->get('controller_orig_url') : null,
+            'usage' => $token !== null ? $this->usage($grant, $token) : null,
+            'logoutUrl' => $token !== null ? $this->signedGuestUrl('guest.logout', $grant, $token) : null,
         ]);
+    }
+
+    /**
+     * Logout by the guest (decision 2026-11-05, v0.29.0): ends the open sessions of this grant at this device
+     * (Disconnect-Request, or the controller), not the grant: the same code works again on this device until it
+     * expires. NAS without Disconnect support: access ends at the Session-Timeout (the page says so).
+     */
+    public function logout(Request $request, string $grant, int $token): View|Response
+    {
+        $grant = Grant::find($grant);
+        $token = RadiusToken::query()->where('grant_id', $grant?->id)->find($token);
+        $site = $token !== null ? Site::find($token->site_id) : null;
+        if ($grant === null || $token === null || $site === null) {
+            return $this->error('expired', 403);
+        }
+        $request->attributes->set(BrandingSettings::SITE_ATTRIBUTE, $site);
+
+        $sessions = $grant->sessions()->whereNull('stopped_at')->where('mac', $token->mac)->get();
+        DB::transaction(function () use ($sessions) {
+            foreach ($sessions as $session) {
+                $session->update(['logged_out_at' => now()]);
+                DisconnectSession::dispatch($session->id)->afterCommit();
+            }
+        });
+        Log::info('Guest logged out', ['grant' => $grant->id, 'site' => $site->slug, 'mac' => $token->mac,
+            'sessions' => $sessions->count()]);
+
+        return $this->loggedOut($site, $token, $sessions->firstWhere('site_id', $site->id) ?? $sessions->first());
+    }
+
+    /**
+     * Target of the router's status.html (decision 2026-11-05, v0.29.0): `?site=<slug>&mac=..&ip=..`. Redirects to
+     * the signed status page of the open session of this MAC at the site (not logged out, the session IP matching
+     * when both are known), else to the login page with the same query. The MAC is a hint like on /portal.
+     */
+    public function currentStatus(Request $request): RedirectResponse|Response
+    {
+        $site = $request->filled('site') ? Site::query()->where('slug', (string) $request->query('site'))->first() : null;
+        if ($site === null) {
+            return $this->error('no_hotspot');
+        }
+        $query = [];
+        foreach ($request->query() as $key => $value) {
+            if (is_string($key) && is_string($value) && strlen($key) <= 40 && strlen($value) <= 2048 && count($query) < 30) {
+                $query[$key] = $value;
+            }
+        }
+        $login = redirect()->to(route('guest.portal', [], false).'?'.http_build_query($query));
+        $context = $site->driver()->parseRedirect($request, $site);
+        if ($context->mac === null) {
+            return $login;
+        }
+
+        $session = SessionSummary::query()->where('site_id', $site->id)->where('mac', $context->mac)
+            ->whereNotNull('grant_id')->whereNull('stopped_at')->whereNull('logged_out_at')->latest('started_at')->first();
+        if ($session === null || ($context->ip !== null && $session->ip !== null && $session->ip !== $context->ip)) {
+            return $login;
+        }
+        $grant = Grant::find($session->grant_id);
+        $token = RadiusToken::query()->where('grant_id', $session->grant_id)->where('mac', $context->mac)
+            ->where('site_id', $site->id)->whereNotNull('used_at')->latest('used_at')->first();
+
+        return $grant !== null && $token !== null ? redirect()->to($this->statusUrl($grant, $token)) : $login;
+    }
+
+    /** Sessions of this grant at the token's device and site. */
+    private function deviceSessions(Grant $grant, RadiusToken $token)
+    {
+        return SessionSummary::query()->where('grant_id', $grant->id)->where('mac', $token->mac)->where('site_id', $token->site_id);
+    }
+
+    /**
+     * Usage of the open session of the token's device (not logged out): connected since, bytes (from the NAS's
+     * view: input = sent by the guest), time of the newest accounting update; null without an open session.
+     *
+     * @return array{connected: string, down: ?string, up: ?string, as_of: ?string, minutes: int}|null
+     */
+    private function usage(Grant $grant, RadiusToken $token): ?array
+    {
+        $session = $this->deviceSessions($grant, $token)->whereNull('stopped_at')->whereNull('logged_out_at')
+            ->withSum('accounting', 'bytes_in')->withSum('accounting', 'bytes_out')->withMax('accounting', 'last_update_at')
+            ->latest('started_at')->first();
+        if ($session === null || $session->started_at === null) {
+            return null;
+        }
+        $asOf = $session->accounting_max_last_update_at;
+
+        return [
+            'connected' => CarbonInterval::seconds(max(0, (int) $session->started_at->diffInSeconds(now())))->cascade()
+                ->locale(app()->getLocale())->forHumans(['parts' => 2, 'join' => true]),
+            'down' => $session->accounting_sum_bytes_out === null ? null : Bytes::binary($session->accounting_sum_bytes_out),
+            'up' => $session->accounting_sum_bytes_in === null ? null : Bytes::binary($session->accounting_sum_bytes_in),
+            'as_of' => $asOf === null ? null : LocalTime::format(Carbon::parse($asOf), 'H:i'),
+            'minutes' => max(1, intdiv((int) config('portal.radius.interim_interval'), 60)),
+        ];
+    }
+
+    /** The logged-out page of a device at $site (also when the status page is reloaded after the logout). */
+    private function loggedOut(Site $site, RadiusToken $token, ?SessionSummary $session): View
+    {
+        $driver = $site->driver();
+        // No Disconnect-Request on this NAS (decision 2026-11-04): the Session-Timeout of the login ends access.
+        $timeout = ! ControllerSessions::supports($site) && $driver instanceof ReportsDisconnectSupport && ! $driver->supportsDisconnect($site);
+        // "Sign in again": the login page as the NAS's redirect would open it (MikroTik: its login URL), else none.
+        $loginUrl = $driver instanceof ServesHotspotPages ? $driver->hotspotLoginUrl($site) : null;
+        $signIn = $loginUrl === null ? null : route('guest.portal', [], false).'?'.http_build_query(array_filter([
+            'site' => $site->slug, 'mac' => $token->mac, 'ip' => $session?->ip, 'link-login-only' => $loginUrl,
+        ]));
+
+        return view('guest.logged-out', ['timeout' => $timeout, 'signInUrl' => $signIn]);
     }
 
     /**

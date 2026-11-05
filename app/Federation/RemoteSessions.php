@@ -94,6 +94,8 @@ class RemoteSessions
                 'ip' => $s->ip,
                 'started_at' => $s->started_at?->toIso8601String(),
                 'stopped_at' => $s->stopped_at?->toIso8601String(),
+                // Since v0.29.0 (decision 2026-11-05); older instances leave it out, which reads as null.
+                'logged_out_at' => $s->logged_out_at?->toIso8601String(),
                 'bytes_in' => $s->accounting_sum_bytes_in === null ? null : (int) $s->accounting_sum_bytes_in,
                 'bytes_out' => $s->accounting_sum_bytes_out === null ? null : (int) $s->accounting_sum_bytes_out,
                 'last_update_at' => $s->accounting_max_last_update_at === null ? null
@@ -156,6 +158,7 @@ class RemoteSessions
             'ip' => $data['ip'] ?? null,
             'started_at' => isset($data['started_at']) ? Carbon::parse($data['started_at']) : null,
             'stopped_at' => isset($data['stopped_at']) ? Carbon::parse($data['stopped_at']) : null,
+            'logged_out_at' => isset($data['logged_out_at']) && is_string($data['logged_out_at']) ? Carbon::parse($data['logged_out_at']) : null,
         ]);
         $session->setAttribute('accounting_sum_bytes_in', $data['bytes_in'] ?? null);
         $session->setAttribute('accounting_sum_bytes_out', $data['bytes_out'] ?? null);

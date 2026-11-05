@@ -7,6 +7,8 @@ use App\Auth\Social\SocialLogin;
 use App\Auth\Social\SocialSettings;
 use App\Models\Site;
 use App\Models\TermsVersion;
+use App\Support\Bytes;
+use App\Support\LocalTime;
 use App\Support\Redact;
 use Carbon\CarbonInterval;
 use Illuminate\Support\HtmlString;
@@ -18,18 +20,23 @@ use Illuminate\View\View;
  * data, never touching sessions, grants, throttles, drivers or RADIUS. While a preview renders, the
  * instance is shared with the views as `$guestPreview`; links and forms of the guest views then lead to
  * the next preview screen instead of the guest routes (code → status, account → status, sms → otp →
- * status, approval → waiting, social → name → status). Without a preview `$guestPreview` is null.
+ * status, approval → waiting, social → name → status, status → logged out). Without a preview `$guestPreview` is null.
  */
 final class GuestPreview
 {
     /** Screens besides the error pages ("error-<kind>", GuestTexts::ERROR_KINDS). */
     public const SCREENS = ['chooser', 'notices', 'code', 'account', 'sms', 'sms_otp', 'sms_resent', 'approval', 'approval_waiting',
-        'social', 'social_name', 'waiting', 'status', 'landing'];
+        'social', 'social_name', 'waiting', 'status', 'logged_out', 'landing'];
 
     /** Demo values: masked phone number of the SMS page and remaining time of the status page. */
     public const DEMO_PHONE = '+41790000000';
 
     public const DEMO_REMAINING_S = 2 * 3600 + 15 * 60;
+
+    /** Demo usage of the status page: connected for, bytes down/up (decision 2026-11-05). */
+    public const DEMO_CONNECTED_S = 47 * 60;
+
+    public const DEMO_BYTES = [184_320_000, 12_582_912];
 
     public function __construct(
         public readonly string $locale,
@@ -50,7 +57,7 @@ final class GuestPreview
      */
     public static function screenGroups(): array
     {
-        $status = ['waiting', 'status', 'landing'];
+        $status = ['waiting', 'status', 'logged_out', 'landing'];
 
         return [
             'signin' => array_values(array_diff(self::SCREENS, $status)),
@@ -99,7 +106,8 @@ final class GuestPreview
             $key === 'social_hint' => ['social'],
             str_starts_with($key, 'social_name'), $key === 'continue' => ['social_name'],
             in_array($key, ['connecting', 'waiting'], true) => ['waiting'],
-            in_array($key, ['online', 'remaining', 'online_hint'], true) => ['status'],
+            in_array($key, ['online', 'remaining', 'online_hint', 'logout', 'refresh'], true), str_starts_with($key, 'usage_') => ['status'],
+            str_starts_with($key, 'logged_out') => ['logged_out'],
             $key === 'try_again' => ['error-expired'],
             default => [],
         };
@@ -163,7 +171,17 @@ final class GuestPreview
             $this->screen === 'status' => view('guest.status', [
                 'remaining' => CarbonInterval::seconds(self::DEMO_REMAINING_S)->cascade()->locale($this->locale)
                     ->forHumans(['parts' => 2, 'join' => true]),
+                'usage' => [
+                    'connected' => CarbonInterval::seconds(self::DEMO_CONNECTED_S)->cascade()->locale($this->locale)
+                        ->forHumans(['parts' => 2, 'join' => true]),
+                    'down' => Bytes::binary(self::DEMO_BYTES[0]), 'up' => Bytes::binary(self::DEMO_BYTES[1]),
+                    'as_of' => LocalTime::now()->subMinutes(2)->format('H:i'),
+                    'minutes' => max(1, intdiv((int) config('portal.radius.interim_interval'), 60)),
+                ],
+                // The form leads to the next preview screen; the real URL is never used here.
+                'logoutUrl' => '#',
             ]),
+            $this->screen === 'logged_out' => view('guest.logged-out', ['timeout' => false, 'signInUrl' => '#']),
             str_starts_with($this->screen, 'error-') => view('guest.error', ['kind' => substr($this->screen, 6)]),
             default => $portal(null),
         };

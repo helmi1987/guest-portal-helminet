@@ -192,6 +192,15 @@ class GuestTextsTest extends TestCase
             ->assertSee('novalidate', false)->assertDontSee(route('guest.redeem'), false);
         $preview('sms_otp')->assertSee('name="screen" value="sms_resent"', false)->assertSee('name="screen" value="status"', false);
         $preview('social')->assertSee('name="screen" value="social_name"', false);
+        // Status with demo usage; its logout form leads to the logged-out screen (decision 2026-11-05).
+        $preview('status')->assertSee(__('portal.guest.usage_title', [], 'de'))->assertSee('175.8 MiB')
+            ->assertSee('name="screen" value="logged_out"', false)->assertSee('action="/admin/texts/preview"', false)
+            ->assertDontSee('/logout', false);
+        $preview('logged_out')->assertSee(__('portal.guest.logged_out', [], 'de'))
+            ->assertSee('/admin/texts/preview?locale=de&amp;screen=chooser', false);
+        $this->assertSame(['logged_out'], GuestPreview::screensFor('guest.logged_out_timeout'));
+        $this->assertSame(['status'], GuestPreview::screensFor('guest.usage_hint'));
+        $this->assertSame(['notices'], GuestPreview::screensFor('guest.access_ended.logged_out'));
         // Unknown screen and language fall back.
         $this->admin()->get('/admin/texts/preview?locale=xx&screen=nope')->assertOk();
 

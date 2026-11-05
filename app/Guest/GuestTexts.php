@@ -38,8 +38,10 @@ final class GuestTexts
         'social' => ['guest.social_with', 'guest.social_hint', 'guest.social_name_title', 'guest.social_name_intro'],
         'status' => ['guest.connecting', 'guest.waiting', 'guest.online', 'guest.remaining', 'guest.online_hint',
             'guest.continue', 'guest.noscript', 'guest.try_again', 'guest.controller_connected', 'guest.controller_unknown',
-            'guest.controller_refresh', 'guest.controller_continue'],
-        'notices' => ['guest.limited_mode', 'guest.router_failed_notice', 'guest.access_ended.disconnected',
+            'guest.controller_refresh', 'guest.controller_continue', 'guest.usage_title', 'guest.usage_connected',
+            'guest.usage_data', 'guest.usage_as_of', 'guest.usage_hint', 'guest.logout', 'guest.refresh',
+            'guest.logged_out_title', 'guest.logged_out', 'guest.logged_out_timeout'],
+        'notices' => ['guest.limited_mode', 'guest.router_failed_notice', 'guest.access_ended.logged_out', 'guest.access_ended.disconnected',
             'guest.access_ended.revoked', 'guest.access_ended.expired', 'guest.access_ended.sign_in_again'],
         'errors' => [
             'guest.error_pages.no_hotspot.title', 'guest.error_pages.no_hotspot.text',

@@ -43,8 +43,14 @@ trait GuestLogin
     /** Signed status page of one login, valid until the grant ends (plus a margin for the "expired" page). */
     protected function statusUrl(Grant $grant, RadiusToken $token): string
     {
-        return url(URL::temporarySignedRoute('guest.status', ($grant->expires_at ?? now())->copy()->addHour(),
-            ['grant' => $grant->id, 'token' => $token->id], absolute: false));
+        return url($this->signedGuestUrl('guest.status', $grant, $token));
+    }
+
+    /** Relative signed URL of a route of one login (status page, logout), valid like the status page. */
+    protected function signedGuestUrl(string $route, Grant $grant, RadiusToken $token): string
+    {
+        return URL::temporarySignedRoute($route, ($grant->expires_at ?? now())->copy()->addHour(),
+            ['grant' => $grant->id, 'token' => $token->id], absolute: false);
     }
 
     protected function handoff(Request $request, Grant $grant, Site $site, HotspotContext $context, RadiusToken $token, string $password): View|Response|RedirectResponse

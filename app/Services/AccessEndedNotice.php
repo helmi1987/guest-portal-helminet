@@ -10,12 +10,15 @@ use App\Models\Site;
 
 /**
  * Why a device returning to the login page lost its access at this site (CONCEPT.md §7.1):
- * 'disconnected' (last session at this site ended by an admin), 'revoked' or 'expired' (latest
+ * 'logged_out' (last session at this site ended by the guest: portal logout or router-side logout, decision
+ * 2026-11-05), 'disconnected' (last session at this site ended by an admin), 'revoked' or 'expired' (latest
  * grant bound to the MAC), only within portal.ended_notice_hours. Null for unknown MACs, devices
  * with a usable grant for this site, or older events. Returns only a reason, no personal data.
  */
 final class AccessEndedNotice
 {
+    public const LOGGED_OUT = 'logged_out';
+
     public const DISCONNECTED = 'disconnected';
 
     public const REVOKED = 'revoked';
@@ -30,9 +33,12 @@ final class AccessEndedNotice
         }
         $since = now()->subHours($hours);
 
-        // Last session of this MAC at this site: disconnected by an admin (grant may still be valid).
+        // Last session of this MAC at this site: ended by the guest or disconnected by an admin (grant may still be valid).
         $session = SessionSummary::query()->where('site_id', $site->id)->where('mac', $mac)
             ->whereNotNull('grant_id')->latest('started_at')->first();
+        if ($session !== null && ($session->logged_out_at ?? $session->stopped_at ?? $session->started_at)->gte($since) && $session->loggedOut()) {
+            return self::LOGGED_OUT;
+        }
         if ($session?->kicked_at !== null && $session->kicked_at->gte($since)) {
             return self::DISCONNECTED;
         }

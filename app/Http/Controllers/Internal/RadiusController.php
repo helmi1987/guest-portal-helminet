@@ -152,10 +152,12 @@ class RadiusController extends Controller
             }
             $loginSite = TermsAcceptance::query()->where('grant_id', $grant->id)->where('mac', $mac)
                 ->latest('accepted_at')->value('site_id');
-            // An admin disconnected the device at this site: no automatic login again until the grant
-            // changes (e.g. extended); a portal login by the guest still works.
+            // An admin disconnected the device at this site, or the guest logged out there (decision 2026-11-05): no
+            // automatic login again until the grant changes (e.g. extended); a portal login by the guest still works.
             $kicked = SessionSummary::query()->where('grant_id', $grant->id)->where('mac', $mac)
-                ->where('site_id', $nas->site_id)->where('kicked_at', '>=', $grant->updated_at)->exists();
+                ->where('site_id', $nas->site_id)
+                ->where(fn ($q) => $q->where('kicked_at', '>=', $grant->updated_at)->orWhere('logged_out_at', '>=', $grant->updated_at))
+                ->exists();
             if ($loginSite !== null && $loginSite !== $nas->site_id && ! $kicked) {
                 return $grant;
             }

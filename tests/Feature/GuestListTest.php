@@ -153,6 +153,15 @@ class GuestListTest extends TestCase
         $this->assertNull($this->session->fresh()->stopped_at);
     }
 
+    public function test_session_ended_by_the_guest_is_marked_logged_out(): void
+    {
+        $manager = User::factory()->create();
+        $this->onZone('admin')->actingAs($manager)->get('/admin/guests')->assertOk()->assertDontSee('data-logged-out', false);
+        $this->session->update(['logged_out_at' => now(), 'stopped_at' => now()]);
+        $this->onZone('admin')->actingAs($manager)->get('/admin/guests')->assertOk()
+            ->assertSee('data-logged-out', false)->assertSee(__('portal.guests.logged_out'));
+    }
+
     private function guest(string $first, string $last, Site $site, ?Grant $grant, ?TermsVersion $terms, ?string $phone = null): Guest
     {
         $guest = Guest::create(['first_name' => $first, 'last_name' => $last, 'phone_e164' => $phone, 'locale' => 'en']);
