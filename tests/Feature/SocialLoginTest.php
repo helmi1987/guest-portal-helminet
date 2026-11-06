@@ -101,13 +101,15 @@ class SocialLoginTest extends TestCase
             ->assertSeeInOrder([__('portal.guest.social_with', ['provider' => 'Google']), __('portal.guest.social_with', ['provider' => 'GitHub'])])
             ->assertSee('gp-social-logos', false)->assertSeeInOrder(['gp-social-logo-google', 'gp-social-logo-github'], false)
             // The whole social box is one link to the social page (v0.31.1), not a link per logo.
-            ->assertSee('gp-method gp-method-social', false)->assertDontSee('gp-social-button', false)
+            ->assertSee('gp-method gp-method-social gp-button-secondary', false)->assertDontSee('gp-social-button', false)
             ->assertSee('gp-method-code btn"', false);
 
         LoginMethods::save(LoginMethods::all(), ['social', 'approval', 'sms', 'account', 'code']);
         SocialSettings::save(['order' => ['github', 'facebook', 'apple', 'google']]);
+        // Social first: the social box keeps the secondary style (v0.31.2) and no method gets the primary button.
         $this->enter()->assertOk()->assertSeeInOrder(['gp-method-social', 'gp-method-approval', 'gp-method-code'], false)
             ->assertSeeInOrder([__('portal.guest.social_with', ['provider' => 'GitHub']), __('portal.guest.social_with', ['provider' => 'Google'])])
+            ->assertSee('gp-method gp-method-social gp-button-secondary', false)->assertDontSee(' btn"', false)
             ->assertSee('gp-method-code gp-button-secondary', false);
 
         LoginMethods::save(LoginMethods::all(), ['approval', 'code', 'social', 'sms', 'account']);

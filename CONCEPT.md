@@ -528,7 +528,9 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
    provider). Decision 2026-11-05 (v0.30.2): the chooser shows the configured providers as round logos
    (links to the social page, label in `aria-label`/`title`); Decision 2026-11-06 (v0.31.1, owner): the whole
    social box of the chooser is one button to the social page, like the other method buttons, with the logos as
-   decoration inside it (provider name in `title`), not only the name or a logo as link; the social page shows full buttons with logo
+   decoration inside it (provider name in `title`), not only the name or a logo as link; Decision 2026-11-06 (v0.31.2,
+   owner): the social box always uses the secondary button style, never the primary one, so a social-first order shows
+   no filled button in the chooser (as before v0.31.1); the primary button goes only to a first method that is not social; the social page shows full buttons with logo
    and text that look inactive until the terms checkbox is ticked (CSS only; browser `required` and the
    server still enforce the terms). Logos are the unmodified official marks in their original colours,
    inline SVG on a white disc, no external requests. `POST /portal/social/{provider}` checks terms version, provider, hotspot context and lockout,

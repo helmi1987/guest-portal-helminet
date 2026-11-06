@@ -7,7 +7,7 @@
             {{-- The whole social box is one button to the social page (decision 2026-11-06, v0.31.1): label plus the round
                  provider logos (decision 2026-11-05, v0.30.2) as decoration, like the other method buttons. --}}
             <a href="{{ $guestPreview?->url('social') ?? route('guest.portal', ['method' => 'social']) }}"
-               @class(['gp-button gp-method gp-method-social flex flex-col items-center gap-2 py-3 text-center text-base', 'btn' => $loop->first, 'gp-button-secondary btn-light' => ! $loop->first])>
+               class="gp-button gp-method gp-method-social gp-button-secondary btn-light flex flex-col items-center gap-2 py-3 text-center text-base">
                 <span>{{ __('portal.guest.choose.social') }}</span>
                 <span class="gp-social-logos flex flex-wrap justify-center gap-3">
                     @foreach ($socialProviders as $provider)
