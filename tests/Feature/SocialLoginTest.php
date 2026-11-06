@@ -100,6 +100,8 @@ class SocialLoginTest extends TestCase
         $this->enter()->assertOk()->assertSeeInOrder(['gp-method-code', 'gp-method-approval', 'gp-method-social'], false)
             ->assertSeeInOrder([__('portal.guest.social_with', ['provider' => 'Google']), __('portal.guest.social_with', ['provider' => 'GitHub'])])
             ->assertSee('gp-social-logos', false)->assertSeeInOrder(['gp-social-logo-google', 'gp-social-logo-github'], false)
+            // The whole social box is one link to the social page (v0.31.1), not a link per logo.
+            ->assertSee('gp-method gp-method-social', false)->assertDontSee('gp-social-button', false)
             ->assertSee('gp-method-code btn"', false);
 
         LoginMethods::save(LoginMethods::all(), ['social', 'approval', 'sms', 'account', 'code']);

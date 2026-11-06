@@ -526,7 +526,9 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
 **D. Social login (Google, Apple, Facebook, GitHub, Microsoft; decision 2026-11-03, v0.22.0)**
 1. Guest accepts the terms on the social page and picks a provider (one form button per configured
    provider). Decision 2026-11-05 (v0.30.2): the chooser shows the configured providers as round logos
-   (links to the social page, label in `aria-label`/`title`); the social page shows full buttons with logo
+   (links to the social page, label in `aria-label`/`title`); Decision 2026-11-06 (v0.31.1, owner): the whole
+   social box of the chooser is one button to the social page, like the other method buttons, with the logos as
+   decoration inside it (provider name in `title`), not only the name or a logo as link; the social page shows full buttons with logo
    and text that look inactive until the terms checkbox is ticked (CSS only; browser `required` and the
    server still enforce the terms). Logos are the unmodified official marks in their original colours,
    inline SVG on a white disc, no external requests. `POST /portal/social/{provider}` checks terms version, provider, hotspot context and lockout,

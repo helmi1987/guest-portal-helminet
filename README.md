@@ -33,7 +33,8 @@ guest access has no RADIUS and no per-device release); it works as the internet 
   setting, setup guide with every redirect URI, ID token checks, configuration check, walled-garden hosts); each
   provider secret except Apple's can carry an expiry date, shown on the provider card and as a banner for admins
   within 30 days, and `portal:secret-reminders` (daily at 08:10) reminds the admins over the notification channels
-  at 90, 60, 30, 14, 7, 3, 2, 1 and 0 days and once after expiry (hub only, one message per provider and stage).
+  at 90, 60, 30, 14, 7, 3, 2, 1 and 0 days and once after expiry (hub only, one message per provider and stage). v0.31.1: in the
+  chooser the whole social box is one button to the social page, with the provider logos inside it.
 - v0.30: the portal notices outdated hotspot pages (fingerprint per fetched page) and outdated router
   configuration (stored router state, scheduled read-only check at 06:17 and 18:17 and after an update) and shows
   "Update router" with the commands on the dashboard, site and setup page; the admins get one message per router
