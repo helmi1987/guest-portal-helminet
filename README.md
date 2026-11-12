@@ -35,7 +35,7 @@ guest access has no RADIUS and no per-device release); it works as the internet 
   within 30 days, and `portal:secret-reminders` (daily at 08:10) reminds the admins over the notification channels
   at 90, 60, 30, 14, 7, 3, 2, 1 and 0 days and once after expiry (hub only, one message per provider and stage). v0.31.1: in the
   chooser the whole social box is one button to the social page, with the provider logos inside it; v0.31.2: it keeps the
-  secondary button style even when it is the first method.
+  secondary button style even when it is the first method. v0.31.3: first tagged release; the examples use the `latest` image.
 - v0.30: the portal notices outdated hotspot pages (fingerprint per fetched page) and outdated router
   configuration (stored router state, scheduled read-only check at 06:17 and 18:17 and after an update) and shows
   "Update router" with the commands on the dashboard, site and setup page; the admins get one message per router
@@ -131,7 +131,7 @@ docker run -d --name guest-portal --restart unless-stopped \
   -p 443:443 -p 8443:8443 -p 1812:1812/udp -p 1813:1813/udp \
   -v "$PWD/data:/data" \
   -e APP_URL=https://portal.example.com \
-  ghcr.io/helmi1987/guest-portal-helminet:edge
+  ghcr.io/helmi1987/guest-portal-helminet:latest
 docker exec -it guest-portal artisan portal:admin   # create the first admin
 ```
 
@@ -223,7 +223,7 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   `ADMIN_PORT` (default 8443) is used and the settings page shows a warning.
 - `QUEUE_CONNECTION` must stay `database` (image default); `sync` is not supported (SMS would be sent
   inside the request while the send lock is held).
-- Image tags: `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.
+- Image tags: `latest` (newest release, used in the examples), `edge` (main), `X.Y.Z`, `X.Y`, `X`, `latest`, `X.Y.Z-YYYYMMDD` (weekly rebuild), see CONCEPT.md §4.
 
 ## Development
 

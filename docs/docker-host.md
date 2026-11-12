@@ -40,7 +40,7 @@ Create a folder (e.g. `/opt/guest-portal`, Unraid: Compose Manager → Add New S
 ```yaml
 services:
   portal:
-    image: ghcr.io/helmi1987/guest-portal-helminet:edge          # pin to a release tag (X.Y.Z) once the first release is published
+    image: ghcr.io/helmi1987/guest-portal-helminet:latest        # newest release; pin X.Y.Z for controlled updates, :edge = main
     container_name: guest-portal
     restart: unless-stopped
     # --- Mode A: own LAN IP (remove the "ports:" block) ---
