@@ -124,6 +124,10 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
 | Weekly, Monday (cron) | `main` | `edge`, `sha-<short>` (rebuilt with `--pull`) |
 | Weekly, Monday (cron) | newest release tag | `X.Y.Z-<YYYYMMDD>` (new, immutable) and moves `X.Y.Z`, `X.Y`, `X`, `latest` to it |
 
+- Releases (decided 2026-11-12): the auto-merge workflow tags `vX.Y.Z` from `VERSION` after each merge into
+  `main` when that tag does not exist yet, and builds the release image directly (a tag pushed with `GITHUB_TOKEN`
+  starts no workflow). Afterwards it deletes every `claude/**` branch already contained in `main` (with lease, so
+  commits pushed meanwhile are kept).
 - Same code, new base layer: version stays, dated suffix identifies the build (pin it or a digest for immutability).
 - OCI labels, SBOM/provenance via buildx; vulnerability scan (e.g. Trivy) as report **(proposal)**.
 

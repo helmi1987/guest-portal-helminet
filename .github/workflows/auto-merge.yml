@@ -1,8 +1,9 @@
 name: Auto-merge
 
-# Push to claude/** -> tests -> merge into main -> build the edge image.
+# Push to claude/** -> tests -> merge into main -> tag vX.Y.Z from VERSION (if new)
+# -> delete merged claude/** branches -> build the edge image (and the release image).
 # Pushes made with GITHUB_TOKEN do not trigger other workflows, so the image
-# build is called explicitly as a reusable workflow.
+# builds are called explicitly as a reusable workflow.
 on:
   push:
     branches:
@@ -26,6 +27,7 @@ jobs:
       contents: write
     outputs:
       sha: ${{ steps.merge.outputs.sha }}
+      tag: ${{ steps.tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -39,7 +41,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git fetch origin "$BRANCH"
+          if ! git fetch origin "$BRANCH"; then
+            # An earlier run already merged and deleted the branch.
+            git merge-base --is-ancestor "$GITHUB_SHA" HEAD && { echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"; exit 0; }
+            echo "Branch $BRANCH is gone and $GITHUB_SHA is not in main"; exit 1
+          fi
           if git merge --ff-only "origin/$BRANCH"; then
             echo "Fast-forwarded main to $BRANCH"
           else
@@ -48,11 +54,52 @@ jobs:
           git push origin HEAD:main
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
+      - name: Tag the release from VERSION
+        id: tag
+        run: |
+          set -euo pipefail
+          version=$(tr -d '[:space:]' < VERSION)
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "VERSION '$version' is not X.Y.Z, no tag"; exit 0
+          fi
+          tag="v$version"
+          git fetch --tags origin
+          if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+            echo "Tag $tag exists, nothing to do"; exit 0
+          fi
+          git tag -a "$tag" -m "$tag" HEAD
+          git push origin "refs/tags/$tag"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Delete merged claude/** branches
+        run: |
+          set -euo pipefail
+          git fetch --prune origin '+refs/heads/claude/*:refs/remotes/origin/claude/*'
+          git for-each-ref --format='%(refname:strip=3) %(objectname)' 'refs/remotes/origin/claude/' |
+          while read -r branch sha; do
+            if git merge-base --is-ancestor "$sha" HEAD; then
+              # The lease keeps commits pushed after the fetch.
+              git push origin --delete --force-with-lease="refs/heads/$branch:$sha" "$branch" ||
+                echo "Kept $branch (changed or already gone)"
+            fi
+          done
+
   docker:
     needs: merge
     uses: ./.github/workflows/docker.yml
     with:
       ref: main
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+
+  release:
+    needs: merge
+    if: needs.merge.outputs.tag != ''
+    uses: ./.github/workflows/docker.yml
+    with:
+      ref: ${{ needs.merge.outputs.tag }}
     permissions:
       contents: read
       packages: write
