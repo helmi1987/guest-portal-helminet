@@ -72,7 +72,7 @@ jobs:
           echo "version=$v" >> "$GITHUB_OUTPUT"
           echo "RouterOS $v"
 
-      - uses: actions/cache@v4
+      - uses: actions/cache@v6
         with:
           path: ~/chr-${{ steps.v.outputs.version }}
           key: chr-${{ steps.v.outputs.version }}-wireless-container-v1
