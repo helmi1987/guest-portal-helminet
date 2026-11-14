@@ -128,6 +128,15 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
   `main` when that tag does not exist yet, and builds the release image directly (a tag pushed with `GITHUB_TOKEN`
   starts no workflow). Afterwards it deletes every `claude/**` branch already contained in `main` (with lease, so
   commits pushed meanwhile are kept).
+- GitHub releases (decided 2026-11-14): every new tag gets a published GitHub release (notes: commit subjects
+  since the previous tag; Dependabot: PR title and link). The product website lists the GitHub releases.
+- Dependabot auto-merge (decided 2026-11-14, `dependabot-auto-merge.yml`): Dependabot PRs (security and grouped
+  version updates) with update type patch or minor are merged into `main` when `tests.yml` passes, `VERSION` gets a
+  patch bump, then tag, release and release image as above. Major updates stay open for a manual review (Dependabot
+  marks no PR as security update in the workflow, so security updates with a major jump are manual too). Both
+  merge workflows retry the push on a fresh `main` instead of sharing a concurrency group (a group keeps only one
+  pending run). A `claude/**` branch that set the same next version as a Dependabot bump merges without a new tag:
+  raise `VERSION` again.
 - Same code, new base layer: version stays, dated suffix identifies the build (pin it or a digest for immutability).
 - OCI labels, SBOM/provenance via buildx; vulnerability scan (e.g. Trivy) as report **(proposal)**.
 

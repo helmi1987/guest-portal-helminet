@@ -1,0 +1,154 @@
+name: Dependabot auto-merge
+
+# Dependabot PR (security or version update) with patch/minor changes only -> tests -> merge into main
+# -> patch bump of VERSION -> tag vX.Y.Z -> GitHub release (listed on the product website) -> release image.
+# Major updates are left open for a manual review. Several Dependabot PRs and auto-merge.yml can push to
+# main at the same time (a concurrency group keeps only one pending run), so the push is retried on a fresh main.
+# Workflows started by Dependabot get a read-only token unless the permissions are raised per job (below).
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+concurrency:
+  group: dependabot-merge-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      eligible: ${{ steps.decide.outputs.eligible }}
+    steps:
+      - id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ github.token }}
+
+      - id: decide
+        env:
+          UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
+          DEPS: ${{ steps.meta.outputs.dependency-names }}
+        run: |
+          echo "Dependencies: $DEPS, update type: ${UPDATE_TYPE:-unknown}"
+          case "$UPDATE_TYPE" in
+            version-update:semver-patch|version-update:semver-minor) echo "eligible=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "Not merged automatically (major or unknown update type)"; echo "eligible=false" >> "$GITHUB_OUTPUT" ;;
+          esac
+
+  tests:
+    needs: check
+    if: needs.check.outputs.eligible == 'true'
+    uses: ./.github/workflows/tests.yml
+
+  merge:
+    needs: tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.merge.outputs.tag }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          ref: main
+
+      - name: Merge, bump VERSION, tag
+        id: merge
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$HEAD_REF"
+          if [ "$(git rev-parse "origin/$HEAD_REF")" != "$HEAD_SHA" ]; then
+            echo "Branch $HEAD_REF moved on, the run for the newer commit merges it"; exit 0
+          fi
+          for attempt in 1 2 3 4 5; do
+            git fetch --tags --force origin main
+            git reset -q --hard origin/main
+            if git merge-base --is-ancestor "$HEAD_SHA" HEAD; then
+              echo "Already in main"; exit 0
+            fi
+            git merge --no-ff --no-edit -m "Merge pull request #$NUMBER from $HEAD_REF" -m "$TITLE" "$HEAD_SHA"
+
+            version=$(tr -d '[:space:]' < VERSION)
+            if ! [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              echo "VERSION '$version' is not X.Y.Z"; exit 1
+            fi
+            next="${BASH_REMATCH[1]}.${BASH_REMATCH[2]}.$((BASH_REMATCH[3] + 1))"
+            tag="v$next"
+            if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "Tag $tag exists already but VERSION in main is $version"; exit 1
+            fi
+            echo "$next" > VERSION
+            git commit -q -m "Bump version to $next" -m "Dependency update #$NUMBER: $TITLE" VERSION
+            git tag -a "$tag" -m "$tag" HEAD
+            if git push --atomic origin HEAD:main "refs/tags/$tag"; then
+              echo "tag=$tag" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            git tag -d "$tag"
+            echo "Push rejected (main or tag changed), attempt $attempt"
+            sleep $((attempt * 20))
+          done
+          exit 1
+
+      - name: Publish the GitHub release
+        if: steps.merge.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.merge.outputs.tag }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          TITLE: ${{ github.event.pull_request.title }}
+          URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Dependency update"
+            echo
+            echo "- $TITLE ([#$NUMBER]($URL))"
+            echo
+            echo "Image: \`ghcr.io/${GITHUB_REPOSITORY,,}:${TAG#v}\`"
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Delete the Dependabot branch
+        if: steps.merge.outputs.tag != ''
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: git push origin --delete --force-with-lease="refs/heads/$HEAD_REF:$HEAD_SHA" "$HEAD_REF" || echo "Kept $HEAD_REF"
+
+  docker:
+    needs: merge
+    if: needs.merge.outputs.tag != ''
+    uses: ./.github/workflows/docker.yml
+    with:
+      ref: main
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit
+
+  release:
+    needs: merge
+    if: needs.merge.outputs.tag != ''
+    uses: ./.github/workflows/docker.yml
+    with:
+      ref: ${{ needs.merge.outputs.tag }}
+    permissions:
+      contents: read
+      packages: write
+    secrets: inherit

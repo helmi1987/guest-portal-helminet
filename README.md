@@ -35,7 +35,8 @@ guest access has no RADIUS and no per-device release); it works as the internet 
   within 30 days, and `portal:secret-reminders` (daily at 08:10) reminds the admins over the notification channels
   at 90, 60, 30, 14, 7, 3, 2, 1 and 0 days and once after expiry (hub only, one message per provider and stage). v0.31.1: in the
   chooser the whole social box is one button to the social page, with the provider logos inside it; v0.31.2: it keeps the
-  secondary button style even when it is the first method. v0.31.3: first tagged release; the examples use the `latest` image.
+  secondary button style even when it is the first method. v0.31.3: first tagged release; the examples use the `latest` image. v0.31.4: every release is published as a GitHub release; Dependabot patch/minor updates are merged automatically
+  with a patch version bump and their own release.
 - v0.30: the portal notices outdated hotspot pages (fingerprint per fetched page) and outdated router
   configuration (stored router state, scheduled read-only check at 06:17 and 18:17 and after an update) and shows
   "Update router" with the commands on the dashboard, site and setup page; the admins get one message per router

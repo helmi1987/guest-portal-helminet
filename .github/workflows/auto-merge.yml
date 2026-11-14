@@ -1,6 +1,7 @@
 name: Auto-merge
 
-# Push to claude/** -> tests -> merge into main -> tag vX.Y.Z from VERSION (if new)
+# Push to claude/** -> tests -> merge into main -> tag vX.Y.Z from VERSION (if new) and publish a
+# GitHub release for it (the product website lists the GitHub releases)
 # -> delete merged claude/** branches -> build the edge image (and the release image).
 # Pushes made with GITHUB_TOKEN do not trigger other workflows, so the image
 # builds are called explicitly as a reusable workflow.
@@ -46,13 +47,23 @@ jobs:
             git merge-base --is-ancestor "$GITHUB_SHA" HEAD && { echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"; exit 0; }
             echo "Branch $BRANCH is gone and $GITHUB_SHA is not in main"; exit 1
           fi
-          if git merge --ff-only "origin/$BRANCH"; then
-            echo "Fast-forwarded main to $BRANCH"
-          else
-            git merge --no-ff --no-edit -m "Merge branch '$BRANCH' into main" "origin/$BRANCH"
-          fi
-          git push origin HEAD:main
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          # Retried on a fresh main: dependabot-auto-merge.yml can push to main at the same time.
+          for attempt in 1 2 3 4 5; do
+            if git merge --ff-only "origin/$BRANCH"; then
+              echo "Fast-forwarded main to $BRANCH"
+            else
+              git merge --no-ff --no-edit -m "Merge branch '$BRANCH' into main" "origin/$BRANCH"
+            fi
+            if git push origin HEAD:main; then
+              echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            echo "Push rejected (main changed), attempt $attempt"
+            sleep $((attempt * 20))
+            git fetch origin main
+            git reset -q --hard origin/main
+          done
+          exit 1
 
       - name: Tag the release from VERSION
         id: tag
@@ -67,9 +78,30 @@ jobs:
           if git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
             echo "Tag $tag exists, nothing to do"; exit 0
           fi
+          prev=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1 || true)
           git tag -a "$tag" -m "$tag" HEAD
           git push origin "refs/tags/$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "prev=$prev" >> "$GITHUB_OUTPUT"
+
+      - name: Publish the GitHub release
+        if: steps.tag.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ steps.tag.outputs.tag }}
+          PREV: ${{ steps.tag.outputs.prev }}
+        run: |
+          set -euo pipefail
+          range="$TAG"
+          [ -n "$PREV" ] && range="$PREV..$TAG"
+          {
+            echo "## Changes"
+            echo
+            git log --no-merges --format='- %s' "$range" | grep -v '^- Bump version to ' | head -n 200 || true
+            echo
+            echo "Image: \`ghcr.io/${GITHUB_REPOSITORY,,}:${TAG#v}\`"
+          } > "$RUNNER_TEMP/notes.md"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
       - name: Delete merged claude/** branches
         run: |
