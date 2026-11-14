@@ -124,6 +124,14 @@ jobs:
           } > "$RUNNER_TEMP/notes.md"
           gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
 
+      - name: Publish missing GitHub releases of older tags
+        if: steps.merge.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git fetch --tags --force origin
+          .github/scripts/publish-releases.sh
+
       - name: Delete the Dependabot branch
         if: steps.merge.outputs.tag != ''
         env:
