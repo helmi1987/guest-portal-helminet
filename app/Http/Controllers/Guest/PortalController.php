@@ -188,7 +188,7 @@ class PortalController extends Controller
             'first_name' => ['required', 'string', 'max:100'],
             'last_name' => ['required', 'string', 'max:100'],
             // No DNS check: the guest has no internet yet. 191 = length of guests.email.
-            'email' => ['required', 'string', 'email:rfc', 'max:191'],
+            'email' => ['required', 'string', 'email:rfc,filter', 'max:191'],
             'terms' => ['accepted'],
             'terms_version' => ['nullable', 'string', 'max:26'],
             'code' => ['required', 'string', 'max:20'],

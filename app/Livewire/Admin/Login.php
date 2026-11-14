@@ -63,7 +63,7 @@ class Login extends Component
 
     public function login(): void
     {
-        $this->validate(['email' => 'required|string|email', 'password' => 'required|string']);
+        $this->validate(['email' => 'required|string|email:rfc,filter', 'password' => 'required|string']);
 
         $key = 'admin-login|'.Str::lower($this->email).'|'.request()->ip();
         $this->throttle($key, 'email');

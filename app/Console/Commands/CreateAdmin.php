@@ -59,7 +59,7 @@ class CreateAdmin extends Command
         $validator = Validator::make(
             ['email' => $email, 'name' => $name, 'role' => $role, 'password' => $password],
             [
-                'email' => ['required', 'email', 'unique:users,email'],
+                'email' => ['required', 'email:rfc,filter', 'unique:users,email'],
                 'name' => ['required', 'string', 'max:255'],
                 'role' => ['required'],
                 'password' => ['required', 'string', 'min:12'],

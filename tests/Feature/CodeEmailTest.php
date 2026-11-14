@@ -64,7 +64,7 @@ class CodeEmailTest extends TestCase
     public function test_invalid_email_is_rejected(): void
     {
         $code = $this->code();
-        foreach (['no-at-sign', 'guest@', '@example.com', 'two@@example.com', str_repeat('a', 180).'@example.com'] as $email) {
+        foreach (['no-at-sign', 'guest@', '@example.com', 'two@@example.com', 'guest@bluewin', str_repeat('a', 180).'@example.com'] as $email) {
             $this->redeem($code, $email, 'de')->assertSessionHasErrors('email');
         }
         $this->assertSame(0, Guest::count());

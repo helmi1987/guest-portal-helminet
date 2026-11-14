@@ -117,7 +117,7 @@ class UserController extends Controller
         return $request->validate([
             'name' => ['required', 'string', 'max:255'],
             // Soft-deleted users keep their address (unique index), hence no whereNull here.
-            'email' => ['required', 'email', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
+            'email' => ['required', 'email:rfc,filter', 'max:255', Rule::unique('users', 'email')->ignore($user->id)],
             'role' => ['required', Rule::enum(Role::class)],
             'password' => [$user->exists ? 'nullable' : 'required', 'confirmed', Password::min(12)->max(255)],
         ]);
