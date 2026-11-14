@@ -115,16 +115,17 @@ jobs:
           URL: ${{ github.event.pull_request.html_url }}
         run: |
           set -euo pipefail
+          item="$TITLE ([#$NUMBER]($URL))"
           {
-            echo "## Dependency update"
-            echo
-            echo "- $TITLE ([#$NUMBER]($URL))"
-            echo
-            echo "Image: \`ghcr.io/${GITHUB_REPOSITORY,,}:${TAG#v}\`"
+            echo "<!-- lang:en -->"; echo "- Dependency update: $item"
+            echo "<!-- lang:de -->"; echo "- Aktualisierung einer Abhängigkeit: $item"
+            echo "<!-- lang:it -->"; echo "- Aggiornamento di una dipendenza: $item"
+            echo "<!-- lang:fr -->"; echo "- Mise à jour d’une dépendance : $item"
           } > "$RUNNER_TEMP/notes.md"
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/notes.md"
+          .github/scripts/release-body.sh "$RUNNER_TEMP/notes.md" "$TAG" > "$RUNNER_TEMP/body.md"
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --title "$TAG" --notes-file "$RUNNER_TEMP/body.md"
 
-      - name: Publish missing GitHub releases of older tags
+      - name: Publish missing GitHub releases and updated notes of older tags
         if: steps.merge.outputs.tag != ''
         env:
           GH_TOKEN: ${{ github.token }}

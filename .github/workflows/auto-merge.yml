@@ -82,7 +82,7 @@ jobs:
           git push origin "refs/tags/$tag"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
-      - name: Publish GitHub releases (new tag and any tag without a release)
+      - name: Publish GitHub releases (new tag, tags without a release, changed notes files)
         env:
           GH_TOKEN: ${{ github.token }}
         run: |

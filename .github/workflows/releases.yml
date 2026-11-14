@@ -1,6 +1,7 @@
 name: Releases
 
-# Manual run: publish a GitHub release for every vX.Y.Z tag that has none yet
+# Manual run: publish a GitHub release for every vX.Y.Z tag that has none yet and update the notes
+# of releases whose .github/release-notes file changed
 # (auto-merge.yml and dependabot-auto-merge.yml do the same after each merge).
 on:
   workflow_dispatch:

@@ -130,8 +130,11 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
   commits pushed meanwhile are kept).
 - GitHub releases (decided 2026-11-14): every tag `vX.Y.Z` gets a published GitHub release
   (`.github/scripts/publish-releases.sh`, run after each merge and manually by `releases.yml`; it fills in every tag
-  without a release, oldest first). Notes: commit subjects since the previous tag, the first tag the README highlights
-  of its minor version; Dependabot releases: PR title and link. The product website lists the GitHub releases.
+  without a release, oldest first). Notes (decided 2026-11-14): `.github/release-notes/X.Y.Z.md` in EN/DE/IT/FR,
+  written with each `VERSION` bump; the body shows English and folds the others, each section wrapped in
+  `<!-- lang:xx -->` ... `<!-- /lang -->` (the product website imports the sections as translations). A changed notes
+  file updates the existing release. Without a file: commit subjects since the previous tag (English only).
+  Dependabot releases: fixed sentence per language with PR title and link.
 - Dependabot auto-merge (decided 2026-11-14, `dependabot-auto-merge.yml`): Dependabot PRs (security and grouped
   version updates) with update type patch or minor are merged into `main` when `tests.yml` passes, `VERSION` gets a
   patch bump, then tag, release and release image as above. Major updates stay open for a manual review (Dependabot

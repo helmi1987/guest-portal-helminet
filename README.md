@@ -36,7 +36,8 @@ guest access has no RADIUS and no per-device release); it works as the internet 
   at 90, 60, 30, 14, 7, 3, 2, 1 and 0 days and once after expiry (hub only, one message per provider and stage). v0.31.1: in the
   chooser the whole social box is one button to the social page, with the provider logos inside it; v0.31.2: it keeps the
   secondary button style even when it is the first method. v0.31.3: first tagged release; the examples use the `latest` image. v0.31.4: every release is published as a GitHub release; Dependabot patch/minor updates are merged automatically
-  with a patch version bump and their own release. v0.31.5: tags without a release (v0.31.3) get one with notes after the next merge.
+  with a patch version bump and their own release. v0.31.5: tags without a release (v0.31.3) get one with notes after the next merge. v0.31.6: release notes in EN/DE/IT/FR
+  (`.github/release-notes/`).
 - v0.30: the portal notices outdated hotspot pages (fingerprint per fetched page) and outdated router
   configuration (stored router state, scheduled read-only check at 06:17 and 18:17 and after an update) and shows
   "Update router" with the commands on the dashboard, site and setup page; the admins get one message per router
@@ -253,6 +254,10 @@ See [CONTRIBUTING.md](CONTRIBUTING.md). Report vulnerabilities privately as desc
   user name in the registry path) in the README, docs and compose example; nothing else.
 - **No secrets** in code, docs, examples, tests, CI or commit messages.
 - **Language:** everything in the repository is English (code, comments, docs, commits, logs).
+  Exceptions: the translations in `lang/` and the release notes in `.github/release-notes/`.
+- **Release notes:** every `VERSION` bump adds `.github/release-notes/X.Y.Z.md` with the user-facing changes in
+  English, German (Swiss spelling, no ß), Italian and French (sections `<!-- lang:en -->`, `de`, `it`, `fr`).
+  The release workflow publishes them; the product website takes each section as its translation.
 - **Concept decisions live in `CONCEPT.md`.** Keep it up to date when a decision changes; do not
   record decisions elsewhere.
 - **No implementation without maintainer approval.** Propose changes first; build only after an
