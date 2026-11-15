@@ -139,7 +139,8 @@ class WifiModesAndCapsTest extends TestCase
     public function test_state_and_line_colours_cover_both_packages(): void
     {
         $site = $this->site(['wifi_modes' => ['capsman1', 'capsman2']], ['capsman1' => ['cfg-main'], 'capsman2' => ['cfg-main']]);
-        $menus = ['/caps-man datapath' => ['rows' => [['name' => 'dp-guest', 'bridge' => 'bridge1', 'vlan-id' => '30', 'comment' => 'guest-portal:wifi:dp-guest']]],
+        $menus = ['/caps-man datapath' => ['rows' => [['name' => 'dp-guest', 'bridge' => 'bridge1', 'vlan-id' => '30', 'vlan-mode' => 'use-tag',
+            'local-forwarding' => 'false', 'client-to-client-forwarding' => 'false', 'comment' => 'guest-portal:wifi:dp-guest']]],
             '/interface wifi datapath' => ['rows' => []],
             '/caps-man provisioning' => ['rows' => [['.id' => '*1', 'master-configuration' => 'cfg-main', 'slave-configurations' => 'cfg-guest']]],
             '/interface wifi provisioning' => ['rows' => [['.id' => '*2', 'master-configuration' => 'cfg-main', 'slave-configurations' => '']]]];

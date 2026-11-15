@@ -85,7 +85,8 @@ class RouterStateTest extends TestCase
             '/ip pool' => [['name' => 'guest-pool', 'ranges' => '10.30.0.10-10.30.0.250', 'comment' => 'guest-portal']],
             // Different interface than the assistant input
             '/ip dhcp-server' => [['name' => 'guest-dhcp', 'interface' => 'ether2', 'address-pool' => 'guest-pool', 'comment' => $k('net', 'dhcp-server')]],
-            '/interface wifi configuration' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi', 'comment' => $k('wifi', 'cfg-guest')]],
+            '/interface wifi configuration' => [['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi', 'security' => 'sec-guest', 'datapath' => 'dp-guest',
+                'comment' => $k('wifi', 'cfg-guest')]],
             '/interface wifi capsman' => [['enabled' => 'true']],
             '/ip hotspot profile' => [['name' => 'default', 'html-directory' => 'flash/hotspot', 'default' => 'true'],
                 ['name' => 'guest-portal', 'html-directory' => 'hotspot', 'dns-name' => 'hotspot-a.guest.example.com',
@@ -959,5 +960,122 @@ class RouterStateTest extends TestCase
         // Never audited
         $this->assertStringNotContainsString('Test pass 1', (string) json_encode(AuditLog::query()->get()->toArray()));
         $this->assertStringNotContainsString('Wifi', (string) json_encode(AuditLog::query()->get()->toArray()));
+    }
+
+    /** Site with both CAPsMAN packages and a guest Wi-Fi password (sec-guest values compared). */
+    private function valueSite(): Site
+    {
+        $setup = array_diff_key(self::NETWORK, ['wifi_mode' => true]) + ['wifi_modes' => ['capsman1', 'capsman2'],
+            'wifi_security' => 'wpa', 'wifi_password_shared' => false];
+        $this->site->forceFill(['wifi_password_local' => 'Guest pass 1', 'settings' => array_merge($this->site->settings, ['setup' => $setup])])->save();
+
+        return Site::with('nasClients')->find($this->site->id);
+    }
+
+    /**
+     * Rows as a router answers after the scripts ran (REST answer format: booleans "true"/"false", assumption),
+     * per case: [block, state id, menu, row, differing property => value].
+     *
+     * @return list<array{0: string, 1: string, 2: string, 3: array<string, string>, 4: array<string, string>}>
+     */
+    private function valueCases(): array
+    {
+        $k = MikrotikRos7Driver::key(...);
+
+        return [
+            ['net', $k('net', 'option-114'), '/ip dhcp-server option', ['name' => 'captive-portal', 'code' => '114',
+                'value' => "'https://portal.example.com/captive/site-a'", 'comment' => $k('net', 'option-114')],
+                ['value' => "'https://old-host.example.com/captive/site-a'"]],
+            ['net', $k('net', 'dhcp-server'), '/ip dhcp-server', ['name' => 'guest-dhcp', 'interface' => 'vlan-guest', 'address-pool' => 'guest-pool',
+                'lease-time' => '30m', 'disabled' => 'false', 'comment' => $k('net', 'dhcp-server')], ['lease-time' => '1h']],
+            ['net', $k('net', 'dhcp-server'), '/ip dhcp-server', ['name' => 'guest-dhcp', 'interface' => 'vlan-guest', 'address-pool' => 'guest-pool',
+                'lease-time' => '00:30:00', 'disabled' => 'false', 'comment' => $k('net', 'dhcp-server')], ['disabled' => 'true']],
+            ['net', $k('net', 'bridge-vlan'), '/interface bridge vlan', ['bridge' => 'bridge1', 'vlan-ids' => '30', 'tagged' => 'bridge1,ether2',
+                'comment' => $k('net', 'bridge-vlan')], ['tagged' => 'ether2']],
+            ['radius', $k('radius', 'server'), '/radius', ['address' => '10.0.0.10', 'service' => 'hotspot', 'timeout' => '3s',
+                'comment' => $k('radius', 'server')], ['timeout' => '1s']],
+            ['cert', $k('cert', 'script'), '/system script', ['name' => 'guest-portal-cert', 'policy' => 'read,write,policy,test',
+                'dont-require-permissions' => 'false', 'comment' => $k('cert', 'script')], ['policy' => 'read,write']],
+            ['cert', $k('cert', 'scheduler'), '/system scheduler', ['name' => 'guest-portal-cert', 'interval' => '1d', 'start-time' => 'startup',
+                'policy' => 'test,policy,write,read', 'comment' => $k('cert', 'scheduler')], ['interval' => '1h']],
+            ['container', $k('container', 'mounts'), '/container mounts', ['list' => 'portal-data', 'src' => 'disk1/portal-data', 'dst' => '/data',
+                'comment' => $k('container', 'mounts')], ['dst' => '/srv']],
+            ['wifi', $k('wifi', 'dp-guest'), '/interface wifi datapath', ['name' => 'dp-guest', 'bridge' => 'bridge1', 'vlan-id' => '30',
+                'client-isolation' => 'true', 'comment' => $k('wifi', 'dp-guest')], ['client-isolation' => 'false']],
+            ['wifi', $k('wifi', 'dp-guest').'@caps-man', '/caps-man datapath', ['name' => 'dp-guest', 'bridge' => 'bridge1', 'vlan-id' => '30',
+                'vlan-mode' => 'use-tag', 'local-forwarding' => 'false', 'client-to-client-forwarding' => 'false', 'comment' => $k('wifi', 'dp-guest')],
+                ['local-forwarding' => 'true']],
+            ['wifi', $k('wifi', 'sec-guest'), '/interface wifi security', ['name' => 'sec-guest', 'authentication-types' => 'wpa3-psk,wpa2-psk',
+                'comment' => $k('wifi', 'sec-guest')], ['authentication-types' => 'wpa2-psk']],
+            ['wifi', $k('wifi', 'sec-guest').'@caps-man', '/caps-man security', ['name' => 'sec-guest', 'authentication-types' => 'wpa2-psk',
+                'encryption' => 'aes-ccm', 'comment' => $k('wifi', 'sec-guest')], ['encryption' => 'tkip']],
+            ['wifi', $k('wifi', 'cfg-guest').'@caps-man', '/caps-man configuration', ['name' => 'cfg-guest', 'ssid' => 'Guest-WiFi',
+                'security' => 'sec-guest', 'datapath' => 'dp-guest', 'comment' => $k('wifi', 'cfg-guest')], ['security' => 'sec-other']],
+            ['fw', $k('fw', 'in-coa'), '/ip firewall filter', ['chain' => 'input', 'action' => 'accept', 'protocol' => 'udp', 'dst-port' => '3799',
+                'src-address-list' => 'PORTAL_RADIUS', 'comment' => $k('fw', 'in-coa')], ['dst-port' => '1700']],
+            ['fw', $k('fw', 'fwd-drop-new'), '/ip firewall filter', ['chain' => 'forward', 'action' => 'drop', 'out-interface-list' => 'GUEST',
+                'in-interface-list' => '!GUEST', 'connection-state' => 'new', 'comment' => $k('fw', 'fwd-drop-new')], ['in-interface-list' => 'GUEST']],
+            ['fw', $k('fw', 'fwd-from-guests'), '/ip firewall filter', ['chain' => 'forward', 'action' => 'accept', 'in-interface-list' => 'GUEST',
+                'connection-state' => 'related,established', 'comment' => $k('fw', 'fwd-from-guests')], ['connection-state' => 'established']],
+            ['hotspot', 'hotspot:server', '/ip hotspot', ['name' => 'guest-portal', 'interface' => 'vlan-guest', 'address-pool' => 'guest-pool',
+                'profile' => 'guest-portal', 'disabled' => 'false'], ['disabled' => 'true']],
+            ['hotspot', 'hotspot:profile', '/ip hotspot profile', ['name' => 'guest-portal', 'html-directory' => 'hotspot',
+                'dns-name' => 'hotspot-a.guest.example.com', 'hotspot-address' => '10.30.0.1', 'login-by' => 'mac,https', 'ssl-certificate' => 'guest-portal',
+                'use-radius' => 'true', 'radius-accounting' => 'true', 'radius-interim-update' => 'received', 'nas-port-type' => 'wireless-802.11'],
+                ['radius-interim-update' => '5m']],
+        ];
+    }
+
+    public function test_values_set_by_the_scripts_are_compared_not_only_presence(): void
+    {
+        $site = $this->valueSite();
+        $driver = $site->driver();
+        foreach ($this->valueCases() as [$block, $id, $menu, $row, $bad]) {
+            $item = $driver->compareState($site, ['menus' => [$menu => ['rows' => [$row]]]])[$block][$id];
+            $this->assertSame(['present', []], [$item['status'], $item['diff']], "{$id} matching");
+
+            $item = $driver->compareState($site, ['menus' => [$menu => ['rows' => [$bad + $row]]]])[$block][$id];
+            $prop = array_key_first($bad);
+            $this->assertSame('differs', $item['status'], "{$id} {$prop}");
+            $this->assertSame([$prop], array_keys($item['diff']), "{$id} {$prop}");
+            $this->assertSame($bad[$prop], $item['diff'][$prop][1]);
+        }
+    }
+
+    public function test_captive_portal_address_of_option_114_is_compared_with_or_without_quotes(): void
+    {
+        $site = $this->valueSite();
+        $key = MikrotikRos7Driver::key('net', 'option-114');
+        $state = fn (string $value) => $site->driver()->compareState($site, ['menus' => ['/ip dhcp-server option' => ['rows' => [
+            ['name' => 'captive-portal', 'code' => '114', 'value' => $value, 'comment' => $key]]]]])['net'][$key];
+        $this->assertSame('present', $state("'https://portal.example.com/captive/site-a'")['status']);
+        $this->assertSame('present', $state('https://portal.example.com/captive/site-a')['status']);
+        // Outdated host (another portal address): differs, re-running the captive option block fixes it
+        $old = $state("'https://old-host.example.com/captive/site-a'");
+        $this->assertSame('differs', $old['status']);
+        $this->assertSame(["'https://portal.example.com/captive/site-a'", "'https://old-host.example.com/captive/site-a'"], $old['diff']['value']);
+        $this->assertSame('differs', $state("'https://portal.example.com/captive/site-b'")['status']);
+        // The expected value is exactly the one the captive option block sets
+        $this->assertStringContainsString("code=114 value=\"'https://portal.example.com/captive/site-a'\"",
+            $site->driver()->setupCommands($site, [], false)['network']['captive_option']);
+    }
+
+    public function test_guest_dhcp_network_lists_the_captive_option_once_the_own_option_exists(): void
+    {
+        $site = $this->valueSite();
+        $k = MikrotikRos7Driver::key(...);
+        $option = ['name' => 'captive-portal', 'code' => '114', 'value' => "'https://portal.example.com/captive/site-a'", 'comment' => $k('net', 'option-114')];
+        $network = fn (string $options) => ['address' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'dns-server' => '10.30.0.1',
+            'dhcp-option' => $options, 'comment' => $k('net', 'dhcp-network')];
+        $state = fn (array $options, string $list) => $site->driver()->compareState($site, ['menus' => [
+            '/ip dhcp-server option' => ['rows' => $options], '/ip dhcp-server network' => ['rows' => [$network($list)]]]])['net'][$k('net', 'dhcp-network')];
+        $this->assertSame('present', $state([$option], 'captive-portal')['status']);
+        $this->assertSame('present', $state([$option], 'other-option,captive-portal')['status']);
+        $missing = $state([$option], '');
+        $this->assertSame('differs', $missing['status']);
+        $this->assertSame(['dhcp-option' => ['+captive-portal', '']], $missing['diff']);
+        // Optional block not run (no own option): the option list is not compared
+        $this->assertSame('present', $state([], '')['status']);
+        $this->assertSame('present', $state([['comment' => 'foreign'] + $option], '')['status']);
     }
 }

@@ -539,10 +539,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         $radiusIp = self::token($site->setting('radius_address')) ?: '<INSTANCE_IP>';
         $portalIp = self::token($site->setting('portal_address')) ?: $radiusIp;
         $dnsName = self::token(((array) $site->setting('hotspot_hosts', []))[0] ?? null) ?: '<HOTSPOT_DNS_NAME>';
-        $captiveUrl = rtrim(self::url($this->portalUrl($site)), '/').'/captive/'.self::token($site->slug);
-        // Disconnect port(s) of the site's routers (per router, default 3799).
-        $coaPorts = $site->nasClients->pluck('coa_port')->map(fn ($p) => (int) $p)
-            ->filter(fn ($p) => $p >= 1 && $p <= 65535)->unique()->sort()->implode(',') ?: '3799';
+        $captiveUrl = $this->captiveUrl($site);
+        $coaPorts = self::coaPorts($site);
 
         $capsman2 = in_array('capsman2', $g['wifi_modes'], true);
         $trunk = $capsman2
@@ -955,7 +953,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
      */
     private function certScript(string $base, string $token, string $sourceIp): string
     {
-        $interval = preg_replace('/[^0-9dhms]/', '', (string) config('portal.router_cert.fetch_interval')) ?: '1d';
+        $interval = self::certInterval();
         $script = <<<'RSC'
         # Router certificate for login-by=https, fetched from the instance at startup and every __INTERVAL__.
         # Imported only when its fingerprint differs from the certificate set on hotspot profile "__NAME__";
@@ -1127,6 +1125,25 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
     private function portalUrl(Site $site): string
     {
         return (string) ($site->setting('portal_url') ?: config('app.url'));
+    }
+
+    /** Captive Portal API URI of the site (RFC 8908), the value of DHCP option 114 in the captive option block. */
+    private function captiveUrl(Site $site): string
+    {
+        return rtrim(self::url($this->portalUrl($site)), '/').'/captive/'.self::token($site->slug);
+    }
+
+    /** Disconnect port(s) of the site's routers (per router, default 3799), dst-port of the CoA filter rule. */
+    private static function coaPorts(Site $site): string
+    {
+        return $site->nasClients->pluck('coa_port')->map(fn ($p) => (int) $p)
+            ->filter(fn ($p) => $p >= 1 && $p <= 65535)->unique()->sort()->implode(',') ?: '3799';
+    }
+
+    /** Interval of the certificate scheduler (config portal.router_cert.fetch_interval, RouterOS duration). */
+    private static function certInterval(): string
+    {
+        return preg_replace('/[^0-9dhms]/', '', (string) config('portal.router_cert.fetch_interval')) ?: '1d';
     }
 
     /** Name of the guest virtual AP on a master interface (mode local), e.g. "wifi-guest-wifi1". */

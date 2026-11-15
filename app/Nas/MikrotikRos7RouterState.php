@@ -34,7 +34,7 @@ trait MikrotikRos7RouterState
         // radio-mac: radio of a master interface (guest SSID per CAP, decision 2026-11-02)
         '/interface wifi' => ['name', 'configuration', 'master-interface', 'radio-mac', 'comment'],
         '/interface wifi radio' => ['radio-mac', 'cap', 'bands'],
-        '/interface wifi datapath' => ['name', 'bridge', 'vlan-id', 'comment'],
+        '/interface wifi datapath' => ['name', 'bridge', 'vlan-id', 'client-isolation', 'comment'],
         '/interface wifi security' => ['name', 'authentication-types', 'comment'],
         '/interface wifi configuration' => ['name', 'ssid', 'datapath', 'security', 'comment'],
         // Provisioning editor (decision 2026-11-02): band matcher, matchers and name formats of every rule
@@ -42,32 +42,36 @@ trait MikrotikRos7RouterState
             'supported-bands', 'radio-mac', 'identity-regexp', 'common-name-regexp', 'name-format', 'slave-name-format'],
         '/interface wifi capsman' => ['enabled'],
         '/caps-man manager' => ['enabled'],
-        '/caps-man datapath' => ['name', 'bridge', 'vlan-id', 'comment'],
-        '/caps-man security' => ['name', 'authentication-types', 'comment'],
-        '/caps-man configuration' => ['name', 'ssid', 'comment'],
+        '/caps-man datapath' => ['name', 'bridge', 'vlan-id', 'vlan-mode', 'local-forwarding', 'client-to-client-forwarding', 'comment'],
+        '/caps-man security' => ['name', 'authentication-types', 'encryption', 'comment'],
+        '/caps-man configuration' => ['name', 'ssid', 'datapath', 'security', 'comment'],
         '/caps-man provisioning' => ['action', 'master-configuration', 'slave-configurations', 'comment', 'disabled',
             'hw-supported-modes', 'radio-mac', 'identity-regexp', 'common-name-regexp', 'name-format', 'name-prefix'],
         '/caps-man radio' => ['radio-mac', 'remote-cap-name', 'remote-cap-identity', 'interface'],
         '/caps-man interface' => ['name', 'master-interface', 'configuration', 'radio-mac'],
         '/ip address' => ['address', 'interface', 'comment'],
         '/ip pool' => ['name', 'ranges', 'comment'],
-        '/ip dhcp-server' => ['name', 'interface', 'address-pool', 'comment'],
+        '/ip dhcp-server' => ['name', 'interface', 'address-pool', 'lease-time', 'disabled', 'comment'],
         '/ip dhcp-server network' => ['address', 'gateway', 'dns-server', 'dhcp-option', 'comment'],
-        '/ip dhcp-server option' => ['name', 'code', 'comment'],
+        // value: Captive Portal API URI of option 114 (compared without its quotes, see same())
+        '/ip dhcp-server option' => ['name', 'code', 'value', 'comment'],
         // dynamic: entries RouterOS adds for the hotspot (decision 2026-11-02), never own
         '/ip dns static' => ['name', 'address', 'type', 'cname', 'comment', 'dynamic'],
         '/ip hotspot' => ['name', 'interface', 'address-pool', 'profile', 'disabled'],
-        '/ip hotspot profile' => ['name', 'html-directory', 'dns-name', 'hotspot-address', 'login-by', 'ssl-certificate', 'default'],
+        '/ip hotspot profile' => ['name', 'html-directory', 'dns-name', 'hotspot-address', 'login-by', 'ssl-certificate', 'default',
+            'use-radius', 'radius-accounting', 'radius-interim-update', 'nas-port-type'],
         // dst-address: only the dynamic copies of the IP walled-garden entries have one (isDynamic())
         '/ip hotspot walled-garden' => ['dst-host', 'dst-address', 'action', 'comment', 'dynamic'],
         // No "dynamic" property on RouterOS 7.24.5 (asked for anyway, the answer leaves it out), see DYNAMIC_MENUS
         '/ip hotspot walled-garden ip' => ['dst-address', 'protocol', 'dst-port', 'action', 'comment', 'dynamic'],
-        '/ip firewall filter' => ['chain', 'action', 'comment', 'dynamic', 'disabled'],
+        '/ip firewall filter' => ['chain', 'action', 'comment', 'dynamic', 'disabled', 'protocol', 'dst-port', 'in-interface-list',
+            'out-interface-list', 'src-address-list', 'dst-address-list', 'connection-state'],
         '/ip firewall address-list' => ['list', 'address', 'comment'],
         '/ip service' => ['name', 'port', 'disabled', 'certificate'],
-        '/radius' => ['address', 'service', 'comment'],
-        '/system script' => ['name', 'comment'],
-        '/system scheduler' => ['name', 'interval', 'comment'],
+        '/radius' => ['address', 'service', 'timeout', 'comment'],
+        '/system script' => ['name', 'policy', 'dont-require-permissions', 'comment'],
+        // No on-event: schedulers of others may hold inline scripts (secrets)
+        '/system scheduler' => ['name', 'interval', 'start-time', 'policy', 'comment'],
         // Container step hint (decision 2026-11-02): device mode allows containers (the menu exists without the package too)
         '/system device-mode' => ['container'],
         '/container mounts' => ['list', 'src', 'dst', 'comment'],
@@ -83,8 +87,35 @@ trait MikrotikRos7RouterState
         '/user' => ['group='.self::API_GROUP],
     ];
 
-    /** Properties holding lists: compared as sets of the positive entries. */
-    private const LIST_PROPS = ['policy', 'login-by', 'authentication-types', 'slave-configurations'];
+    /**
+     * Properties holding lists: compared as sets of the positive entries. An expected value "+<entry>" only
+     * requires that entry in the list (the admin may add more, e.g. a trunk port tagged by hand).
+     */
+    private const LIST_PROPS = ['policy', 'login-by', 'authentication-types', 'slave-configurations', 'connection-state',
+        'encryption', 'tagged', 'dhcp-option'];
+
+    /** Duration properties: compared in seconds ("30m", "1d", "00:30:00" and "3s" alike). */
+    private const DURATION_PROPS = ['timeout', 'interval', 'lease-time'];
+
+    /**
+     * Matchers of the own filter rules as the firewall block sets them (setupCommands(), besides chain and
+     * action); in-coa adds its dst-port per site. limit of in-ping is not compared (RouterOS may print it
+     * in another form, not verified).
+     */
+    private const FW_MATCH = [
+        'in-dhcp' => ['in-interface-list' => 'GUEST', 'protocol' => 'udp', 'dst-port' => '67'],
+        'in-dns' => ['in-interface-list' => 'GUEST', 'protocol' => 'udp', 'dst-port' => '53'],
+        'in-dns-tcp' => ['in-interface-list' => 'GUEST', 'protocol' => 'tcp', 'dst-port' => '53'],
+        'in-ping' => ['in-interface-list' => 'GUEST', 'protocol' => 'icmp'],
+        'in-coa' => ['protocol' => 'udp', 'src-address-list' => 'PORTAL_RADIUS'],
+        'in-drop-mgmt' => ['in-interface-list' => 'GUEST'],
+        'fwd-from-guests' => ['connection-state' => 'established,related', 'in-interface-list' => 'GUEST'],
+        'fwd-to-guests' => ['connection-state' => 'established,related', 'out-interface-list' => 'GUEST'],
+        'fwd-portal' => ['in-interface-list' => 'GUEST', 'dst-address-list' => 'PORTAL', 'protocol' => 'tcp', 'dst-port' => '443'],
+        'fwd-drop-lan' => ['in-interface-list' => 'GUEST', 'dst-address-list' => 'RFC1918'],
+        'fwd-drop-new' => ['out-interface-list' => 'GUEST', 'in-interface-list' => '!GUEST', 'connection-state' => 'new'],
+        'fwd-internet' => ['in-interface-list' => 'GUEST', 'out-interface-list' => 'WAN'],
+    ];
 
     /** Objects the firewall block adds only when no equal entry exists (an entry of others is used). */
     private const GUARDED = ['guest-portal:fw:list-guest', 'guest-portal:fw:list-member', 'guest-portal:fw:addr-portal',
@@ -151,21 +182,27 @@ trait MikrotikRos7RouterState
         $portalHost = self::token(parse_url($this->portalUrl($site), PHP_URL_HOST));
         $dnsName = self::token(((array) $site->setting('hotspot_hosts', []))[0] ?? null);
         $k = self::key(...);
+        $certPolicy = 'read,write,policy,test';
         $expect = [
-            $k('radius', 'server') => ['address' => $radius, 'service' => 'hotspot'],
+            $k('radius', 'server') => ['address' => $radius, 'service' => 'hotspot', 'timeout' => '3s'],
             $k('walled', 'portal-host') => ['dst-host' => $portalHost, 'action' => 'allow'],
             $k('walled', 'portal-ip') => ['dst-address' => $portalIp, 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept'],
+            $k('cert', 'script') => ['policy' => $certPolicy, 'dont-require-permissions' => 'no'],
+            $k('cert', 'scheduler') => ['interval' => self::certInterval(), 'start-time' => 'startup', 'policy' => $certPolicy],
+            $k('container', 'mounts') => ['dst' => '/data'],
             $k('dns', 'portal-a') => ['address' => $portalIp],
             $k('dns', 'portal-cname') => ['name' => $portalHost, 'type' => 'CNAME', 'cname' => self::NAME.'-v4.internal'],
             $k('net', 'vlan') => ['interface' => $g['bridge'], 'vlan-id' => $g['vlan_id']],
-            $k('net', 'bridge-vlan') => ['vlan-ids' => $g['vlan_id']],
+            // tagged: the bridge itself must be a tagged member, trunk ports may be added (by the admin or the block)
+            $k('net', 'bridge-vlan') => ['vlan-ids' => $g['vlan_id'], 'tagged' => '+'.$g['bridge']],
             $k('net', 'gateway') => ['address' => $g['gateway'].$g['prefix']],
             $k('net', 'pool') => ['ranges' => $g['pool']],
-            $k('net', 'dhcp-server') => ['interface' => $g['interface'], 'address-pool' => $g['pool_name']],
+            $k('net', 'dhcp-server') => ['interface' => $g['interface'], 'address-pool' => $g['pool_name'], 'lease-time' => '30m', 'disabled' => 'no'],
             $k('net', 'dhcp-network') => ['gateway' => $g['gateway'], 'dns-server' => $g['gateway']],
-            $k('net', 'option-114') => ['code' => '114'],
+            // value as the captive option block sets it (value="'<url>'": a RouterOS string literal in single quotes)
+            $k('net', 'option-114') => ['code' => '114', 'value' => "'".$this->captiveUrl($site)."'"],
             $k('wifi', 'dp-guest') => ['bridge' => $g['bridge'], 'vlan-id' => $g['vlan_id']],
-            $k('wifi', 'cfg-guest') => ['ssid' => $g['ssid']],
+            $k('wifi', 'cfg-guest') => ['ssid' => $g['ssid'], 'security' => 'sec-guest', 'datapath' => 'dp-guest'],
             $k('fw', 'list-member') => ['interface' => $g['interface']],
             $k('fw', 'addr-portal') => ['address' => $portalIp],
             $k('fw', 'addr-radius') => ['address' => $radius],
@@ -181,12 +218,22 @@ trait MikrotikRos7RouterState
         foreach ($g['wifi_masters']['local'] ?? [] as $master) {
             $expect[$k('wifi', self::guestInterface($master))] = ['master-interface' => $master, 'configuration' => 'cfg-guest'];
         }
-        // Wi-Fi objects by state id (wifiId()): the /caps-man copies expect the same values
+        // Wi-Fi objects by state id (wifiId()): the /caps-man copies expect the same values, plus the values the
+        // Wi-Fi block sets per package path (wifiObjects()). sec-guest only with a password available here (open
+        // SSID: unset, not compared; password of another instance: not changed by the block)
+        $perPath = [
+            '/caps-man datapath' => ['vlan-mode' => 'use-tag', 'local-forwarding' => 'no', 'client-to-client-forwarding' => 'no'],
+            '/interface wifi datapath' => ['client-isolation' => 'yes'],
+        ] + (! $g['wifi_unavailable'] && $g['wifi_password'] !== '' ? [
+            '/caps-man security' => ['authentication-types' => 'wpa2-psk', 'encryption' => 'aes-ccm'],
+            '/interface wifi security' => ['authentication-types' => 'wpa2-psk,wpa3-psk'],
+        ] : []);
+        $shared = $expect;
         $wifi = $this->wifiManagedObjects($g);
         foreach ($wifi as $id => $object) {
             $key = $object['key'] ?? $id;
-            if ($id !== $key && isset($expect[$key])) {
-                $expect[$id] = $expect[$key];
+            if (isset($shared[$key]) || isset($perPath[$object['path']])) {
+                $expect[$id] = ($shared[$key] ?? []) + ($perPath[$object['path']] ?? []);
             }
         }
         foreach ($g['wifi_caps'] as $macs) {
@@ -195,7 +242,8 @@ trait MikrotikRos7RouterState
             }
         }
         foreach (self::FW_RULES as $rule => $chain) {
-            $expect[$k('fw', $rule)] = ['chain' => $chain, 'action' => in_array($rule, self::FW_DROP, true) ? 'drop' : 'accept'];
+            $expect[$k('fw', $rule)] = ['chain' => $chain, 'action' => in_array($rule, self::FW_DROP, true) ? 'drop' : 'accept']
+                + self::FW_MATCH[$rule] + ($rule === 'in-coa' ? ['dst-port' => self::coaPorts($site)] : []);
         }
         foreach ($this->managedObjects($site) as $objects) {
             foreach ($objects as $key => $object) {
@@ -243,6 +291,18 @@ trait MikrotikRos7RouterState
             $out['walled'][$ipKey]['info'] = 'dynamic_copy';
         }
         $g = $this->guestValues($site);
+        // Guest DHCP network: lists the option "captive-portal" once the own option 114 exists (the captive option
+        // block sets both; the block is optional, so without the own option the list is not compared)
+        $optRows = (array) ($menus['/ip dhcp-server option']['rows'] ?? []);
+        $netKey = self::key('net', 'dhcp-network');
+        if (collect($optRows)->contains(fn ($r) => is_array($r) && ($r['comment'] ?? null) === self::key('net', 'option-114'))
+            && in_array($out['net'][$netKey]['status'] ?? null, ['present', 'differs'], true)) {
+            $row = collect((array) ($menus['/ip dhcp-server network']['rows'] ?? []))->first(fn ($r) => is_array($r) && ($r['comment'] ?? null) === $netKey);
+            if ($row !== null && ! self::same('dhcp-option', '+captive-portal', (string) ($row['dhcp-option'] ?? ''))) {
+                $out['net'][$netKey]['status'] = 'differs';
+                $out['net'][$netKey]['diff']['dhcp-option'] = ['+captive-portal', (string) ($row['dhcp-option'] ?? '')];
+            }
+        }
         // Own provisioning rule per CAP: present only while it lists cfg-guest
         foreach ($g['wifi_caps'] as $macs) {
             foreach ($macs as $mac) {
@@ -272,9 +332,12 @@ trait MikrotikRos7RouterState
         $dnsName = self::token(((array) $site->setting('hotspot_hosts', []))[0] ?? null);
         $out['dns'] = ['dns:hotspot-name' => $this->hotspotNameEntry($all['/ip dns static'] ?? null, $dnsName)] + $out['dns'];
         $byName = [
-            '/ip hotspot' => ['interface' => $g['interface'], 'address-pool' => $g['pool_name'], 'profile' => self::NAME],
+            '/ip hotspot' => ['interface' => $g['interface'], 'address-pool' => $g['pool_name'], 'profile' => self::NAME, 'disabled' => 'no'],
+            // login-by=https,mac and ssl-certificate only after the router certificate import (hotspotSection()):
+            // until then "differs" on purpose (code and SMS logins cannot work yet)
             '/ip hotspot profile' => ['html-directory' => $g['html_directory'], 'dns-name' => $dnsName, 'hotspot-address' => $g['gateway'],
-                'login-by' => 'https,mac', 'ssl-certificate' => self::NAME],
+                'login-by' => 'https,mac', 'ssl-certificate' => self::NAME, 'use-radius' => 'yes', 'radius-accounting' => 'yes',
+                'radius-interim-update' => 'received', 'nas-port-type' => 'wireless-802.11'],
         ];
         foreach ($byName as $path => $props) {
             $props = array_filter($props, fn ($v) => $v !== '' && ! str_contains($v, '<'));
@@ -715,8 +778,20 @@ trait MikrotikRos7RouterState
 
     private static function same(string $prop, string $want, string $actual): bool
     {
+        if (str_starts_with($want, '+') && in_array($prop, self::LIST_PROPS, true)) {
+            return in_array(substr($want, 1), self::listValue($actual), true);
+        }
         $norm = function (string $v) use ($prop): string {
             $v = trim($v);
+            // DHCP option value (option 114): set as a RouterOS string literal value="'<url>'". The REST answer is
+            // assumed to hold the literal with its single quotes as print shows it (not verified on a router;
+            // raw-value is the hex form): compared without one pair of surrounding single quotes on both sides.
+            if ($prop === 'value' && strlen($v) >= 2 && $v[0] === "'" && str_ends_with($v, "'")) {
+                return substr($v, 1, -1);
+            }
+            if (in_array($prop, self::DURATION_PROPS, true) && ($seconds = self::seconds($v)) !== null) {
+                return (string) $seconds;
+            }
             if (in_array($prop, self::LIST_PROPS, true)) {
                 $parts = array_filter(array_map('trim', explode(',', str_replace(';', ',', $v))), fn ($p) => $p !== '' && $p[0] !== '!');
                 sort($parts);
@@ -730,6 +805,24 @@ trait MikrotikRos7RouterState
         };
 
         return $norm($want) === $norm($actual);
+    }
+
+    /**
+     * RouterOS duration in seconds: "1w2d3h4m5s" (any part optional, as print and the REST answer show it,
+     * assumption) or "[<n>w][<n>d] hh:mm:ss"; null for anything else (then compared as text).
+     */
+    private static function seconds(string $v): ?int
+    {
+        $units = ['w' => 604800, 'd' => 86400, 'h' => 3600, 'm' => 60, 's' => 1];
+        if (preg_match('/^(?:(\d+)w)?(?:(\d+)d)?\s*(\d+):(\d{2}):(\d{2})$/D', $v, $m)) {
+            return (int) $m[1] * $units['w'] + (int) $m[2] * $units['d'] + (int) $m[3] * 3600 + (int) $m[4] * 60 + (int) $m[5];
+        }
+        if ($v === '' || ! preg_match('/^(?:\d+[wdhms])+$/D', $v)) {
+            return null;
+        }
+        preg_match_all('/(\d+)([wdhms])/', $v, $parts, PREG_SET_ORDER);
+
+        return array_sum(array_map(fn ($p) => (int) $p[1] * $units[$p[2]], $parts));
     }
 
     /**
