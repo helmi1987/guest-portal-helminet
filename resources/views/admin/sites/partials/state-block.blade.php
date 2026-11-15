@@ -45,7 +45,9 @@
                 <span class="{{ $statusClass[$item['status']] }}">{{ __('portal.router_api.status.'.$item['status']) }}</span>
                 <code class="text-xs">{{ $item['path'] }}{{ $item['name'] ? ' '.$item['name'] : '' }}</code> <span class="text-xs text-slate-500">{{ $key }}</span>
                 @if ($item['info'] ?? null)
-                    <span class="gp-badge gp-badge-neutral" data-state-info="{{ $item['info'] }}">{{ __('portal.router_api.info.'.$item['info']) }}</span>
+                    {{-- captive_option: hint to the captive option block (option 114 needs the network's dhcp-option) --}}
+                    @php($infoHref = $item['info'] === 'captive_option' && isset($blockHref) ? $blockHref('captive_option') : null)
+                    <span class="gp-badge gp-badge-neutral" data-state-info="{{ $item['info'] }}">@if ($infoHref)<a href="{{ $infoHref }}" class="underline">{{ __('portal.router_api.info.'.$item['info']) }}</a>@else{{ __('portal.router_api.info.'.$item['info']) }}@endif</span>
                 @endif
                 @if (array_key_exists('adopt', $item))
                     <div class="pl-4 text-xs" data-adopt="{{ $key }}">@if ($item['adopt'] ?? null)<code>{{ $item['adopt'] }}</code>@else{{ __('portal.router_api.adopt_ambiguous') }}@endif</div>

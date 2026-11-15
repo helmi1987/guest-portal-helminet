@@ -1060,22 +1060,55 @@ class RouterStateTest extends TestCase
             $site->driver()->setupCommands($site, [], false)['network']['captive_option']);
     }
 
-    public function test_guest_dhcp_network_lists_the_captive_option_once_the_own_option_exists(): void
+    public function test_missing_captive_option_in_the_guest_dhcp_network_is_reported_on_option_114(): void
     {
         $site = $this->valueSite();
         $k = MikrotikRos7Driver::key(...);
-        $option = ['name' => 'captive-portal', 'code' => '114', 'value' => "'https://portal.example.com/captive/site-a'", 'comment' => $k('net', 'option-114')];
+        $option = fn (string $value) => ['name' => 'captive-portal', 'code' => '114', 'value' => $value, 'comment' => $k('net', 'option-114')];
+        $ok = "'https://portal.example.com/captive/site-a'";
         $network = fn (string $options) => ['address' => '10.30.0.0/24', 'gateway' => '10.30.0.1', 'dns-server' => '10.30.0.1',
             'dhcp-option' => $options, 'comment' => $k('net', 'dhcp-network')];
         $state = fn (array $options, string $list) => $site->driver()->compareState($site, ['menus' => [
-            '/ip dhcp-server option' => ['rows' => $options], '/ip dhcp-server network' => ['rows' => [$network($list)]]]])['net'][$k('net', 'dhcp-network')];
-        $this->assertSame('present', $state([$option], 'captive-portal')['status']);
-        $this->assertSame('present', $state([$option], 'other-option,captive-portal')['status']);
-        $missing = $state([$option], '');
-        $this->assertSame('differs', $missing['status']);
-        $this->assertSame(['dhcp-option' => ['+captive-portal', '']], $missing['diff']);
+            '/ip dhcp-server option' => ['rows' => $options], '/ip dhcp-server network' => ['rows' => [$network($list)]]]])['net'];
+        $opt = $k('net', 'option-114');
+        $net = $k('net', 'dhcp-network');
+        // All set: both present, no hint
+        foreach (['captive-portal', 'other-option,captive-portal'] as $list) {
+            $s = $state([$option($ok)], $list);
+            $this->assertSame(['present', []], [$s[$opt]['status'], $s[$opt]['diff']], $list);
+            $this->assertSame('present', $s[$net]['status']);
+            $this->assertArrayNotHasKey('info', $s[$net]);
+        }
+        // Value differs: option 114 differs (value only), the network stays present
+        $s = $state([$option("'https://old-host.example.com/captive/site-a'")], 'captive-portal');
+        $this->assertSame('differs', $s[$opt]['status']);
+        $this->assertSame(['value'], array_keys($s[$opt]['diff']));
+        $this->assertSame('present', $s[$net]['status']);
+        $this->assertArrayNotHasKey('info', $s[$net]);
+        // captive-portal missing in the network: option 114 differs (fixed by the captive option block), the
+        // network present with a hint to that block
+        $s = $state([$option($ok)], '');
+        $this->assertSame('differs', $s[$opt]['status']);
+        $this->assertSame(['dhcp-option' => ['+captive-portal', '']], $s[$opt]['diff']);
+        $this->assertSame(['present', [], 'captive_option'], [$s[$net]['status'], $s[$net]['diff'], $s[$net]['info']]);
+        // Both: value and dhcp-option in the diff
+        $s = $state([$option("'https://old-host.example.com/captive/site-a'")], 'other-option');
+        $this->assertSame(['value', 'dhcp-option'], array_keys($s[$opt]['diff']));
+        $this->assertSame(['+captive-portal', 'other-option'], $s[$opt]['diff']['dhcp-option']);
         // Optional block not run (no own option): the option list is not compared
-        $this->assertSame('present', $state([], '')['status']);
-        $this->assertSame('present', $state([['comment' => 'foreign'] + $option], '')['status']);
+        foreach ([[], [['comment' => 'foreign'] + $option($ok)]] as $rows) {
+            $s = $state($rows, '');
+            $this->assertSame('present', $s[$net]['status']);
+            $this->assertArrayNotHasKey('info', $s[$net]);
+        }
+    }
+
+    public function test_captive_option_hint_links_to_the_captive_option_block(): void
+    {
+        $html = view('admin.sites.partials.state-block', ['block' => 'net', 'blockHref' => fn ($c) => '#block-'.$c,
+            'items' => [MikrotikRos7Driver::key('net', 'dhcp-network') => ['path' => '/ip dhcp-server network', 'name' => null,
+                'status' => 'present', 'diff' => [], 'info' => 'captive_option']]])->render();
+        $this->assertStringContainsString('data-state-info="captive_option"><a href="#block-captive_option"', $html);
+        $this->assertStringContainsString(e(__('portal.router_api.info.captive_option')), $html);
     }
 }

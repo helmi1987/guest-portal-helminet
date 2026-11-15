@@ -457,6 +457,7 @@ return [
         'info' => [
             'dynamic' => 'dynamisch (Hotspot)',
             'dynamic_copy' => 'auch als dynamische Kopie (D) in /ip hotspot walled-garden, dort nicht änderbar: Übernahme-Befehl unten ausführen oder den ganzen Walled-Garden-Teil des Router-Skripts (mit der Menüzeile)',
+            'captive_option' => 'dhcp-option ohne captive-portal: Option 114 wirkt erst damit, Block «DHCP-Option 114» ausführen',
         ],
         'to_commands' => 'Zu den Befehlen',
         'command_blocks' => 'Befehle',

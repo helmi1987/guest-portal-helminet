@@ -637,6 +637,22 @@ for MODE in "${MODES[@]}"; do
         check "[$MODE] $t: foreign RFC1918 10.0.0.0/8 entry (seed) reported as foreign, not added" \
             grep -qx 'guest-portal:fw:addr-rfc1918-10 foreign' "$f"
     done
+    # Outdated value: option 114 pointing to another portal address is reported as differs (with both values),
+    # a guest DHCP network without captive-portal too (on option 114); the captive option block fixes both
+    ros "/ip dhcp-server option set [find where comment=\"$N:net:option-114\"] value=\"'https://old-host.example.com/captive/x'\"" >/dev/null
+    f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+    check "[$MODE] rest: changed option 114 value reported as differs ($(grep "^$N:net:option-114 " "$f"))" \
+        grep -qF "$N:net:option-114 differs {\"value\":[" "$f"
+    check "[$MODE] rest: changed option 114: diff shows the router value" grep -qF "old-host.example.com" "$f"
+    ros "/ip dhcp-server network set [find where comment=\"$N:net:dhcp-network\"] dhcp-option=\"\"" >/dev/null
+    f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+    check "[$MODE] rest: network without captive-portal: option 114 differs ($(grep "^$N:net:option-114 " "$f"))" \
+        grep -qF '"dhcp-option":["+captive-portal",""]' "$f"
+    check "[$MODE] rest: network without captive-portal: network itself present ($(grep "^$N:net:dhcp-network " "$f"))" \
+        grep -qx "$N:net:dhcp-network present" "$f"
+    run_block "$R/network.captive_option.rsc" "[$MODE] network.captive_option (fix)"
+    f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+    check "[$MODE] rest: after the captive option block option 114 present again" grep -qx "$N:net:option-114 present" "$f"
     f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" wrong-password)
     check "[$MODE] rest: wrong password -> auth error" grep -q '^error auth' "$f"
     f=$(query api-ssl "$ROS_APISSL_PORT" "$WORK/pki/leaf2/router.crt" wrong-password)

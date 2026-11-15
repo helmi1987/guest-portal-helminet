@@ -105,6 +105,8 @@ foreach ($wifiModes as $i => $mode) {
             $lines[] = "error {$error['kind']} {$error['detail']}";
         } else {
             $nas->refresh();
+            // Raw answer of the router (read properties only), for comparing the formats by hand
+            file_put_contents($out.'/state-'.getenv('RQ_TYPE').'.json', json_encode($nas->router_state, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES)."\n");
             $adopt = [];
             foreach ($driver->compareState($site, $nas->router_state) as $objects) {
                 foreach ($objects as $key => $item) {

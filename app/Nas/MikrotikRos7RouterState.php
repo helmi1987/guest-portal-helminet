@@ -291,16 +291,18 @@ trait MikrotikRos7RouterState
             $out['walled'][$ipKey]['info'] = 'dynamic_copy';
         }
         $g = $this->guestValues($site);
-        // Guest DHCP network: lists the option "captive-portal" once the own option 114 exists (the captive option
-        // block sets both; the block is optional, so without the own option the list is not compared)
-        $optRows = (array) ($menus['/ip dhcp-server option']['rows'] ?? []);
+        // Option 114 takes effect only while the guest DHCP network lists "captive-portal" (the captive option block
+        // sets both; the block is optional, so without the own option the list is not compared). A missing entry
+        // is reported on option 114 (that block fixes it); the network itself gets only a hint to that block.
+        $optKey = self::key('net', 'option-114');
         $netKey = self::key('net', 'dhcp-network');
-        if (collect($optRows)->contains(fn ($r) => is_array($r) && ($r['comment'] ?? null) === self::key('net', 'option-114'))
-            && in_array($out['net'][$netKey]['status'] ?? null, ['present', 'differs'], true)) {
-            $row = collect((array) ($menus['/ip dhcp-server network']['rows'] ?? []))->first(fn ($r) => is_array($r) && ($r['comment'] ?? null) === $netKey);
-            if ($row !== null && ! self::same('dhcp-option', '+captive-portal', (string) ($row['dhcp-option'] ?? ''))) {
-                $out['net'][$netKey]['status'] = 'differs';
-                $out['net'][$netKey]['diff']['dhcp-option'] = ['+captive-portal', (string) ($row['dhcp-option'] ?? '')];
+        $netRow = collect((array) ($menus['/ip dhcp-server network']['rows'] ?? []))->first(fn ($r) => is_array($r) && ($r['comment'] ?? null) === $netKey);
+        if (in_array($out['net'][$optKey]['status'] ?? null, ['present', 'differs'], true)
+            && $netRow !== null && ! self::same('dhcp-option', '+captive-portal', (string) ($netRow['dhcp-option'] ?? ''))) {
+            $out['net'][$optKey]['status'] = 'differs';
+            $out['net'][$optKey]['diff']['dhcp-option'] = ['+captive-portal', (string) ($netRow['dhcp-option'] ?? '')];
+            if (in_array($out['net'][$netKey]['status'] ?? null, ['present', 'differs'], true)) {
+                $out['net'][$netKey]['info'] = 'captive_option';
             }
         }
         // Own provisioning rule per CAP: present only while it lists cfg-guest

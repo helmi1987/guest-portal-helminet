@@ -457,6 +457,7 @@ return [
         'info' => [
             'dynamic' => 'dynamic (hotspot)',
             'dynamic_copy' => 'also listed as a dynamic copy (D) in /ip hotspot walled-garden, read-only there: run the adopt command below or the whole walled-garden part of the router script (with its menu line)',
+            'captive_option' => 'dhcp-option lacks captive-portal: option 114 only takes effect with it, run the block "DHCP option 114"',
         ],
         'to_commands' => 'Go to the commands',
         'command_blocks' => 'Commands',
