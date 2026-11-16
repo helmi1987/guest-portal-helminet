@@ -239,6 +239,16 @@ class SettingsController extends Controller
         $rules += [
             'providers.apple.team_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
             'providers.apple.key_id' => ['nullable', 'string', 'regex:/^[A-Za-z0-9]{10}$/'],
+            // Country domains of the Google sign-in (accounts.google.<tld> walled-garden hosts): "ch, de, co.uk"
+            'providers.google.country_domains' => ['nullable', 'string', 'max:500', function (string $attribute, mixed $value, \Closure $fail) {
+                foreach (preg_split('/[\s,;]+/', trim((string) $value), -1, PREG_SPLIT_NO_EMPTY) as $tld) {
+                    if (! preg_match(WalledGarden::COUNTRY_DOMAIN, ltrim(strtolower($tld), '.'))) {
+                        $fail(__('portal.settings.social.country_domains_invalid', ['value' => $tld]));
+
+                        return;
+                    }
+                }
+            }],
             'providers.microsoft.tenant' => ['nullable', 'string', 'max:253', function (string $attribute, mixed $value, \Closure $fail) {
                 if (! SocialSettings::validTenant(trim((string) $value))) {
                     $fail(__('portal.settings.social.tenant_invalid'));
@@ -274,6 +284,10 @@ class SettingsController extends Controller
             if ($provider === SocialSettings::APPLE) {
                 $config['providers'][$provider]['team_id'] = strtoupper(trim((string) ($input['team_id'] ?? '')));
                 $config['providers'][$provider]['key_id'] = strtoupper(trim((string) ($input['key_id'] ?? '')));
+            }
+            // Not sent (an older form): the stored country domains stay
+            if ($provider === SocialSettings::GOOGLE && array_key_exists('country_domains', $input)) {
+                $config['providers'][$provider]['country_domains'] = WalledGarden::countryDomains((string) ($input['country_domains'] ?? ''));
             }
             if ($provider === SocialSettings::MICROSOFT) {
                 $tenant = trim((string) ($input['tenant'] ?? ''));

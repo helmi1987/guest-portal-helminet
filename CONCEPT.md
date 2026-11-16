@@ -609,6 +609,17 @@ off the FRITZ!Box NAT (portal on the MikroTik side or through a VPN the MikroTik
    Microsoft 365 endpoint list (sets 56, 59, 97, 116): `login.microsoftonline.com`, `login.microsoft.com`,
    `login.live.com`, `account.live.com`, `auth.gfx.ms`, `*.msauth.net`, `*.msftauth.net`, `*.msauthimages.net`,
    `*.msftauthimages.net`; the broad `*.msecnd.net` and the `*.microsoftonline-p.com` hosts of that list stay out.
+   Decision 2026-11-16 (v0.32.0, owner): the MikroTik router script adds the social hosts as `/ip hotspot walled-garden
+   ip` entries (`dst-host=<host> protocol=tcp dst-port=443 action=accept`, comment key `guest-portal:walled:social-<host>`)
+   instead of `/ip hotspot walled-garden` host entries: HTTPS of unauthenticated guests goes to the hotspot's handler,
+   a host entry matches only via the DNS cache (CNAME target) and the Google sign-in failed in captive browsers; an ip
+   entry is resolved by RouterOS and bypasses the handler (verified on a router). The script removes every own social
+   entry of both menus by the full comment key pattern `^guest-portal:walled:social-[a-z0-9-]+$` (static only; a look-alike comment of others stays) before adding; the router state compares every value
+   and flags own entries no longer wanted (old host entries included). RouterOS 7.24.5 (CHR) marks wildcard and regex
+   `dst-host` values and unresolvable names invalid, so all lists hold concrete host names (Microsoft wildcards replaced
+   by the CDN hosts of the sign-in pages). Google: no `*.gstatic.com` (it frees `connectivitycheck.gstatic.com`, the
+   Android probe) and no `www.google.com`; the country hosts `accounts.google.<tld>` come from the Google setting
+   "country domains" (default `ch, de, at, it, fr, li`, values `^[a-z]{2,3}(\.[a-z]{2,3})?$`).
 
 **E. Directory account (Active Directory / LDAP; decision 2026-11-03, v0.24.0)**
 1. Per site an optional directory (site setting `directory`, site page, admin only): server, port (636),

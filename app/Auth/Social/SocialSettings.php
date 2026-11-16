@@ -56,7 +56,9 @@ final class SocialSettings
 
     /** Public fields per provider (secrets excluded). */
     public const PROVIDER_DEFAULTS = [
-        self::GOOGLE => ['enabled' => false, 'client_id' => '', 'secret_expires_at' => null],
+        // Google: country domains of the sign-in (accounts.google.<tld> hosts of the walled garden, WalledGarden)
+        self::GOOGLE => ['enabled' => false, 'client_id' => '', 'secret_expires_at' => null,
+            'country_domains' => WalledGarden::DEFAULT_COUNTRY_DOMAINS],
         // Apple: services ID as client ID; the client secret is a JWT signed with the .p8 key (team + key ID).
         self::APPLE => ['enabled' => false, 'client_id' => '', 'team_id' => '', 'key_id' => ''],
         self::FACEBOOK => ['enabled' => false, 'client_id' => '', 'secret_expires_at' => null],
@@ -213,6 +215,9 @@ final class SocialSettings
             $own = $config['providers'][$name] ?? [];
             $providers[$name] = array_merge($current['providers'][$name], is_array($own) ? array_intersect_key($own, $defaults) : []);
             $providers[$name]['enabled'] = (bool) $providers[$name]['enabled'];
+            if (array_key_exists('country_domains', $defaults)) {
+                $providers[$name]['country_domains'] = WalledGarden::countryDomains($providers[$name]['country_domains']);
+            }
             // Removing the secret also removes its expiry date.
             if (array_key_exists('secret_expires_at', $defaults) && ($secrets[$name] ?? null) === '') {
                 $providers[$name]['secret_expires_at'] = null;

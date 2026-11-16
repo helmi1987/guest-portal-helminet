@@ -254,13 +254,13 @@ class MicrosoftSocialLoginTest extends TestCase
         LoginMethods::save([LoginMethods::SOCIAL => true]);
         $this->assertNotContains('login.microsoftonline.com', WalledGarden::hosts());
         $this->configure();
-        foreach (['login.microsoftonline.com', 'login.live.com', '*.msauth.net', '*.msftauth.net', '*.msauthimages.net'] as $host) {
+        foreach (['login.microsoftonline.com', 'login.live.com', 'aadcdn.msauth.net', 'aadcdn.msftauth.net', 'logincdn.msauth.net',
+            'aadcdn.msauthimages.net'] as $host) {
             $this->assertContains($host, WalledGarden::hosts());
-            $this->assertContains($host, WalledGarden::allHosts());
         }
-        $objects = array_map(WalledGarden::object(...), WalledGarden::allHosts());
-        $this->assertSame($objects, array_values(array_unique($objects)));
-        $this->assertSame('social-any-msftauth-net', WalledGarden::object('*.msftauth.net'));
+        // Concrete host names only (RouterOS walled garden ip: wildcards are invalid)
+        $this->assertSame([], array_filter(WalledGarden::hosts(), fn ($h) => str_contains($h, '*')));
+        $this->assertSame('social-aadcdn-msftauth-net', WalledGarden::object('aadcdn.msftauth.net'));
     }
 
     public function test_logo_on_the_chooser_and_the_social_page(): void

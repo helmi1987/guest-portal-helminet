@@ -71,8 +71,8 @@ The setup page and each router's "Router configuration" page show a plain-text c
 - The login form: method, URL, fields; the success URL is the portal's status page.
 - **Walled garden** (allowed before login; what the vendor calls it per preset): the portal host on TCP 443, the
   portal IP (`portal_address`, else the RADIUS address) on TCP 443 and on TCP 80 if the device redirects plain HTTP to
-  it, DNS for the guests, and the social login hosts of the providers offered (`WalledGarden::hosts()`); wildcard
-  entries such as `*.gstatic.com` need vendor support, otherwise list the host names you need.
+  it, DNS for the guests, and the social login hosts of the providers offered (`WalledGarden::hosts()`); the list holds
+  concrete host names only (v0.32.0, no wildcards).
 - MAC authentication note (§5).
 
 ## 4. Presets

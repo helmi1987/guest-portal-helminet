@@ -63,7 +63,8 @@ trait MikrotikRos7RouterState
         // dst-address: only the dynamic copies of the IP walled-garden entries have one (isDynamic())
         '/ip hotspot walled-garden' => ['dst-host', 'dst-address', 'action', 'comment', 'dynamic'],
         // No "dynamic" property on RouterOS 7.24.5 (asked for anyway, the answer leaves it out), see DYNAMIC_MENUS
-        '/ip hotspot walled-garden ip' => ['dst-address', 'protocol', 'dst-port', 'action', 'comment', 'dynamic'],
+        // dst-host: the social login entries (decision 2026-11-16)
+        '/ip hotspot walled-garden ip' => ['dst-address', 'dst-host', 'protocol', 'dst-port', 'action', 'comment', 'dynamic'],
         '/ip firewall filter' => ['chain', 'action', 'comment', 'dynamic', 'disabled', 'protocol', 'dst-port', 'in-interface-list',
             'out-interface-list', 'src-address-list', 'dst-address-list', 'connection-state'],
         '/ip firewall address-list' => ['list', 'address', 'comment'],
@@ -213,7 +214,8 @@ trait MikrotikRos7RouterState
             $k('api', 'user') => ['group' => self::API_GROUP],
         ];
         foreach (WalledGarden::hosts() as $host) {
-            $expect[$k('walled', WalledGarden::object($host))] = ['dst-host' => $host, 'action' => 'allow'];
+            // Every value the router script sets (a manual change on the router is "differs")
+            $expect[$k('walled', WalledGarden::object($host))] = ['dst-host' => $host, 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept'];
         }
         foreach ($g['wifi_masters']['local'] ?? [] as $master) {
             $expect[$k('wifi', self::guestInterface($master))] = ['master-interface' => $master, 'configuration' => 'cfg-guest'];
@@ -271,15 +273,20 @@ trait MikrotikRos7RouterState
                     + $this->compareObject($menus[$object['path']] ?? null, $key, $expected[$id] ?? [], $ident, $object['path']);
             }
         }
-        // Own social login entries of providers no longer offered (decision 2026-11-03): the next run of the
-        // router script removes them
+        // Own social login entries no longer wanted (decisions 2026-11-03, 2026-11-16): walled-garden ip entries of
+        // providers no longer offered or of a removed country domain, and every host entry of earlier versions in
+        // /ip hotspot walled-garden (state id "<key>@walled-garden"). The next run of the router script removes them.
         $wanted = array_map(fn ($h) => self::key('walled', WalledGarden::object($h)), WalledGarden::hosts());
-        foreach (WalledGarden::allHosts() as $host) {
-            $key = self::key('walled', WalledGarden::object($host));
-            $rows = (array) ($menus['/ip hotspot walled-garden']['rows'] ?? []);
-            if (! in_array($key, $wanted, true) && collect($rows)->contains(fn ($r) => is_array($r) && ($r['comment'] ?? null) === $key)) {
-                $out['walled'][$key] = ['path' => '/ip hotspot walled-garden', 'name' => null, 'status' => 'differs',
-                    'diff' => ['dst-host' => ['–', $host]]];
+        $prefix = self::key('walled', WalledGarden::OBJECT_PREFIX);
+        foreach (['/ip hotspot walled-garden ip' => '', '/ip hotspot walled-garden' => '@walled-garden'] as $path => $suffix) {
+            foreach ((array) ($menus[$path]['rows'] ?? []) as $row) {
+                $key = is_array($row) ? (string) ($row['comment'] ?? '') : '';
+                // Full key pattern only, as the script's find (a look-alike comment of others is not ours)
+                if (! preg_match('/^'.preg_quote($prefix, '/').'[a-z0-9-]+$/D', $key) || ($suffix === '' && in_array($key, $wanted, true))) {
+                    continue;
+                }
+                $out['walled'][$key.$suffix] = ['path' => $path, 'name' => null] + ($suffix !== '' ? ['key' => $key] : [])
+                    + ['status' => 'differs', 'diff' => ['dst-host' => ['–', (string) ($row['dst-host'] ?? '')]]];
             }
         }
         // The own IP walled-garden entry also shows up in /ip hotspot walled-garden as a dynamic copy with its

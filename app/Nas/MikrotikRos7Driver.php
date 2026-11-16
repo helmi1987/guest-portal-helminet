@@ -74,9 +74,10 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         $o = fn (string $path, ?string $name = null) => ['path' => $path, 'name' => $name];
         $blocks = [
             'radius' => ['server' => $o('/radius')],
-            // Social login hosts (decision 2026-11-03): one entry per host of the providers offered to guests
+            // Social login hosts (decisions 2026-11-03, 2026-11-16): one walled-garden ip entry per host of the
+            // providers offered to guests
             'walled' => ['portal-host' => $o('/ip hotspot walled-garden'), 'portal-ip' => $o('/ip hotspot walled-garden ip')]
-                + array_fill_keys(array_map(WalledGarden::object(...), WalledGarden::hosts()), $o('/ip hotspot walled-garden')),
+                + array_fill_keys(array_map(WalledGarden::object(...), WalledGarden::hosts()), $o('/ip hotspot walled-garden ip')),
             'cert' => ['script' => $o('/system script', self::NAME.'-cert'), 'scheduler' => $o('/system scheduler', self::NAME.'-cert')],
             // No own hotspot-name entry (decision 2026-11-02): the hotspot adds a dynamic one for its dns-name
             'dns' => ['portal-a' => $o('/ip dns static', self::NAME.'-v4.internal'),
@@ -404,7 +405,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         /ip hotspot walled-garden
         remove [find where {$oHost}]
         add dst-host={$portalHost} action=allow comment="{$kHost}"
-        {$this->socialWalledGarden()}
+        {$this->socialWalledGardenLegacy()}
         # IP walled garden: action=accept. Only the own entry is replaced (also one with the comment of earlier
         # versions); entries of others are never changed. RouterOS lists each entry also in /ip hotspot
         # walled-garden as a dynamic copy (flag D) with the same comment: it cannot be edited and follows the entry.
@@ -413,6 +414,7 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         /ip hotspot walled-garden ip
         remove [find where {$oIp}]
         add dst-address={$portalIp} protocol=tcp dst-port=443 action=accept comment="{$kIp}"
+        {$this->socialWalledGarden()}
 
         {$certScript}
         # Finally upload the hotspot pages (login.html, status.html, logout.html, alogin.html) into the
@@ -423,31 +425,54 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
     }
 
     /**
-     * Walled-garden entries of the social login (decision 2026-11-03): the sign-in hosts of the providers
-     * offered to guests (WalledGarden::hosts()). The own entries of every provider are removed by their
-     * exact comment keys first, so a provider switched off loses its entries on the next run.
+     * Find condition of the own social login entries (decisions 2026-11-03, 2026-11-16): the full comment key
+     * pattern "guest-portal:walled:social-<a-z0-9->" of every provider and host, also of hosts no longer listed (a provider
+     * switched off, a country domain removed, a host list of an earlier version). Only static entries: the
+     * dynamic copies RouterOS adds to /ip hotspot walled-garden carry the host name as comment, never a key.
+     */
+    private static function socialOwned(): string
+    {
+        // Full key pattern anchored at both ends (no bare prefix match on comments), \$ = "$" in RouterOS strings
+        return 'comment~"^'.self::key('walled', WalledGarden::OBJECT_PREFIX).'[a-z0-9-]+\\$" && !dynamic';
+    }
+
+    /**
+     * Social login entries of earlier versions in /ip hotspot walled-garden (dst-host, action=allow): removed by
+     * their comment key. A host entry matches the router's DNS cache only (the CNAME target, not the name the
+     * guest asked for), and HTTPS of unauthenticated guests still goes to the hotspot's handler: the Google
+     * sign-in failed in captive browsers (decision 2026-11-16).
+     */
+    private function socialWalledGardenLegacy(): string
+    {
+        return "# Social login entries of earlier versions (host entries, now walled garden ip): own entries removed.\n"
+            .'remove [find where '.self::socialOwned().']';
+    }
+
+    /**
+     * Walled-garden ip entries of the social login (decision 2026-11-16): the sign-in hosts of the providers
+     * offered to guests (WalledGarden::hosts()), tcp/443, action=accept. RouterOS resolves each name and lets
+     * the traffic to its addresses bypass the hotspot's HTTPS handler (dynamic hs-unauth return rules), like the
+     * portal-ip entry. The own entries of every provider are removed first, so a provider switched off or a
+     * country domain removed loses its entries on the next run.
      */
     private function socialWalledGarden(): string
     {
-        $key = fn (string $host) => self::key('walled', WalledGarden::object($host));
-        $lines = ['# Social login: sign-in pages of the enabled providers (Google, Apple, Facebook, GitHub) before login.',
-            '# The own entries of all providers are replaced; entries of others are never changed.'];
-        foreach (WalledGarden::HOSTS as $hosts) {
-            $lines[] = 'remove [find where ('.implode(' || ', array_map(fn ($h) => 'comment="'.$key($h).'"', $hosts)).') && !dynamic]';
-        }
+        $lines = ['# Social login: sign-in pages of the enabled providers before login (Google, Apple, Facebook, GitHub,',
+            '# Microsoft). Plain host names only: RouterOS marks wildcard and regex dst-host entries and names that do',
+            '# not resolve as invalid (flag I). The own entries are replaced; entries of others are never changed.',
+            'remove [find where '.self::socialOwned().']'];
         foreach (WalledGarden::hosts() as $host) {
-            $lines[] = 'add dst-host="'.$host.'" action=allow comment="'.$key($host).'"';
+            $lines[] = 'add dst-host="'.$host.'" protocol=tcp dst-port=443 action=accept comment="'.self::key('walled', WalledGarden::object($host)).'"';
         }
 
         return implode("\n", $lines);
     }
 
-    /** Uninstall: the own social login entries of all providers (exact comment keys). */
+    /** Uninstall: the own social login entries of all providers (comment key pattern), both menus. */
     private function socialWalledGardenRemove(): string
     {
-        $keys = array_map(fn ($h) => 'comment="'.self::key('walled', WalledGarden::object($h)).'"', WalledGarden::allHosts());
-
-        return '/ip hotspot walled-garden remove [find where ('.implode(' || ', $keys).') && !dynamic]';
+        return '/ip hotspot walled-garden remove [find where '.self::socialOwned().']'."\n"
+            .'/ip hotspot walled-garden ip remove [find where '.self::socialOwned().']';
     }
 
     /** Hotspot profile and server "guest-portal"; used by the router script and the setup assistant. */

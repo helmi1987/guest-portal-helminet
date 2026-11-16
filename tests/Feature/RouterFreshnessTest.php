@@ -2,6 +2,9 @@
 
 namespace Tests\Feature;
 
+use App\Auth\Social\LoginMethods;
+use App\Auth\Social\SocialSettings;
+use App\Auth\Social\WalledGarden;
 use App\Federation\Federation;
 use App\Jobs\CheckRouters;
 use App\Models\Channel;
@@ -170,6 +173,56 @@ class RouterFreshnessTest extends TestCase
         $this->nas->refresh()->storeRouterState($this->state());
         $this->assertSame([0, null], [$this->nas->fresh()->router_state_failures, $this->nas->fresh()->router_state_failed_since]);
         $this->assertSame(RouterFreshness::CONFIG_OK, $this->check()['config']);
+    }
+
+    public function test_social_walled_garden_ip_entries_outdate_the_router_on_a_manual_change_or_a_setting_change(): void
+    {
+        $k = MikrotikRos7Driver::key(...);
+        $this->fetchAll();
+        $this->withApi();
+        LoginMethods::save([LoginMethods::SOCIAL => true]);
+        SocialSettings::save(['providers' => ['google' => ['enabled' => true, 'client_id' => 'google-client', 'country_domains' => ['ch', 'de']]]],
+            ['google' => 'google-secret']);
+        $row = fn (string $host, array $over = []) => $over + ['dst-host' => $host, 'protocol' => 'tcp', 'dst-port' => '443',
+            'action' => 'accept', 'comment' => $k('walled', WalledGarden::object($host))];
+        $portalIp = ['dst-address' => '192.0.2.10', 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept', 'comment' => $k('walled', 'portal-ip')];
+        $portalHost = ['dst-host' => 'portal.example.net', 'action' => 'allow', 'comment' => $k('walled', 'portal-host')];
+        $store = fn (array $rows) => $this->nas->refresh()->storeRouterState($this->state(['/ip hotspot walled-garden ip' => [$portalIp, ...$rows]]));
+        $rows = array_map(fn ($h) => $row($h), WalledGarden::hosts());
+        $this->assertContains('accounts.google.de', WalledGarden::hosts());
+
+        $store($rows);
+        $this->assertSame([RouterFreshness::CONFIG_OK, [], true], [$this->check()['config'], $this->check()['blocks'], $this->check()['upToDate']]);
+
+        // Changed by hand on the router: dst-port, dst-host, protocol, action
+        foreach ([['dst-port' => '80'], ['dst-host' => 'accounts.google.example'], ['protocol' => 'udp'], ['action' => 'drop']] as $change) {
+            $changed = $rows;
+            $changed[0] = $row(WalledGarden::hosts()[0], $change);
+            $store($changed);
+            $result = $this->check();
+            $this->assertSame([RouterFreshness::CONFIG_OUTDATED, ['walled'], true], [$result['config'], $result['blocks'], $result['outdated']], json_encode($change));
+        }
+        $store($rows);
+        $this->assertTrue($this->check()['upToDate']);
+
+        // The Google country domains change (no re-run yet): a new domain is missing, a removed one no longer wanted
+        $this->travel(1)->minutes();
+        SocialSettings::save(['providers' => ['google' => ['country_domains' => ['ch', 'at']]]]);
+        $result = $this->check();
+        $this->assertSame([RouterFreshness::CONFIG_OUTDATED, ['walled']], [$result['config'], $result['blocks']]);
+        $state = $this->nas->site->driver()->compareState($this->site->fresh(), $this->nas->fresh()->router_state);
+        $this->assertSame('missing', $state['walled'][$k('walled', WalledGarden::object('accounts.google.at'))]['status']);
+        $this->assertSame('differs', $state['walled'][$k('walled', WalledGarden::object('accounts.google.de'))]['status']);
+        // After the re-run the router is up to date again
+        $store(array_map(fn ($h) => $row($h), WalledGarden::hosts()));
+        $this->assertTrue($this->check()['upToDate']);
+        // Old host entries of earlier versions in /ip hotspot walled-garden: outdated until the script removes them
+        $this->nas->refresh()->storeRouterState($this->state(['/ip hotspot walled-garden ip' => [$portalIp, ...array_map(fn ($h) => $row($h), WalledGarden::hosts())],
+            '/ip hotspot walled-garden' => [$portalHost, ['dst-host' => '*.gstatic.com', 'action' => 'allow', 'comment' => $k('walled', 'social-any-gstatic-com')]]]));
+        $this->assertSame(['walled'], $this->check()['blocks']);
+        $this->nas->refresh()->storeRouterState($this->state(['/ip hotspot walled-garden ip' => [$portalIp, ...array_map(fn ($h) => $row($h), WalledGarden::hosts())],
+            '/ip hotspot walled-garden' => [$portalHost]]));
+        $this->assertTrue($this->check()['upToDate']);
     }
 
     public function test_generic_driver_compares_only_pages_that_were_fetched(): void
@@ -385,6 +438,34 @@ class RouterFreshnessTest extends TestCase
         Http::assertSent(fn (Request $r) => $r->url() === 'https://hooks.example.net/in' && $r['blocks'] === ['net'] && $r['pages'] === []);
         Http::assertSent(fn (Request $r) => $r->url() === 'https://gotify.example.net/message'
             && str_contains($r['message'], __('portal.router_fresh.notify.blocks', ['blocks' => __('portal.router_api.blocks.net', [], 'en')], 'en')));
+    }
+
+    public function test_a_manually_changed_social_entry_shows_on_the_dashboard_and_notifies(): void
+    {
+        $k = MikrotikRos7Driver::key(...);
+        $this->channels();
+        $this->fetchAll();
+        $this->withApi();
+        LoginMethods::save([LoginMethods::SOCIAL => true]);
+        SocialSettings::save(['providers' => ['github' => ['enabled' => true, 'client_id' => 'github-client']]], ['github' => 'github-secret']);
+        $rows = [['dst-address' => '192.0.2.10', 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept', 'comment' => $k('walled', 'portal-ip')]];
+        foreach (WalledGarden::hosts() as $host) {
+            $rows[] = ['dst-host' => $host, 'protocol' => 'tcp', 'dst-port' => $host === 'github.com' ? '8443' : '443', 'action' => 'accept',
+                'comment' => $k('walled', WalledGarden::object($host))];
+        }
+        $fail = null;
+        $queried = [];
+        // The only deviation is the dst-port of github.com (the portal host entry is present)
+        $this->fakeHttp(['/ip hotspot walled-garden ip' => $rows,
+            '/ip hotspot walled-garden' => [['dst-host' => 'portal.example.net', 'action' => 'allow', 'comment' => $k('walled', 'portal-host')]]], $fail, $queried);
+        $this->artisan('portal:router-state-check')->assertSuccessful()->expectsOutputToContain('Site A / Router A: outdated blocks: walled (notified)');
+        $walled = $this->nas->site->driver()->compareState($this->site->fresh(), $this->nas->fresh()->router_state)['walled'];
+        $this->assertSame(['dst-port' => ['443', '8443']], $walled[$k('walled', WalledGarden::object('github.com'))]['diff']);
+        $this->assertSame(['present'], array_values(array_unique(array_column(array_diff_key($walled,
+            [$k('walled', WalledGarden::object('github.com')) => true]), 'status'))));
+        Http::assertSent(fn (Request $r) => $r->url() === 'https://hooks.example.net/in' && $r['blocks'] === ['walled']);
+        $this->admin()->get('/admin')->assertOk()->assertSee('data-router-outdated="'.$this->nas->id.'"', false)
+            ->assertSee(__('portal.router_fresh.blocks', ['blocks' => __('portal.router_api.blocks.walled')]));
     }
 
     public function test_outdated_and_unreachable_in_one_check_send_both_events(): void

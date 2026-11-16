@@ -158,7 +158,7 @@ offline MACs: **(unverified)**.
 
 **Walled garden.** Pre-authorization allowances take a host name, IP or subnet [S10]. Host names are resolved and
 frozen into an ipset (`guest_pre_allow`) [S11], so CDN-backed social login hosts may break; wildcard entries
-(`WalledGarden::hosts()` contains `*.gstatic.com`) are not documented **(unverified)**. Needed entries: the portal host
+are not documented **(unverified)**; `WalledGarden::hosts()` holds concrete host names only since v0.32.0. Needed entries: the portal host
 (and its IP) plus `WalledGarden::hosts()` of the switched-on providers.
 
 **Login page.** Not needed (UniFi redirects). The portal needs a route for the UniFi path `/guest/s/{unifiSite}/`

@@ -151,13 +151,34 @@ check_keys_known() { # <rsc dir> <label>
 # Dynamic entries RouterOS adds for a hotspot (decision 2026-11-02): never removed or changed by the scripts.
 HS_NAME=hotspot.guest.example.com
 # (walled garden: RouterOS adds a dynamic copy of every walled-garden ip entry with its comment, also of the own
-# one; those copies come and go with the own entry, so only the others are counted)
-dyn() { ros ':put ("walled-garden=" . [:len [/ip hotspot walled-garden find where dynamic && !(comment~"^guest-portal:")]] . " walled-garden-ip=" . [:len [/ip hotspot walled-garden ip find where dynamic]] . " dns-static=" . [:len [/ip dns static find where dynamic]])'; }
+# one; those copies come and go with the own entry, so only the others are counted. A dst-host entry gets one copy
+# per resolved address with the host name as comment (7.24.5 CHR, decision 2026-11-16): their number follows DNS,
+# so copies with a host name comment are not counted either)
+dyn() { ros ':put ("walled-garden=" . [:len [/ip hotspot walled-garden find where dynamic && !(comment~"^guest-portal:") && !(comment~"^[a-z0-9-]+(\\.[a-z0-9-]+)+\$")]] . " walled-garden-ip=" . [:len [/ip hotspot walled-garden ip find where dynamic]] . " dns-static=" . [:len [/ip dns static find where dynamic]])'; }
 # The router script re-creates the hotspot: its dynamic entries come back within seconds
 dyn_is() { local i; for i in $(seq 1 15); do [ "$(dyn)" = "$1" ] && return 0; sleep 2; done; echo "    got: $(dyn)"; return 1; }
 dyn_print() { ros '/ip hotspot walled-garden print terse where dynamic; /ip hotspot walled-garden ip print terse where dynamic; /ip dns static print terse where dynamic'; }
 # Own (key or legacy comment) static entries in the menus with dynamic hotspot entries
-own_static() { ros ":put ([:len [/ip hotspot walled-garden find where !dynamic && (comment~\"^$N:\" || comment=\"$N\" || comment~\"^$N: \")]] + [:len [/ip hotspot walled-garden ip find where !dynamic && (comment~\"^$N:\" || comment=\"$N\" || comment~\"^$N: \")]] + [:len [/ip dns static find where !dynamic && (comment~\"^$N:\" || comment=\"$N\" || comment~\"^$N: \")]])"; }
+# (own key: the full pattern "guest-portal:<block>:<object>"; the seed's look-alike "...:social-github-com copy" is not own)
+OWNC="(comment~\"^$N:[a-z0-9-]+:[A-Za-z0-9._-]+\\\$\" || comment=\"$N\" || comment~\"^$N: \")"
+own_static() { ros ":put ([:len [/ip hotspot walled-garden find where !dynamic && $OWNC]] + [:len [/ip hotspot walled-garden ip find where !dynamic && $OWNC]] + [:len [/ip dns static find where !dynamic && $OWNC]])"; }
+# Social login entries (decision 2026-11-16): own walled-garden ip entries (exact key pattern), old host entries
+SOC="comment~\"^$N:walled:social-[a-z0-9-]+\\\$\""
+social_ip() { ros ":put [:len [/ip hotspot walled-garden ip find where $SOC]]"; }
+social_host() { ros ":put [:len [/ip hotspot walled-garden find where $SOC && !dynamic]]"; }
+social_lookalike() { ros ":put ([:len [/ip hotspot walled-garden ip find where comment=\"$N:walled:social-github-com copy\"]] . [:len [/ip hotspot walled-garden find where comment=\"$N:walled:social-github-com copy\" && !dynamic]])"; }
+check_social() { # <rsc dir> <label>
+    local want got
+    want=$(grep -c '^add dst-host=.* protocol=tcp dst-port=443 action=accept comment="guest-portal:walled:social-' "$1/router.rsc")
+    check "$2: social login entries in walled garden ip ($want expected, got $(social_ip))" test "$(social_ip)" = "$want" -a "$want" -gt 0
+    check "$2: no social host entry of earlier versions left in walled garden ($(social_host))" test "$(social_host)" = 0
+    check "$2: look-alike entries of others kept in both menus" test "$(social_lookalike)" = 11
+    # RouterOS resolves each name itself: invalid (flag I) = not resolved, wildcard or regex
+    got=$(ros ":put [:len [/ip hotspot walled-garden ip find where $SOC && invalid]]")
+    check "$2: no social entry invalid (all names resolved, got $got)" test "$got" = 0
+    got=$(ros ':put [:len [/ip firewall nat find where dynamic && chain=hs-unauth && action=return && comment="accounts.google.ch"]]')
+    check "$2: dynamic hs-unauth return rule for accounts.google.ch ($got)" test "$got" -gt 0
+}
 
 # Static rules of a chain as "comment" lines in order.
 chain_rules() { ros ":foreach r in=[/ip firewall filter find where chain=$1 && dynamic=no] do={ :put [/ip firewall filter get \$r comment] }"; }
@@ -543,6 +564,7 @@ for MODE in "${MODES[@]}"; do
     DYN=$(dyn)
     check "[$MODE] router script: own walled-garden entries present next to the dynamic ones ($DYN)" \
         test "$(ros ":put ([:len [/ip hotspot walled-garden find where comment=\"$N:walled:portal-host\" && !dynamic]] . [:len [/ip hotspot walled-garden ip find where comment=\"$N:walled:portal-ip\" && !dynamic]])")" = 11
+    check_social "$R" "[$MODE] router script"
     ros "/log print where message~\"$N\"" | tail -5 | sed 's/^/    log| /'
     check_cert_state "[$MODE] after first import" "$WORK/pki/leaf1"
     ids1=$(certs)
@@ -554,6 +576,7 @@ for MODE in "${MODES[@]}"; do
     run_block "$R/router.rsc" "[$MODE] router.rsc (re-run)"
     wait_cert_script
     check "[$MODE] router script re-run: dynamic entries unchanged ($DYN)" dyn_is "$DYN"
+    check_social "$R" "[$MODE] router script re-run"
     check "[$MODE] router script re-run keeps the certificates" test "$(certs)" = "$ids1"
     profile_ok "[$MODE] profile after router script re-run"
 
@@ -637,6 +660,14 @@ for MODE in "${MODES[@]}"; do
         check "[$MODE] $t: foreign RFC1918 10.0.0.0/8 entry (seed) reported as foreign, not added" \
             grep -qx 'guest-portal:fw:addr-rfc1918-10 foreign' "$f"
     done
+    # Social login entry changed by hand (dst-port): reported as differs with both values, set back: present
+    ros "/ip hotspot walled-garden ip set [find where comment=\"$N:walled:social-github-com\"] dst-port=8443" >/dev/null
+    f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+    check "[$MODE] rest: changed social entry reported as differs ($(grep "^$N:walled:social-github-com " "$f"))" \
+        grep -qF "$N:walled:social-github-com differs {\"dst-port\":[\"443\",\"8443\"]}" "$f"
+    ros "/ip hotspot walled-garden ip set [find where comment=\"$N:walled:social-github-com\"] dst-port=443" >/dev/null
+    f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+    check "[$MODE] rest: social entry set back: present" grep -qx "$N:walled:social-github-com present" "$f"
     # Outdated value: option 114 pointing to another portal address is reported as differs (with both values),
     # a guest DHCP network without captive-portal too (on option 114); the captive option block fixes both
     ros "/ip dhcp-server option set [find where comment=\"$N:net:option-114\"] value=\"'https://old-host.example.com/captive/x'\"" >/dev/null
@@ -695,6 +726,8 @@ for MODE in "${MODES[@]}"; do
     run_block "$R/uninstall.uninstall.rsc" "[$MODE] uninstall.uninstall"
     echo "    dynamic entries before the uninstall: $DYN, after: $(dyn)"
     check "[$MODE] uninstall: no own walled-garden / DNS entry left" test "$(own_static)" = 0
+    check "[$MODE] uninstall: no social login entry left ($(social_ip) $(social_host)), look-alikes kept" \
+        test "$(social_ip)$(social_host)$(social_lookalike)" = 0011
     run_block "$R/uninstall.uninstall_network.rsc" "[$MODE] uninstall.uninstall_network"
     if [ "$MODE" != local ]; then
         got=$(slaves cfg-main); check "[$MODE] uninstall: cfg-main slaves cfg-iot (cfg-guest removed, other slave kept, got: $got)" test "$got" = "cfg-iot"

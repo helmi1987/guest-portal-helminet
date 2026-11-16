@@ -18,6 +18,8 @@
  * editor script from that state to <out-dir>/provisioning-<type>.rsc (or "error <json>").
  */
 
+use App\Auth\Social\LoginMethods;
+use App\Auth\Social\SocialSettings;
 use App\Models\NasClient;
 use App\Models\Site;
 use App\Nas\RouterOs\RouterStateQuery;
@@ -58,6 +60,14 @@ Artisan::call('migrate', ['--force' => true]);
 // Fake test value (not a secret): quote, backslash, dollar, question mark, brackets and spaces
 $wifiPassword = 'te"st\\pa$s? [w] {x};';
 $portalUrl = 'https://portal.example.com'.($portalPort === 443 ? '' : ':'.$portalPort);
+
+// Social login with Google (two country domains) and GitHub (decision 2026-11-16): the router script adds their hosts as
+// walled-garden ip entries. Fake client IDs and secrets (not secrets).
+LoginMethods::save([LoginMethods::SOCIAL => true]);
+SocialSettings::save(['providers' => [
+    'google' => ['enabled' => true, 'client_id' => 'test-client.apps.example.com', 'country_domains' => ['ch', 'de']],
+    'github' => ['enabled' => true, 'client_id' => 'test-github-client'],
+]], ['google' => 'test-google-secret', 'github' => 'test-github-secret']);
 
 foreach ($wifiModes as $i => $mode) {
     $site = Site::create(['slug' => 'site-'.$mode, 'name' => 'Test site', 'driver' => 'mikrotik_ros7', 'settings' => [

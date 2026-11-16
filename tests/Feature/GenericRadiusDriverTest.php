@@ -348,7 +348,7 @@ class GenericRadiusDriverTest extends TestCase
 
         $text = $this->driver()->checklist($this->site->fresh());
         foreach (['Server: 10.0.0.10', '<RADIUS_SECRET>', 'https://portal.example.com/portal/g/site-g', 'portal.example.com  TCP 443',
-            '10.0.0.10  TCP 443', 'github.com  TCP 443', '*.githubassets.com', 'wildcard', 'POST to https://securelogin.arubanetworks.com/cgi-bin/login',
+            '10.0.0.10  TCP 443', 'github.com  TCP 443', 'github.githubassets.com  TCP 443', 'POST to https://securelogin.arubanetworks.com/cgi-bin/login',
             'Fields: user, password, url (success URL), cmd', 'Aruba: walled garden', 'MAC authentication'] as $needle) {
             $this->assertStringContainsString($needle, $text);
         }

@@ -235,13 +235,13 @@ Before login a guest must reach:
 | Host | Why | Source |
 |---|---|---|
 | Portal host (HTTPS) | The portal pages | Host of the site's portal URL; `portal_address` (else `radius_address`) for an IP rule |
-| Social login hosts | Sign-in pages of the providers offered to guests, incl. their CDNs | [`WalledGarden::hosts()`](../app/Auth/Social/WalledGarden.php#L33) |
+| Social login hosts | Sign-in pages of the providers offered to guests, incl. their CDNs | [`WalledGarden::hosts()`](../app/Auth/Social/WalledGarden.php#L68) |
 
-`WalledGarden::hosts()` is empty while social login is off and lists only switched-on, configured providers; wildcard
-entries such as `*.gstatic.com` are included, so the NAS must support wildcard host rules or the driver must document
-what to do instead. The generated configuration should remove the entries of providers switched off later
-(`WalledGarden::allHosts()`). Do not add captive-check hosts of the operating systems (CONCEPT.md §9). MikroTik:
-[`MikrotikRos7Driver.php:382`](../app/Nas/MikrotikRos7Driver.php#L382).
+`WalledGarden::hosts()` is empty while social login is off and lists only switched-on, configured providers; it holds
+concrete host names only (v0.32.0), Google with one `accounts.google.<tld>` per configured country domain. The
+generated configuration should remove the entries of providers switched off later (MikroTik: every own entry by the
+full comment key pattern `^guest-portal:walled:social-[a-z0-9-]+$`). Do not add captive-check hosts of the operating systems (CONCEPT.md §9). MikroTik:
+[`MikrotikRos7Driver.php:458`](../app/Nas/MikrotikRos7Driver.php#L458).
 
 ### 2.11 What the RADIUS core expects from the NAS
 

@@ -546,24 +546,43 @@ popup). Expected: redirect to the portal page, then login, then internet.
 ### 6.6 Walled garden for social login
 When social login is switched on and a provider is configured (admin settings, CONCEPT.md §7.2 D), the
 guest must reach the provider's sign-in pages before the hotspot login. The router script adds one
-`/ip hotspot walled-garden` entry (`dst-host`, `action=allow`) per host of every configured provider,
-with the comment key `guest-portal:walled:social-<host>` (`*` written as `any`, `.` as `-`). It first
-removes the own entries of all providers by their exact keys, so a provider that is switched off loses
-its entries on the next run; entries of others are never changed. The router state query shows missing
-entries (and own entries of providers no longer offered) as "apply" lines.
+`/ip hotspot walled-garden ip` entry (`dst-host=<host> protocol=tcp dst-port=443 action=accept`, v0.32.0) per
+host of every configured provider, with the comment key `guest-portal:walled:social-<host>` (`.` written as `-`).
+RouterOS resolves each name itself and lets HTTPS to its addresses bypass the hotspot's HTTPS handler (it adds
+dynamic `hs-unauth` return rules and dynamic copies in `/ip hotspot walled-garden`, both with the host name as
+comment). It first removes every own social entry (full comment key pattern `^guest-portal:walled:social-[a-z0-9-]+$`, static
+entries only) in `/ip hotspot walled-garden ip` and, for the `/ip hotspot walled-garden` host entries of versions
+before 0.32.0, in `/ip hotspot walled-garden`; so a provider switched off or a country domain removed loses its
+entries on the next run; entries of others are never changed. The router state query shows missing or changed
+entries (every value is compared) and own entries no longer wanted (also the old host entries) as "apply" lines.
+
+Why walled garden ip (decision 2026-11-16): unauthenticated guests' HTTPS (tcp/443) is redirected to the
+hotspot's internal handler. A `/ip hotspot walled-garden` host entry only matches through the router's DNS cache
+(the CNAME target, not the name the guest asked for), and the Google sign-in failed in captive browsers at
+`accounts.google.<country>` with an SSL error even with a matching entry. Verified on the CHR (RouterOS 7.24.5): a
+walled-garden ip entry takes plain host names only; wildcards (`*.example.com`), regular expressions (`:^...`) and
+names that do not resolve are marked invalid (flag `I`) and allow nothing, so the lists hold concrete host names.
 
 | Provider | Hosts |
 |---|---|
-| Google | `accounts.google.com`, `*.googleusercontent.com`, `*.gstatic.com`, `apis.google.com`, `oauth2.googleapis.com`, `www.googleapis.com`, `play.google.com` (Android captive portal browser), `fonts.googleapis.com` |
-| Apple | `appleid.apple.com`, `appleid.cdn-apple.com`, `idmsa.apple.com`, `gsa.apple.com`, `*.cdn-apple.com` |
-| Facebook | `*.facebook.com`, `*.fbcdn.net`, `*.facebook.net`, `*.fbsbx.com` |
-| GitHub | `github.com`, `*.github.com`, `*.githubassets.com`, `*.githubusercontent.com` |
-| Microsoft | `login.microsoftonline.com`, `login.microsoft.com`, `login.live.com`, `account.live.com` (personal accounts), `auth.gfx.ms`, `*.msauth.net`, `*.msftauth.net` (sign-in page CDNs), `*.msauthimages.net`, `*.msftauthimages.net` (tenant branding) |
+| Google | `accounts.google.com`, `accounts.google.<tld>` per country domain (setting, default `ch, de, at, it, fr, li`), `accounts.youtube.com`, `www.gstatic.com`, `ssl.gstatic.com`, `fonts.gstatic.com`, `fonts.googleapis.com`, `lh3.googleusercontent.com`, `play.google.com`, `oauth2.googleapis.com` |
+| Apple | `appleid.apple.com`, `appleid.cdn-apple.com`, `idmsa.apple.com`, `gsa.apple.com` |
+| Facebook | `www.facebook.com`, `m.facebook.com` (captive browsers), `static.xx.fbcdn.net`, `z-m-static.xx.fbcdn.net` |
+| GitHub | `github.com`, `github.githubassets.com`, `avatars.githubusercontent.com` |
+| Microsoft | `login.microsoftonline.com`, `login.microsoft.com`, `login.live.com`, `account.live.com` (personal accounts), `auth.gfx.ms`, `aadcdn.msauth.net`, `aadcdn.msftauth.net`, `logincdn.msauth.net`, `logincdn.msftauth.net`, `acctcdn.msauth.net`, `acctcdn.msftauth.net` (sign-in page CDNs), `aadcdn.msauthimages.net`, `aadcdn.msftauthimages.net` (tenant branding) |
 
-The Microsoft hosts (v0.31.0) are the browser sign-in hosts from Microsoft's published Microsoft 365 endpoint list
-(learn.microsoft.com, "Microsoft 365 URLs and IP address ranges", endpoint sets 56, 59, 97 and 116). Work or school
+Google redirects the sign-in through the country host of the guest (`accounts.google.ch/accounts/SetSID` for a
+guest in Switzerland): the Google setting "country domains" (admin settings, social login) lists the country domains
+the routers allow, e.g. `ch, de, co.uk` (two or three letters, optionally a second part). Guests whose country is
+not listed may fail at that step. No captive-check host is in the lists: `*.gstatic.com` of earlier versions also
+opened `connectivitycheck.gstatic.com` (Android's probe), and `www.google.com` (probe `www.google.com/generate_204`)
+stays out; with them Android believes it is online and shows no portal **(assumption, not tested on a device)**.
+
+The Microsoft hosts are the browser sign-in hosts from Microsoft's published Microsoft 365 endpoint list
+(learn.microsoft.com, "Microsoft 365 URLs and IP address ranges", endpoint sets 56, 59, 97 and 116), with the
+wildcards replaced by the CDN hosts the sign-in pages load. Work or school
 accounts whose organisation signs in through its own federation server (for example AD FS) also need that server's
-host, which the portal cannot know; add it as an own walled-garden entry.
+host, which the portal cannot know; add it as an own walled-garden ip entry.
 
 The list lives in `app/Auth/Social/WalledGarden.php`. Providers change the hosts their sign-in pages load
 from: when a sign-in page stays blank or half-loaded before login, check the blocked hosts in the browser's

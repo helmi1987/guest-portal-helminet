@@ -29,6 +29,10 @@ guest access has no RADIUS and no per-device release); it works as the internet 
 
 **Status:** early development, current version in [VERSION](VERSION). Highlights per minor version:
 
+- v0.32: the MikroTik router script adds the social login hosts as `/ip hotspot walled-garden ip` entries (tcp/443,
+  resolved by RouterOS) instead of host entries, which fixes the Google sign-in in captive browsers; concrete host names
+  only (no wildcards, none of the captive-check hosts), Google setting "country domains" for `accounts.google.<tld>`;
+  the router state compares every value of these entries and flags the old host entries.
 - v0.31: Microsoft (Entra ID) is the fifth social login provider (work, school and personal accounts, tenant
   setting, setup guide with every redirect URI, ID token checks, configuration check, walled-garden hosts); each
   provider secret except Apple's can carry an expiry date, shown on the provider card and as a banner for admins

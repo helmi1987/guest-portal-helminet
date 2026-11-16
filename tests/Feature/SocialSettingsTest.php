@@ -161,7 +161,8 @@ class SocialSettingsTest extends TestCase
         ], 12.5))->assertRedirect('/admin/settings')->assertSessionHasNoErrors()->assertSessionHas('status', __('portal.saved'));
 
         $this->assertSame(45000, SocialSettings::durationS());
-        $this->assertSame(['enabled' => true, 'client_id' => 'google-client.apps.example.com', 'secret_expires_at' => null], SocialSettings::provider('google'));
+        $this->assertSame(['enabled' => true, 'client_id' => 'google-client.apps.example.com', 'secret_expires_at' => null,
+            'country_domains' => WalledGarden::DEFAULT_COUNTRY_DOMAINS], SocialSettings::provider('google'));
         $this->assertSame(self::GOOGLE_SECRET, SocialSettings::secret('google'));
         $this->assertSame(self::GITHUB_SECRET, SocialSettings::secret('github'));
         $this->assertNull(SocialSettings::secret('facebook'));
@@ -485,5 +486,37 @@ class SocialSettingsTest extends TestCase
             'microsoft' => ['enabled' => '1', 'client_id' => '11111111-2222-3333-4444-555555555555'],
         ]) + ['move' => 'google:up'])->assertSessionHasNoErrors()->assertSessionMissing('warning');
         $this->assertSame(['facebook', 'github', 'microsoft', 'google', 'apple'], SocialSettings::enabledProviders());
+    }
+
+    public function test_google_country_domains_are_saved_validated_and_ask_for_the_router_script(): void
+    {
+        LoginMethods::save(['code' => true, 'social' => true]);
+        $google = ['enabled' => '1', 'client_id' => 'google-client.apps.example.com', 'secret' => self::GOOGLE_SECRET];
+        $post = fn (array $extra) => $this->onZone('admin')->actingAs($this->admin())->from('/admin/settings')
+            ->post('/admin/settings/social', $this->form(['google' => $google + $extra]));
+
+        // Shown with the defaults
+        $this->onZone('admin')->actingAs($this->admin())->get('/admin/settings')->assertOk()
+            ->assertSee('name="providers[google][country_domains]" value="ch, de, at, it, fr, li"', false);
+
+        $post(['country_domains' => 'ch, de, at, it, fr, li'])->assertSessionHasNoErrors();
+        $this->assertContains('accounts.google.li', WalledGarden::hosts());
+        // Changed list: saved normalised, the admin is told to apply the router script again
+        $post(['country_domains' => ' CH; .co.uk  se,ch'])->assertSessionHasNoErrors()->assertSessionHas('warning', __('portal.settings.social.walled_garden_changed'));
+        $this->assertSame(['ch', 'co.uk', 'se'], SocialSettings::provider('google')['country_domains']);
+        $this->assertContains('accounts.google.co.uk', WalledGarden::hosts());
+        $this->assertNotContains('accounts.google.de', WalledGarden::hosts());
+        // Unchanged: no hint
+        $post(['country_domains' => 'ch, co.uk, se'])->assertSessionHasNoErrors()->assertSessionMissing('warning');
+        // Invalid value: nothing saved
+        foreach (['ch, *.de', 'ch, d', 'ch, "x"', 'accounts.google.ch'] as $bad) {
+            $post(['country_domains' => $bad])->assertSessionHasErrors('providers.google.country_domains');
+        }
+        $this->assertSame(['ch', 'co.uk', 'se'], SocialSettings::provider('google')['country_domains']);
+        // Empty: no country host (accounts.google.com stays)
+        $post(['country_domains' => ''])->assertSessionHasNoErrors();
+        $this->assertSame([], SocialSettings::provider('google')['country_domains']);
+        $this->assertContains('accounts.google.com', WalledGarden::hosts());
+        $this->assertSame([], array_filter(WalledGarden::hosts(), fn ($h) => preg_match('/^accounts\.google\.(?!com$)/', $h)));
     }
 }

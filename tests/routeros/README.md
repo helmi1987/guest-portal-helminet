@@ -62,6 +62,16 @@ dependencies. The run needs a router without configuration (fresh image or `load
   walled-garden ip entry with its comment, own and foreign; none in walled garden ip) and the hotspot name resolves; the DNS block re-run, the router
   script and its re-run, and the walled-garden/DNS lines of the uninstall run alone while the hotspot exists leave
   the dynamic entries unchanged; afterwards no own walled-garden/DNS entry is left.
+- Social login walled garden (decision 2026-11-16, fixture with Google (country domains ch, de) and GitHub): the router
+  script adds one `/ip hotspot walled-garden ip` entry per host (`dst-host`, tcp/443, accept) and removes the social host
+  entries of earlier versions (`legacy.rsc`: `*.gstatic.com`, `accounts.google.com` in `/ip hotspot walled-garden`); no
+  entry invalid (all names resolved), a dynamic `hs-unauth` return rule for `accounts.google.ch`; the seed's look-alike
+  entries ("...:social-github-com copy", both menus) kept; re-run identical; a dst-port changed by hand is reported as
+  `differs` by the state query and `present` again once set back; the uninstall leaves no social entry. RouterOS 7.24.5
+  (CHR): a `dst-host` entry gets one dynamic copy in `/ip hotspot walled-garden` and one dynamic nat/filter rule per
+  resolved address, all with the host name as comment (not counted by `dyn()`, their number follows DNS); wildcard
+  (`*.example.com`) and regex (`:^...`) values and names that do not resolve are marked invalid (flag `I`). Needs DNS on
+  the CHR (qemu user networking).
 - Certificate script: first import (leaf `guest-portal` with key and served fingerprint, CAs
   `guest-portal-ca-1/2`, profile uses it), second run and router script re-run are no-ops, rotation to a
   new leaf; foreign certificates (also `guest-portal-ca-x`, `guest-portal-backup`,

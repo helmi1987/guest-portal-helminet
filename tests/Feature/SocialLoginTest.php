@@ -583,68 +583,141 @@ class SocialLoginTest extends TestCase
 
     // --- Walled garden ----------------------------------------------------------------------------
 
-    public function test_router_script_adds_walled_garden_entries_of_the_enabled_providers(): void
+    public function test_router_script_adds_walled_garden_ip_entries_of_the_enabled_providers(): void
     {
         $nas = NasClient::find($this->site->nasClients()->create(['name' => 'Router A', 'nas_ip' => '10.0.1.1', 'coa_port' => 3799])->id);
         $script = fn () => $this->site->fresh()->driver()->configScript($this->site->fresh(), $nas);
-        $key = fn (string $host) => MikrotikRos7Driver::key('walled', WalledGarden::object($host));
+        $remove = 'remove [find where comment~"^guest-portal:walled:social-[a-z0-9-]+\\$" && !dynamic]';
 
-        // Off: no entries, but the own entries of every provider are removed
+        // Off: no entries, but the own entries of every provider are removed in both menus (key prefix, static only)
         $off = $script();
         $this->assertStringNotContainsString('add dst-host="accounts.google.com"', $off);
-        $this->assertStringContainsString('remove [find where (comment="'.$key('accounts.google.com').'" || ', $off);
-        $this->assertStringContainsString('comment="'.$key('*.githubusercontent.com').'") && !dynamic]', $off);
+        $this->assertSame(2, substr_count($off, $remove));
+        $this->assertMatchesRegularExpression('/^\/ip hotspot walled-garden\n(.*\n){2}.*\n'.preg_quote($remove, '/').'$/m', $off);
+        $this->assertMatchesRegularExpression('/^\/ip hotspot walled-garden ip\n(.*\n)*?'.preg_quote($remove, '/').'$/m', $off);
 
         $this->configure(['google', 'github']);
         $on = $script();
-        $this->assertStringContainsString('add dst-host="accounts.google.com" action=allow comment="guest-portal:walled:social-accounts-google-com"', $on);
-        $this->assertStringContainsString('add dst-host="*.gstatic.com" action=allow comment="guest-portal:walled:social-any-gstatic-com"', $on);
-        $this->assertStringContainsString('add dst-host="*.githubassets.com" action=allow', $on);
+        $this->assertStringContainsString('add dst-host="accounts.google.com" protocol=tcp dst-port=443 action=accept comment="guest-portal:walled:social-accounts-google-com"', $on);
+        foreach (['ch', 'de', 'at', 'it', 'fr', 'li'] as $tld) {
+            $this->assertStringContainsString('add dst-host="accounts.google.'.$tld.'" protocol=tcp dst-port=443 action=accept comment="guest-portal:walled:social-accounts-google-'.$tld.'"', $on);
+        }
+        $this->assertStringContainsString('add dst-host="accounts.youtube.com" protocol=tcp dst-port=443 action=accept', $on);
+        $this->assertStringContainsString('add dst-host="github.githubassets.com" protocol=tcp dst-port=443 action=accept', $on);
+        // No host entries any more, no wildcard, no captive check host
+        $this->assertStringNotContainsString('action=allow comment="guest-portal:walled:social-', $on);
+        $this->assertDoesNotMatchRegularExpression('/dst-host="[^"]*\*/', $on);
+        foreach (['connectivitycheck.gstatic.com', 'www.google.com', 'captive.apple.com'] as $probe) {
+            $this->assertStringNotContainsString('dst-host="'.$probe.'"', $on);
+        }
+        // The entries follow the own portal-ip entry in the walled garden ip menu
+        $this->assertLessThan(strpos($on, 'add dst-host="accounts.google.com"'), strpos($on, 'comment="guest-portal:walled:portal-ip"'));
         $this->assertStringNotContainsString('add dst-host="appleid.apple.com"', $on);
-        $this->assertStringNotContainsString('add dst-host="*.facebook.com"', $on);
+        $this->assertStringNotContainsString('add dst-host="www.facebook.com"', $on);
+
+        // Country domains of the Google setting
+        SocialSettings::save(['providers' => ['google' => ['country_domains' => ['co.uk', 'CH', 'bad value', 'ch']]]]);
+        $this->assertSame(['co.uk', 'ch'], SocialSettings::provider('google')['country_domains']);
+        $on = $script();
+        $this->assertStringContainsString('add dst-host="accounts.google.co.uk" protocol=tcp dst-port=443 action=accept comment="guest-portal:walled:social-accounts-google-co-uk"', $on);
+        $this->assertStringNotContainsString('add dst-host="accounts.google.de"', $on);
+
         // Social login switched off again: the entries go away
         LoginMethods::save([LoginMethods::SOCIAL => false]);
         $this->assertStringNotContainsString('add dst-host="accounts.google.com"', $script());
 
-        // Uninstall removes the own entries of all providers
+        // Uninstall removes the own entries of all providers in both menus
         $uninstall = implode("\n", $this->site->driver()->setupCommands($this->site, [])['uninstall']);
-        $this->assertStringContainsString('/ip hotspot walled-garden remove [find where (comment="'.$key('accounts.google.com').'"', $uninstall);
+        $this->assertStringContainsString('/ip hotspot walled-garden '.$remove, $uninstall);
+        $this->assertStringContainsString('/ip hotspot walled-garden ip '.$remove, $uninstall);
 
-        // Object names: unique, valid comment key characters
-        $objects = array_map(WalledGarden::object(...), WalledGarden::allHosts());
-        $this->assertSame($objects, array_unique($objects));
+        // Object names of all hosts: unique, valid comment key characters
+        $hosts = [];
+        foreach (SocialSettings::PROVIDERS as $provider) {
+            array_push($hosts, ...WalledGarden::providerHosts($provider));
+        }
+        $objects = array_map(WalledGarden::object(...), array_values(array_unique($hosts)));
+        $this->assertSame($objects, array_values(array_unique($objects)));
         foreach ($objects as $object) {
             $this->assertMatchesRegularExpression('/^[a-z0-9-]+$/', $object);
         }
     }
 
-    public function test_router_state_detects_missing_and_stale_social_entries(): void
+    public function test_country_domains_are_normalised_and_validated(): void
+    {
+        $this->assertSame(['ch', 'de', 'co.uk'], WalledGarden::countryDomains(' CH, de;  .co.uk ch '));
+        $this->assertSame(['de'], WalledGarden::countryDomains(['de', 'd', 'toolong', 'a.b', 'x"y', 'ch.', 'com.au.x']));
+        $this->assertSame([], WalledGarden::countryDomains(''));
+        foreach (['ch', 'com', 'co.uk', 'com.au'] as $ok) {
+            $this->assertMatchesRegularExpression(WalledGarden::COUNTRY_DOMAIN, $ok);
+        }
+        foreach (['c', 'chde', 'co.ukxx', 'c-h', 'ch.', '*.ch', ':^ch'] as $bad) {
+            $this->assertDoesNotMatchRegularExpression(WalledGarden::COUNTRY_DOMAIN, $bad);
+        }
+        // Defaults
+        $this->assertSame(WalledGarden::DEFAULT_COUNTRY_DOMAINS, SocialSettings::provider('google')['country_domains']);
+    }
+
+    public function test_router_state_detects_missing_changed_and_stale_social_entries(): void
     {
         $this->configure(['facebook']);
         $nas = NasClient::find($this->site->nasClients()->create(['name' => 'Router A', 'nas_ip' => '10.0.1.1', 'coa_port' => 3799])->id);
         $driver = $this->site->driver();
         $key = fn (string $host) => MikrotikRos7Driver::key('walled', WalledGarden::object($host));
-        $row = fn (string $host) => ['dst-host' => $host, 'action' => 'allow', 'comment' => $key($host)];
+        $row = fn (string $host, array $over = []) => $over + ['dst-host' => $host, 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept', 'comment' => $key($host)];
+        $ip = '/ip hotspot walled-garden ip';
 
-        $this->assertArrayHasKey($key('*.facebook.com'), $driver->managedObjects($this->site)['walled']);
-        $this->assertSame(['dst-host' => '*.fbcdn.net', 'action' => 'allow'], $driver->expectedValues($this->site)[$key('*.fbcdn.net')]);
+        $this->assertSame(['path' => $ip, 'name' => null], $driver->managedObjects($this->site)['walled'][$key('www.facebook.com')]);
+        $this->assertSame(['dst-host' => 'static.xx.fbcdn.net', 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept'],
+            $driver->expectedValues($this->site)[$key('static.xx.fbcdn.net')]);
 
-        $rows = [$row('*.facebook.com'), $row('*.fbcdn.net'), $row('*.facebook.net'), ['dst-host' => '*.fbsbx.com', 'action' => 'deny', 'comment' => $key('*.fbsbx.com')],
-            // An entry of a provider no longer offered
-            $row('github.com')];
-        $compare = $driver->compareState($this->site, ['menus' => ['/ip hotspot walled-garden' => ['rows' => $rows]]]);
-        $this->assertSame('present', $compare['walled'][$key('*.facebook.com')]['status']);
-        $this->assertSame('differs', $compare['walled'][$key('*.fbsbx.com')]['status']);
-        $this->assertSame('differs', $compare['walled'][$key('github.com')]['status']);
-        $this->assertArrayNotHasKey($key('*.github.com'), $compare['walled']);
+        $rows = [$row('www.facebook.com'), $row('m.facebook.com', ['dst-port' => '80']), $row('static.xx.fbcdn.net', ['dst-host' => 'static.example.com']),
+            $row('z-m-static.xx.fbcdn.net', ['action' => 'drop']),
+            // An entry of a provider no longer offered, and an entry of others
+            $row('github.com'), ['dst-host' => 'github.com', 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept', 'comment' => 'foreign'],
+            ['dst-host' => 'github.com', 'protocol' => 'tcp', 'dst-port' => '443', 'action' => 'accept', 'comment' => $key('github.com').' (copy)']];
+        $hostRows = [
+            // Host entry of an earlier version (also of a wanted host), a dynamic copy of an ip entry (comment = host)
+            ['dst-host' => 'www.facebook.com', 'action' => 'allow', 'comment' => $key('www.facebook.com')],
+            ['dst-host' => '*.fbcdn.net', 'action' => 'allow', 'comment' => $key('*.fbcdn.net')],
+            ['dst-address' => '192.0.2.50', 'dst-port' => '443', 'action' => 'allow', 'comment' => 'www.facebook.com', 'dynamic' => 'true'],
+        ];
+        $compare = $driver->compareState($this->site, ['menus' => [$ip => ['rows' => $rows], '/ip hotspot walled-garden' => ['rows' => $hostRows]]]);
+        $walled = $compare['walled'];
+        $this->assertSame('present', $walled[$key('www.facebook.com')]['status']);
+        // Every set value is compared
+        $this->assertSame(['differs', ['dst-port' => ['443', '80']]], [$walled[$key('m.facebook.com')]['status'], $walled[$key('m.facebook.com')]['diff']]);
+        $this->assertSame(['differs', ['dst-host' => ['static.xx.fbcdn.net', 'static.example.com']]],
+            [$walled[$key('static.xx.fbcdn.net')]['status'], $walled[$key('static.xx.fbcdn.net')]['diff']]);
+        $this->assertSame('differs', $walled[$key('z-m-static.xx.fbcdn.net')]['status']);
+        $this->assertSame(['path' => $ip, 'name' => null, 'status' => 'differs', 'diff' => ['dst-host' => ['–', 'github.com']]], $walled[$key('github.com')]);
+        // Old host entries: own state id next to the ip entry with the same key
+        $this->assertSame(['path' => '/ip hotspot walled-garden', 'name' => null, 'key' => $key('www.facebook.com'), 'status' => 'differs',
+            'diff' => ['dst-host' => ['–', 'www.facebook.com']]], $walled[$key('www.facebook.com').'@walled-garden']);
+        $this->assertSame('differs', $walled[$key('*.fbcdn.net').'@walled-garden']['status']);
+        $this->assertCount(4 + 2 + 2 + 1, $walled);
 
-        $compare = $driver->compareState($this->site, ['menus' => ['/ip hotspot walled-garden' => ['rows' => []]]]);
-        $this->assertSame('missing', $compare['walled'][$key('*.facebook.com')]['status']);
+        $compare = $driver->compareState($this->site, ['menus' => [$ip => ['rows' => []], '/ip hotspot walled-garden' => ['rows' => []]]]);
+        $this->assertSame('missing', $compare['walled'][$key('www.facebook.com')]['status']);
+        // A country domain added to the Google setting: its entry is missing until the script runs again
+        SocialSettings::save(['providers' => ['facebook' => ['enabled' => false]]]);
+        $this->configure(['google']);
+        $google = array_map(fn ($h) => $row($h), WalledGarden::providerHosts('google'));
+        $menus = ['menus' => [$ip => ['rows' => $google], '/ip hotspot walled-garden' => ['rows' => []]]];
+        $this->assertSame(['present'], array_values(array_unique(array_column(array_filter($driver->compareState($this->site, $menus)['walled'],
+            fn ($id) => str_contains($id, 'social-'), ARRAY_FILTER_USE_KEY), 'status'))));
+        SocialSettings::save(['providers' => ['google' => ['country_domains' => ['ch', 'se']]]]);
+        $walled = $driver->compareState($this->site, $menus)['walled'];
+        $this->assertSame('missing', $walled[$key('accounts.google.se')]['status']);
+        $this->assertSame('present', $walled[$key('accounts.google.ch')]['status']);
+        // Removed country domains: own entries no longer wanted
+        $this->assertSame('differs', $walled[$key('accounts.google.de')]['status']);
+
         // The script lines of the entries are marked for the setup assistant
         $script = $driver->configScript($this->site, $nas);
         $lines = explode("\n", $script);
-        $statuses = $driver->lineStatuses($script, ['guest-portal:walled:social-any-facebook-com' => 'missing']);
-        $index = array_search('add dst-host="*.facebook.com" action=allow comment="'.$key('*.facebook.com').'"', $lines, true);
+        $statuses = $driver->lineStatuses($script, [$key('accounts.google.se') => 'missing']);
+        $index = array_search('add dst-host="accounts.google.se" protocol=tcp dst-port=443 action=accept comment="'.$key('accounts.google.se').'"', $lines, true);
         $this->assertNotFalse($index);
         $this->assertSame('missing', $statuses[$index]);
     }

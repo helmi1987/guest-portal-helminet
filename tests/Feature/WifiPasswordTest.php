@@ -185,9 +185,9 @@ class WifiPasswordTest extends TestCase
             // Exact legacy comment "guest-portal" appears only inside the removal/re-run guards
             // (and the key of the single virtual AP before 0.16, only in the find conditions of mode local)
             // (and the DNS entry of the hotspot name before 0.19.1, only removed)
-            // (and the social login entries of providers not offered, only removed: social login is off here)
-            $social = array_map(fn ($host) => MikrotikRos7Driver::key('walled', WalledGarden::object($host)), WalledGarden::allHosts());
-            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest', 'guest-portal:dns:hotspot-name', ...$social])), $mode);
+            // (the social login entries are removed by their key prefix, social login is off here: no exact key)
+            $this->assertSame([], WalledGarden::hosts());
+            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest', 'guest-portal:dns:hotspot-name'])), $mode);
             // Outside the find conditions no add/set writes a legacy comment
             $outside = $all;
             do {
@@ -196,8 +196,9 @@ class WifiPasswordTest extends TestCase
             $this->assertDoesNotMatchRegularExpression('/comment="guest-portal(: [^"]*)?"/', $outside);
             // Never a bare prefix match on comments
             $this->assertStringNotContainsString('comment~"^guest-portal"', $all);
-            // (except the full key pattern of the own provisioning rules per CAP, anchored at both ends)
-            $this->assertDoesNotMatchRegularExpression('/comment~"\^guest-portal:(?!wifi:cap-\[0-9a-f\]\{12\}\\\\\$")[^ ]/', $all);
+            // (except the full key patterns of the own provisioning rules per CAP and of the social login entries,
+            // anchored at both ends)
+            $this->assertDoesNotMatchRegularExpression('/comment~"\^guest-portal:(?!wifi:cap-\[0-9a-f\]\{12\}\\\\\$"|walled:social-\[a-z0-9-\]\+\\\\\$")[^ ]/', $all);
         }
     }
 

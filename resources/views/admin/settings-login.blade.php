@@ -104,6 +104,12 @@
                 <label class="label">{{ __($provider === 'apple' ? 'portal.settings.social.services_id' : 'portal.settings.social.client_id') }}
                     <input name="providers[{{ $provider }}][client_id]" value="{{ old('providers.'.$provider.'.client_id', $cfg['client_id']) }}" autocomplete="off" class="field">
                     @error('providers.'.$provider.'.client_id')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
+                @if ($provider === 'google')
+                    <label class="label">{{ __('portal.settings.social.country_domains') }}
+                        <input name="providers[google][country_domains]" value="{{ old('providers.google.country_domains', implode(', ', (array) $cfg['country_domains'])) }}" maxlength="500" autocomplete="off" class="field font-mono" placeholder="ch, de, at, it, fr, li">
+                        <span class="text-xs text-slate-500">{{ __('portal.settings.social.country_domains_help') }}</span>
+                        @error('providers.google.country_domains')<span class="text-xs text-red-700">{{ $message }}</span>@enderror</label>
+                @endif
                 @if ($provider === 'microsoft')
                     <label class="label">{{ __('portal.settings.social.tenant') }}
                         <input name="providers[microsoft][tenant]" value="{{ old('providers.microsoft.tenant', $cfg['tenant']) }}" maxlength="253" autocomplete="off" class="field font-mono" placeholder="common">

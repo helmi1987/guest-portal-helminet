@@ -10,3 +10,7 @@
 /ip hotspot walled-garden ip add dst-address=192.0.2.81 protocol=tcp dst-port=443 action=accept comment="guest-portal"
 # (plus sec-guest with comment "guest-portal" in the Wi-Fi menu of the mode, added by run.sh)
 /system script add name=guest-portal-cert source=":log info legacy"
+# Social login host entries of versions before 0.32.0 (/ip hotspot walled-garden, now walled garden ip): the router
+# script removes them (decision 2026-11-16)
+/ip hotspot walled-garden add dst-host="*.gstatic.com" action=allow comment="guest-portal:walled:social-any-gstatic-com"
+/ip hotspot walled-garden add dst-host="accounts.google.com" action=allow comment="guest-portal:walled:social-accounts-google-com"

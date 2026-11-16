@@ -71,6 +71,9 @@ sign guest-portal-backup
 /ip hotspot walled-garden add dst-host=other.example.net action=allow comment="guest-portal-old"
 /ip hotspot walled-garden ip add dst-address=192.0.2.80 action=accept comment="foreign"
 /ip hotspot walled-garden ip add dst-address=10.0.2.0/24 action=drop comment="foreign: LAN block covering the portal IP"
+# Look-alike social login entries of others (comment not exactly a key): never removed or reported (decision 2026-11-16)
+/ip hotspot walled-garden ip add dst-host=github.com protocol=tcp dst-port=443 action=accept comment="guest-portal:walled:social-github-com copy"
+/ip hotspot walled-garden add dst-host=github.com action=allow comment="guest-portal:walled:social-github-com copy"
 /file add name=hotspot-other/login.html contents="foreign login page"
 
 # Wi-Fi (wifi package) and legacy CAPsMAN: two master configurations (the selected masters of the fixture),

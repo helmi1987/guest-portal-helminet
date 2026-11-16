@@ -104,9 +104,9 @@ a certificate renewal with a new key breaks the pin. Without pin and with verifi
 ## 5. Social login hosts
 
 Pre-authorization allowances take host names, IPs or subnets; UniFi resolves host names when the list is
-applied, so content delivery networks with changing addresses may break the sign-in page. Entries such as
-`*.gstatic.com` (from the portal's walled-garden list) are probably not accepted: add the concrete host names
-you see blocked, or switch the social login off on UniFi sites. Do not add the operating systems' captive
+applied, so content delivery networks with changing addresses may break the sign-in page. The portal's list
+holds concrete host names only (v0.32.0); add further host names you see blocked, or switch the social login off on
+UniFi sites. Do not add the operating systems' captive
 portal check hosts.
 
 ## 6. Limits
