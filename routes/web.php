@@ -176,6 +176,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
             Route::middleware('role:admin')->name('admin.')->group(function () {
                 Route::get('/grants/export', [GrantController::class, 'export'])->name('grants.export');
                 // Learning window of the MAC whitelist: admin only (decision 2026-11-21, v0.33.1)
+                Route::get('/whitelist-learning/panel', [LearningWindowController::class, 'panel'])->name('learning.panel');
                 Route::post('/whitelist-learning', [LearningWindowController::class, 'open'])->name('learning.open');
                 Route::post('/whitelist-learning/{window}/close', [LearningWindowController::class, 'close'])->name('learning.close');
                 Route::post('/whitelist-learning/attempts/{attempt}/take-over', [LearningWindowController::class, 'takeOver'])->name('learning.take-over');

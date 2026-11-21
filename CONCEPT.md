@@ -223,7 +223,9 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
     `/ip hotspot host remove [find where server=guest-portal && !authorized && !bypassed]`). After close or expiry the devices not taken over
     lose access: Disconnect-Request at close (existing `DisconnectSession`), `portal:enforce-grants` closes expired
     windows and disconnects their sessions (`SessionSummary::accessEnded()`), and the `Session-Timeout` is the upper
-    bound. Audit: `whitelist.learning_opened|closed|expired|taken|discarded`. Windows and attempts are purged with the
+    bound. The panel (windows, recorded devices) refreshes itself (decision 2026-11-21, v0.33.2): while a window is open the page polls the admin-only
+    `GET /admin/whitelist-learning/panel` every 5 s (HTML partial), counts the remaining time down client-side, does one last refresh at 0 and stops when no
+    window is open; no polling in a hidden tab (refresh on return); a swap is skipped while a comment field has focus or content. Audit: `whitelist.learning_opened|closed|expired|taken|discarded`. Windows and attempts are purged with the
     retention period.
 
 ### 5.1 NAS drivers (vendor neutrality)

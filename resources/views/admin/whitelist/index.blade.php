@@ -12,15 +12,7 @@
     <section class="card mb-6" id="learning" data-learning>
         <h2 class="mb-2 text-lg font-semibold">{{ __('portal.learning.title') }}</h2>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.learning.help') }}</p>
-        @foreach ($windows as $window)
-            <div class="mb-2 flex flex-wrap items-center gap-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm" data-learning-window="{{ $window->site_id }}">
-                <span class="font-medium">{{ $window->site?->name }}</span>
-                <span>{{ __('portal.learning.remaining', ['minutes' => intdiv($window->remainingSeconds(), 60), 'seconds' => sprintf('%02d', $window->remainingSeconds() % 60), 'until' => \App\Support\LocalTime::format($window->expires_at, 'H:i')]) }}</span>
-                <span class="text-xs text-slate-500">{{ $window->opener?->name ?? '–' }}</span>
-                <form method="POST" action="{{ route('admin.learning.close', $window) }}">@csrf
-                    <button class="btn-light text-xs">{{ __('portal.learning.close') }}</button></form>
-            </div>
-        @endforeach
+        @include('admin.whitelist.partials.learning-panel')
         @if ($learningSites->isNotEmpty())
             <form method="POST" action="{{ route('admin.learning.open') }}" class="flex flex-wrap items-end gap-3">
                 @csrf
@@ -37,35 +29,66 @@
                 <button class="btn">{{ __('portal.learning.open') }}</button>
             </form>
         @endif
-        @if ($attempts->isNotEmpty())
-            <div class="mt-4 overflow-x-auto">
-                <h3 class="mb-2 font-semibold">{{ __('portal.learning.attempts') }}</h3>
-                <table class="data-table">
-                    <thead><tr><th>MAC</th><th>{{ __('portal.guests.site') }}</th><th>{{ __('portal.learning.router') }}</th>
-                        <th>{{ __('portal.learning.first_seen') }}</th><th>{{ __('portal.learning.last_seen') }}</th><th>{{ __('portal.learning.count') }}</th><th></th></tr></thead>
-                    <tbody>
-                        @foreach ($attempts as $attempt)
-                            <tr data-learning-attempt="{{ $attempt->mac }}">
-                                <td class="font-mono">{{ $attempt->mac }}</td>
-                                <td class="text-xs">{{ $attempt->site?->name }}@if ($attempt->window?->isOpen()) <span class="gp-badge gp-badge-info">{{ __('portal.learning.window_open') }}</span>@endif</td>
-                                <td class="text-xs">{{ $attempt->nasClient?->name ?? '–' }}</td>
-                                <td class="text-xs">{{ \App\Support\LocalTime::format($attempt->first_seen_at, 'Y-m-d H:i:s') }}</td>
-                                <td class="text-xs">{{ \App\Support\LocalTime::format($attempt->last_seen_at, 'Y-m-d H:i:s') }}</td>
-                                <td class="text-xs">{{ $attempt->count }}</td>
-                                <td>
-                                    <form method="POST" action="{{ route('admin.learning.take-over', $attempt) }}" class="flex flex-wrap items-center gap-1">@csrf
-                                        <input name="comment" required maxlength="255" placeholder="{{ __('portal.whitelist.comment') }}" class="field text-xs" aria-label="{{ __('portal.whitelist.comment') }}">
-                                        <button class="btn-light text-xs">{{ __('portal.learning.take_over') }}</button></form>
-                                    <form method="POST" action="{{ route('admin.learning.discard', $attempt) }}" class="mt-1">@csrf
-                                        <button class="btn-light text-xs">{{ __('portal.learning.discard') }}</button></form>
-                                </td>
-                            </tr>
-                        @endforeach
-                    </tbody>
-                </table>
-            </div>
-        @endif
     </section>
+    @endif
+    @if (auth()->user()->isAdmin())
+    <script>
+    (function () {
+        // Learning window panel: refresh every 5 s while a window is open, countdown every second (v0.33.2)
+        var d = document, poll = null, tick = null, busy = false, lastExpiry = 0;
+        function panel() { return d.querySelector('[data-learning-panel]'); }
+        function url() { var p = panel(); return p ? p.getAttribute('data-learning-poll') : null; }
+        function pad(n) { return (n < 10 ? '0' : '') + n; }
+        function countdown() {
+            var p = panel(), expired = false;
+            if (!p) return;
+            p.querySelectorAll('[data-learning-remaining]').forEach(function (el) {
+                if (el._deadline === undefined) el._deadline = Date.now() + parseInt(el.getAttribute('data-learning-remaining'), 10) * 1000;
+                var left = Math.max(0, Math.ceil((el._deadline - Date.now()) / 1000));
+                var m = el.querySelector('[data-cd-m]'), s = el.querySelector('[data-cd-s]');
+                if (m) m.textContent = Math.floor(left / 60);
+                if (s) s.textContent = pad(left % 60);
+                if (left === 0) expired = true;
+            });
+            // Window ran out: one last refresh (throttled), polling stops when the server reports no open window
+            if (expired && Date.now() - lastExpiry > 2000) { lastExpiry = Date.now(); refresh(); }
+        }
+        function busyInput(p) {
+            // Do not clobber a comment being typed
+            var a = d.activeElement;
+            if (a && p.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+            return Array.prototype.some.call(p.querySelectorAll('input[name="comment"]'), function (i) { return i.value !== ''; });
+        }
+        function stop() { clearInterval(poll); clearInterval(tick); poll = tick = null; }
+        function start() {
+            if (!url() || d.visibilityState === 'hidden') return;
+            if (!poll) poll = setInterval(refresh, 5000);
+            if (!tick) tick = setInterval(countdown, 1000);
+        }
+        function refresh() {
+            var p = panel(), u = url();
+            if (!p || !u) { stop(); return; }
+            if (busy) return;
+            busy = true;
+            fetch(u, { credentials: 'same-origin', headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' } })
+                .then(function (r) { if (!r.ok) throw new Error(r.status); return r.text(); })
+                .then(function (html) {
+                    var t = d.createElement('template'); t.innerHTML = html.trim();
+                    var fresh = t.content.firstElementChild, cur = panel();
+                    if (!fresh || !cur) return;
+                    if (!busyInput(cur)) cur.replaceWith(fresh);
+                    if (!url()) stop();
+                })
+                .catch(function () { stop(); })
+                .then(function () { busy = false; });
+        }
+        d.addEventListener('visibilitychange', function () {
+            if (d.visibilityState === 'hidden') { stop(); return; }
+            if (url()) { refresh(); start(); }
+        });
+        start();
+    })();
+    </script>
     @endif
 
     <form method="GET" action="{{ route('admin.whitelist.index') }}" class="card mb-6 flex flex-wrap items-end gap-4">

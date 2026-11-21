@@ -480,6 +480,32 @@ class RouterReauthLearningTest extends TestCase
         }
     }
 
+    public function test_learning_panel_route_is_admin_only_and_polls_only_while_a_window_is_open(): void
+    {
+        $manager = User::factory()->create();
+        $this->admin($manager)->get('/admin/whitelist-learning/panel')->assertForbidden();
+
+        $closed = $this->admin()->get('/admin/whitelist-learning/panel')->assertOk()->getContent();
+        $this->assertStringContainsString('data-learning-panel', $closed);
+        $this->assertStringNotContainsString('data-learning-poll', $closed);
+
+        $window = LearningWindow::query()->forceCreate(['site_id' => $this->site->id, 'opened_by' => $this->admin->id,
+            'opened_at' => now(), 'expires_at' => now()->addMinutes(10)]);
+        LearningAttempt::query()->forceCreate(['learning_window_id' => $window->id, 'site_id' => $this->site->id, 'mac' => self::MAC,
+            'nas_client_id' => $this->nas->id, 'first_seen_at' => now(), 'last_seen_at' => now(), 'count' => 1,
+            'status' => LearningAttempt::PENDING]);
+
+        $open = $this->admin()->get('/admin/whitelist-learning/panel')->assertOk()->getContent();
+        $this->assertStringContainsString('data-learning-poll', $open);
+        $this->assertStringContainsString('data-learning-remaining', $open);
+        $this->assertStringContainsString('data-learning-attempt="'.self::MAC.'"', $open);
+        $this->assertStringNotContainsString('<html', $open);
+        $this->assertStringContainsString('data-learning-poll', $this->admin()->get('/admin/whitelist')->getContent());
+
+        $window->update(['closed_at' => now()]);
+        $this->assertStringNotContainsString('data-learning-poll', $this->admin()->get('/admin/whitelist-learning/panel')->getContent());
+    }
+
     public function test_learning_window_is_admin_only(): void
     {
         $manager = User::factory()->create();

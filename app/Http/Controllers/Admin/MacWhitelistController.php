@@ -4,7 +4,6 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Device;
-use App\Models\LearningAttempt;
 use App\Models\LearningWindow;
 use App\Models\MacWhitelist;
 use App\Models\SessionSummary;
@@ -60,9 +59,7 @@ class MacWhitelistController extends Controller
             'entries' => $entries,
             // Learning window (decision 2026-11-21): local sites with MAC authentication, open windows, pending attempts
             'learningSites' => $siteModels->filter(fn (Site $s) => LearningWindowController::eligible($s))->pluck('name', 'id'),
-            'windows' => LearningWindow::query()->open()->with(['site', 'opener'])->orderBy('expires_at')->get(),
-            'attempts' => LearningAttempt::query()->where('status', LearningAttempt::PENDING)->with(['site', 'nasClient', 'window'])
-                ->orderByDesc('last_seen_at')->limit(200)->get(),
+            ...LearningWindowController::panelData(),
             'durations' => LearningWindow::DURATIONS,
             'filters' => ['q' => $q, 'site' => $site, 'status' => $status],
             'statuses' => self::STATUSES,

@@ -18,6 +18,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Illuminate\View\View;
 
 /**
  * Learning window of the MAC whitelist per site (admin only, decision 2026-11-21, v0.33.1, CONCEPT.md §5):
@@ -32,6 +33,22 @@ class LearningWindowController extends Controller
     public static function eligible(Site $site): bool
     {
         return $site->isServedHere() && ! $site->driver() instanceof UnifiDriver;
+    }
+
+    /** Data of the self-refreshing panel part: open windows and pending recorded devices. */
+    public static function panelData(): array
+    {
+        return [
+            'windows' => LearningWindow::query()->open()->with(['site', 'opener'])->orderBy('expires_at')->get(),
+            'attempts' => LearningAttempt::query()->where('status', LearningAttempt::PENDING)->with(['site', 'nasClient', 'window'])
+                ->orderByDesc('last_seen_at')->limit(200)->get(),
+        ];
+    }
+
+    /** The panel part alone, polled by the whitelist page while a window is open (v0.33.2). */
+    public function panel(): View
+    {
+        return view('admin.whitelist.partials.learning-panel', self::panelData());
     }
 
     public function open(Request $request): RedirectResponse
