@@ -7,7 +7,8 @@
 
     @include('admin.whitelist.partials.reauth')
 
-    {{-- Learning window per site (decision 2026-11-21, v0.33.0): local to this instance --}}
+    {{-- Learning window per site (decision 2026-11-21, v0.33.0): local to this instance, admin only --}}
+    @if (auth()->user()->isAdmin())
     <section class="card mb-6" id="learning" data-learning>
         <h2 class="mb-2 text-lg font-semibold">{{ __('portal.learning.title') }}</h2>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.learning.help') }}</p>
@@ -65,6 +66,7 @@
             </div>
         @endif
     </section>
+    @endif
 
     <form method="GET" action="{{ route('admin.whitelist.index') }}" class="card mb-6 flex flex-wrap items-end gap-4">
         <label class="label">{{ __('portal.whitelist.search') }}

@@ -158,13 +158,9 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     ->name('sessions.disconnect-remote')->middleware('throttle:30,1,session-disconnect-remote');
                 Route::resource('whitelist', MacWhitelistController::class)->except(['show']);
                 Route::post('/whitelist/{whitelist}/toggle', [MacWhitelistController::class, 'toggle'])->name('whitelist.toggle');
-                // Re-authentication by the portal and learning window (decision 2026-11-21, v0.33.0)
+                // Re-authentication by the portal (decision 2026-11-21, v0.33.0)
                 Route::post('/whitelist/{whitelist}/reauth', [MacWhitelistController::class, 'reauth'])->name('whitelist.reauth')
                     ->middleware('throttle:20,1,whitelist-reauth');
-                Route::post('/whitelist-learning', [LearningWindowController::class, 'open'])->name('learning.open');
-                Route::post('/whitelist-learning/{window}/close', [LearningWindowController::class, 'close'])->name('learning.close');
-                Route::post('/whitelist-learning/attempts/{attempt}/take-over', [LearningWindowController::class, 'takeOver'])->name('learning.take-over');
-                Route::post('/whitelist-learning/attempts/{attempt}/discard', [LearningWindowController::class, 'discard'])->name('learning.discard');
                 Route::get('/site-codes', [SiteCodeController::class, 'index'])->name('site-codes.index');
                 Route::prefix('/sites/{site}/site-code')->name('site-codes.')->group(function () {
                     Route::get('/', [SiteCodeController::class, 'show'])->name('show');
@@ -179,6 +175,11 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
             // Admin only: code CSV export, settings, channels, toolbox, terms, guest texts, sites/routers/setup, users, audit log, backups, certificates, federation.
             Route::middleware('role:admin')->name('admin.')->group(function () {
                 Route::get('/grants/export', [GrantController::class, 'export'])->name('grants.export');
+                // Learning window of the MAC whitelist: admin only (decision 2026-11-21, v0.33.1)
+                Route::post('/whitelist-learning', [LearningWindowController::class, 'open'])->name('learning.open');
+                Route::post('/whitelist-learning/{window}/close', [LearningWindowController::class, 'close'])->name('learning.close');
+                Route::post('/whitelist-learning/attempts/{attempt}/take-over', [LearningWindowController::class, 'takeOver'])->name('learning.take-over');
+                Route::post('/whitelist-learning/attempts/{attempt}/discard', [LearningWindowController::class, 'discard'])->name('learning.discard');
                 Route::get('/settings', [SettingsController::class, 'show'])->name('settings');
                 Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
                 Route::post('/settings/sms', [SettingsController::class, 'updateSms'])->name('settings.sms');

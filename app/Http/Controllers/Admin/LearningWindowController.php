@@ -20,7 +20,7 @@ use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 /**
- * Learning window of the MAC whitelist per site (admin + manager, decision 2026-11-21, v0.33.0, CONCEPT.md §5):
+ * Learning window of the MAC whitelist per site (admin only, decision 2026-11-21, v0.33.1, CONCEPT.md §5):
  * open for a selectable duration, close early, take recorded devices over into the whitelist or discard them.
  * Local to this instance (sites served here, not replicated). Opening triggers the re-authentication by the
  * portal on the site's routers (else the RouterOS command is shown); closing disconnects the devices not taken over

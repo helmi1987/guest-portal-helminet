@@ -479,4 +479,29 @@ class RouterReauthLearningTest extends TestCase
             }
         }
     }
+
+    public function test_learning_window_is_admin_only(): void
+    {
+        $manager = User::factory()->create();
+        $window = LearningWindow::query()->forceCreate(['site_id' => $this->site->id, 'opened_by' => $this->admin->id,
+            'opened_at' => now(), 'expires_at' => now()->addMinutes(10)]);
+        $attempt = LearningAttempt::query()->forceCreate(['learning_window_id' => $window->id, 'site_id' => $this->site->id, 'mac' => self::MAC,
+            'nas_client_id' => $this->nas->id, 'first_seen_at' => now(), 'last_seen_at' => now(), 'count' => 1,
+            'status' => LearningAttempt::PENDING]);
+
+        $this->admin($manager)->post('/admin/whitelist-learning', ['site_id' => $this->site->id, 'minutes' => 15])->assertForbidden();
+        $this->admin($manager)->post("/admin/whitelist-learning/{$window->id}/close")->assertForbidden();
+        $this->admin($manager)->post("/admin/whitelist-learning/attempts/{$attempt->id}/take-over", ['comment' => 'x'])->assertForbidden();
+        $this->admin($manager)->post("/admin/whitelist-learning/attempts/{$attempt->id}/discard")->assertForbidden();
+        $this->assertSame(LearningAttempt::PENDING, $attempt->fresh()->status);
+
+        $managerPage = $this->admin($manager)->get('/admin/whitelist')->assertOk()->getContent();
+        $this->assertStringNotContainsString('data-learning', $managerPage);
+        $this->assertStringNotContainsString('data-learning-attempt="'.self::MAC.'"', $managerPage);
+
+        $adminPage = $this->admin()->get('/admin/whitelist')->assertOk()->getContent();
+        $this->assertStringContainsString('data-learning-attempt="'.self::MAC.'"', $adminPage);
+        $this->admin()->post("/admin/whitelist-learning/attempts/{$attempt->id}/discard")->assertRedirect();
+        $this->assertSame(LearningAttempt::DISCARDED, $attempt->fresh()->status);
+    }
 }
