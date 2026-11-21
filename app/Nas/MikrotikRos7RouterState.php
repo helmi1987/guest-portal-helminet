@@ -1157,8 +1157,9 @@ trait MikrotikRos7RouterState
         $props = 'policy='.self::REAUTH_POLICY.' dont-require-permissions=yes source="'.self::REAUTH_SOURCE.'"';
 
         return [
-            '# Re-authentication by the portal (on): own script that removes the hotspot hosts which are neither authorized',
-            '# nor bypassed, so the router asks RADIUS again (MAC authentication). The read-only API user may run it',
+            '# Re-authentication by the portal (on): own script that removes the hosts of the own hotspot server ('.self::NAME.')',
+            '# which are neither authorized nor bypassed, so the router asks RADIUS again (MAC authentication); hosts of',
+            '# other hotspot servers are not touched. The read-only API user may run it',
             '# (dont-require-permissions=yes), but cannot change it.',
             ":if ([:len [/system script {$find}]] = 0) do={",
             "    /system script add name={$name} {$props} comment=\"{$key}\"",

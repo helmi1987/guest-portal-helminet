@@ -172,7 +172,7 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
   Needs `login-by=https,mac` on the hotspot profile (set by the generated router script). MAC
   addresses can be spoofed: whitelist only trusted devices.
   A device the router already holds as an unauthenticated hotspot host is asked again only after
-  `/ip hotspot host remove [find where mac-address=<MAC>]` on the router (shown after saving and with the
+  `/ip hotspot host remove [find where server=guest-portal && mac-address=<MAC>]` on the router (shown after saving and with the
   button "Re-authenticate"). Optional per site (setup assistant, router state section): "Re-authentication by
   the portal" adds the own script `guest-portal-reauth` to the API access block; the read-only API user may run
   it (no write policy) and the portal does after saving an entry. Learning window (same page): opened per site

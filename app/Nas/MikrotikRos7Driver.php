@@ -37,8 +37,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
     public const API_POLICY = 'read,api,rest-api';
 
     /**
-     * Own script of the re-authentication by the portal (decision 2026-11-21, v0.33.0): removes the hotspot hosts that
-     * are neither authorized nor bypassed, so the router tries MAC authentication again. dont-require-permissions=yes
+     * Own script of the re-authentication by the portal (decision 2026-11-21, v0.33.0): removes the hosts of the own
+     * hotspot server that are neither authorized nor bypassed, so the router tries MAC authentication again. dont-require-permissions=yes
      * lets the read-only API user run it (verified on the CHR, RouterOS 7.24.5: a user with read,api,rest-api may run
      * such a script through REST or the API, but not change, add or remove scripts, and /execute gets no write).
      * The script itself needs read,write (with read only "not enough permissions").
@@ -47,7 +47,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
 
     public const REAUTH_POLICY = 'read,write';
 
-    public const REAUTH_SOURCE = '/ip hotspot host remove [find where !authorized && !bypassed]';
+    /** Only hosts of the own hotspot server (name NAME): hosts of other hotspot servers are never touched. */
+    public const REAUTH_SOURCE = '/ip hotspot host remove [find where server='.self::NAME.' && !authorized && !bypassed]';
 
     /** html-directory of the hotspot profile: RouterOS default, or on devices with a flash folder. */
     public const HTML_DIRECTORIES = ['hotspot', 'flash/hotspot'];

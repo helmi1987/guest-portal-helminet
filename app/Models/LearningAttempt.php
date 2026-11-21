@@ -29,6 +29,12 @@ class LearningAttempt extends Model
         return ['first_seen_at' => 'datetime', 'last_seen_at' => 'datetime', 'count' => 'integer'];
     }
 
+    /** Device may stay online: still pending (not taken over or discarded) and its window open. */
+    public function allowsAccess(): bool
+    {
+        return $this->status === self::PENDING && ($this->window?->isOpen() ?? false);
+    }
+
     public function window(): BelongsTo
     {
         return $this->belongsTo(LearningWindow::class, 'learning_window_id');

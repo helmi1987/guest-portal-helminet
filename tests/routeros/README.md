@@ -87,7 +87,9 @@ dependencies. The run needs a router without configuration (fresh image or `load
   state reports it present; the read-only user cannot change or remove it and `/execute` gets no write; switched off,
   a script left over is `differs`, the off block removes it (re-run: no error, no deviation), a foreign script with
   the own name is kept by the off block and never run by the portal; on again for the uninstall. Not covered: real
-  unauthorized hotspot hosts (no guests on the CHR), so the removal itself runs on an empty host list.
+  unauthorized hotspot hosts (no guests on the CHR), so the removal itself runs on an empty host list; asserted instead:
+  the source filters by the own hotspot server (`server=guest-portal`), the filter is accepted, no script error is
+  logged, the foreign hotspot server of the seed stays.
 - Router state query (read-only API): the access block runs (and re-runs); with `www-ssl` and `api-ssl`
   set to the certificate `guest-portal` for the test (restored before the uninstall), the REST and the
   API-SSL client read the state through the forwarded ports (`ROS_REST_PORT` 2443, `ROS_APISSL_PORT`

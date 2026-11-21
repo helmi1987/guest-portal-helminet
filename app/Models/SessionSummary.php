@@ -12,7 +12,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
  * RADIUS session: of a grant, or of a MAC whitelist entry (grant_id null, CONCEPT.md §5). kicked_at: disconnected
  * by an admin; logged_out_at: ended by the guest on the portal status page (decision 2026-11-05). Local, not replicated.
  */
-#[Fillable(['grant_id', 'mac_whitelist_id', 'site_id', 'serving_instance_id', 'mac', 'ip', 'started_at', 'stopped_at', 'kicked_at', 'disconnect_skipped_at', 'logged_out_at'])]
+#[Fillable(['grant_id', 'mac_whitelist_id', 'site_id', 'serving_instance_id', 'mac', 'ip', 'started_at', 'stopped_at', 'kicked_at', 'disconnect_skipped_at', 'logged_out_at', 'learning_attempt_id'])]
 class SessionSummary extends Model
 {
     use Replicated;
@@ -63,9 +63,10 @@ class SessionSummary extends Model
         if ($this->mac_whitelist_id !== null) {
             return ! ($this->macWhitelist?->isValidFor($this->mac, $this->site_id) ?? false);
         }
-        // Learning window session (decision 2026-11-21, v0.33.0): no grant and no entry, allowed while the window is open
-        if ($this->grant_id === null) {
-            return ! LearningWindow::allows($this->site_id, $this->mac);
+        // Learning window session (decision 2026-11-21, v0.33.0): marked by its attempt, allowed while that attempt is
+        // pending and its window open. Any other session without grant and entry (e.g. its entry was removed) has ended.
+        if ($this->learning_attempt_id !== null) {
+            return ! LearningAttempt::query()->find($this->learning_attempt_id)?->allowsAccess();
         }
         $grant = $this->relationLoaded('grant') ? $this->grant : $this->grant()->withTrashed()->first();
 

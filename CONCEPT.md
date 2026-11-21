@@ -190,12 +190,13 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
   expiry is enforced by `portal:enforce-grants`. User-Name and MAC format sent by RouterOS: **(to verify)**.
 - **Re-authentication and learning window** (decision 2026-11-21, v0.33.0, owner): RouterOS asks RADIUS for MAC
   authentication only when it first sees a host; a device already held as an unauthenticated hotspot host stays
-  so after it is whitelisted until `/ip hotspot host remove [find where mac-address=<MAC>]`.
+  so after it is whitelisted until `/ip hotspot host remove [find where server=guest-portal && mac-address=<MAC>]`.
   - Minimal rights: the router API user keeps `read,api,rest-api` (no `write`). Optional per site setting
     `router_reauth` (site settings, replicated, default off): the API access block adds the own script
     `guest-portal-reauth` (comment key `guest-portal:api:reauth`, `policy=read,write`, `dont-require-permissions=yes`,
-    source `/ip hotspot host remove [find where !authorized && !bypassed]`: all unauthorized hosts, harmless, they are
-    detected again); switched off, the block removes only that own script (exact name and key); the uninstall
+    source `/ip hotspot host remove [find where server=guest-portal && !authorized && !bypassed]`: all unauthorized hosts of the own hotspot server
+    (identified by its name, like the hotspot block), harmless, they are detected again; hosts of other hotspot servers are
+    never touched); switched off, the block removes only that own script (exact name and key); the uninstall
     removes it too. Verified on the CHR (RouterOS 7.24.5): a user with `read,api,rest-api` may run a script with
     `dont-require-permissions=yes` (REST `POST /rest/system/script/run` with `.id`, API `/system/script/run`), but not
     one without it, and cannot add, change or remove scripts or schedulers; `/execute` runs with the user's own
@@ -210,12 +211,16 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
     (audit `router.reauth` with the result), otherwise the page shows the RouterOS command for that MAC.
   - Learning window per site (admin + manager, local to the instance, not replicated: `learning_windows`,
     `learning_attempts`; sites served here, not UniFi): opened for 5/10/15/30/60 minutes, remaining time shown, can be
-    closed early; one open window per site. While open, a MAC authentication of the site's routers (User-Name =
-    Calling-Station-Id, known NAS) without whitelist entry or roaming grant is accepted with `Session-Timeout` =
+    closed early; one open window per site (check and create in one transaction with the site row locked). While open, a
+    MAC authentication of the site's routers (User-Name = Calling-Station-Id, known NAS) without a whitelist entry that
+    admits it there (none, inactive, expired or other sites) or roaming grant is accepted with `Session-Timeout` =
     remaining window seconds and recorded (MAC, router, first/last seen, count). Admin "take over" creates a whitelist
-    entry for that site (comment required; the device's open session is linked to it), "discard" disconnects it and
-    rejects it for the rest of the window. Opening runs the re-authentication of all unauthorized hosts (or shows
-    `/ip hotspot host remove [find where !authorized && !bypassed]`). After close or expiry the devices not taken over
+    entry for that site (comment required), or updates the existing entry of the MAC (active, no expiry, the site added
+    unless it is for all sites; comment kept; audit `updated`); the device's open session is linked to the entry.
+    "Discard" disconnects it and rejects it for the rest of the window. Learning sessions are marked by
+    `session_summaries.learning_attempt_id` and stay online only while that attempt is pending and its window open;
+    other sessions without grant and entry (e.g. entry removed) end as before. Opening runs the re-authentication of all unauthorized hosts (or shows
+    `/ip hotspot host remove [find where server=guest-portal && !authorized && !bypassed]`). After close or expiry the devices not taken over
     lose access: Disconnect-Request at close (existing `DisconnectSession`), `portal:enforce-grants` closes expired
     windows and disconnects their sessions (`SessionSummary::accessEnded()`), and the `Session-Timeout` is the upper
     bound. Audit: `whitelist.learning_opened|closed|expired|taken|discarded`. Windows and attempts are purged with the
@@ -1205,7 +1210,7 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `site_codes` R | id, site_id, code, duration_s, valid_until, max_devices, active, created_by, deactivated_at, deactivated_by (`grants.site_code_id` links device grants) |
 | `grant_site` R | grant_id, site_id (none = all sites) |
 | `devices` R | id, grant_id, guest_id, mac, bound_at, unbound_at |
-| `session_summaries` | id, grant_id (null for whitelist sessions; roaming sessions carry their grant), mac_whitelist_id, site_id, serving_instance_id, mac, ip, started_at, stopped_at; local (M7 decision, replication columns kept; other instances query them live, §10.4) |
+| `session_summaries` | id, grant_id (null for whitelist sessions; roaming sessions carry their grant), mac_whitelist_id, learning_attempt_id (learning window, v0.33.0), site_id, serving_instance_id, mac, ip, started_at, stopped_at; local (M7 decision, replication columns kept; other instances query them live, §10.4) |
 | `mac_whitelist` R | id, mac (AA:BB:CC:DD:EE:FF, unique among non-deleted), comment, expires_at, active, created_by |
 | `mac_whitelist_site` R | mac_whitelist_id, site_id (none = all sites) |
 | `radius_tokens` | id, grant_id, guest_id, device_id, username, password_hash, mac, site_id, expires_at, used_at |

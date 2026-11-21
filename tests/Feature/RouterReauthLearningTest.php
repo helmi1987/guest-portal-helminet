@@ -15,6 +15,7 @@ use App\Nas\MikrotikRos7Driver;
 use App\Nas\RouterOs\ApiConnector;
 use App\Nas\RouterOs\Menus;
 use App\Nas\RouterOs\RouterOsException;
+use App\Support\LocalInstance;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\Client\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -147,7 +148,7 @@ class RouterReauthLearningTest extends TestCase
         $this->assertTrue($this->site->routerReauth());
         $on = $driver->apiAccessCommands($this->site, $this->nas);
         $this->assertStringContainsString('/system script add name=guest-portal-reauth policy=read,write dont-require-permissions=yes'
-            .' source="/ip hotspot host remove [find where !authorized && !bypassed]" comment="'.self::KEY.'"', $on);
+            .' source="/ip hotspot host remove [find where server=guest-portal && !authorized && !bypassed]" comment="'.self::KEY.'"', $on);
         $this->assertStringContainsString('/system script set [find where name=guest-portal-reauth && comment="'.self::KEY.'"] policy=read,write', $on);
         $this->assertStringNotContainsString('/system script remove', $on);
         // Inside the guarded unit (aborts with the placeholder left), the API group stays read-only
@@ -240,12 +241,12 @@ class RouterReauthLearningTest extends TestCase
         // Feature off: no API call, the command for the MAC is shown
         $this->admin()->post('/admin/whitelist', ['mac' => self::MAC, 'comment' => 'Printer', 'active' => '1', 'site_ids' => [$this->site->id]])
             ->assertRedirect()->assertSessionHas('reauth', fn ($r) => $r['queued'] === [] && $r['manual'] === ['Site A / Router A']
-                && $r['command'] === '/ip hotspot host remove [find where mac-address='.self::MAC.']');
+                && $r['command'] === '/ip hotspot host remove [find where server=guest-portal && mac-address='.self::MAC.']');
         $this->assertSame([], $this->requests);
         $entry = MacWhitelist::sole();
         $page = $this->admin()->from('/admin/whitelist')->followingRedirects()->post("/admin/whitelist/{$entry->id}/reauth")->assertOk()->getContent();
         $this->assertStringContainsString('data-reauth-manual', $page);
-        $this->assertStringContainsString('/ip hotspot host remove [find where mac-address='.self::MAC.']', $page);
+        $this->assertStringContainsString(e('/ip hotspot host remove [find where server=guest-portal && mac-address='.self::MAC.']'), $page);
 
         // Feature on: update and activation run the script; deactivation does not
         $this->enable();
@@ -295,7 +296,7 @@ class RouterReauthLearningTest extends TestCase
         $this->macAuth(self::MAC)->assertStatus(401);
 
         $this->openWindow(10)->assertRedirect()->assertSessionHas('reauth', fn ($r) => $r['manual'] === ['Site A / Router A']
-            && $r['command'] === '/ip hotspot host remove [find where !authorized && !bypassed]');
+            && $r['command'] === '/ip hotspot host remove [find where server=guest-portal && !authorized && !bypassed]');
         $this->openWindow(10)->assertSessionHasErrors('site_id');
         $this->admin()->post('/admin/whitelist-learning', ['site_id' => $this->site->id, 'minutes' => 7])->assertSessionHasErrors('minutes');
         $window = LearningWindow::sole();
@@ -334,7 +335,10 @@ class RouterReauthLearningTest extends TestCase
         $this->assertSame([self::MAC, [$this->site->id]], [$entry->mac, $entry->siteIds()]);
         $this->assertSame(LearningAttempt::TAKEN, $attempt->fresh()->status);
         $this->assertSame($entry->id, SessionSummary::query()->where('mac', self::MAC)->value('mac_whitelist_id'));
+        $this->assertNotNull(SessionSummary::query()->where('mac', self::MAC)->value('learning_attempt_id'));
         $this->admin()->post("/admin/whitelist-learning/attempts/{$attempt->id}/take-over", ['comment' => 'Again'])->assertSessionHasErrors('learning');
+        $this->assertSame(['whitelist.learning_taken' => false], AuditLog::query()->where('action', 'whitelist.learning_taken')->get()
+            ->mapWithKeys(fn ($a) => [$a->action => $a->data['updated']])->all());
 
         // Close: the device not taken over is disconnected and rejected afterwards; the taken one stays
         $this->admin()->post("/admin/whitelist-learning/{$window->id}/close")->assertRedirect();
@@ -398,6 +402,69 @@ class RouterReauthLearningTest extends TestCase
         $this->openWindow(5)->assertSessionHasErrors('site_id');
         $this->assertSame(0, LearningWindow::count());
         $this->assertSame(MikrotikRos7Driver::REAUTH_SCRIPT, 'guest-portal-reauth');
+    }
+
+    public function test_take_over_updates_an_entry_that_does_not_admit_the_device(): void
+    {
+        $other = Site::create(['slug' => 'site-b', 'name' => 'Site B', 'driver' => 'mikrotik_ros7']);
+        $entry = MacWhitelist::create(['mac' => self::MAC, 'comment' => 'Old tablet', 'active' => false, 'expires_at' => now()->subDay()]);
+        $entry->syncSites([$other->id]);
+        $this->openWindow(10)->assertRedirect();
+        // Inactive, expired and only for another site: accepted during the window like any blocked device
+        $this->macAuth(self::MAC)->assertOk();
+        $attempt = LearningAttempt::sole();
+
+        $this->admin()->post("/admin/whitelist-learning/attempts/{$attempt->id}/take-over", ['comment' => 'New'])->assertRedirect()->assertSessionHasNoErrors();
+        $entry = MacWhitelist::query()->with('siteLinks')->sole();
+        $this->assertTrue($entry->active);
+        $this->assertNull($entry->expires_at);
+        $this->assertEqualsCanonicalizing([$other->id, $this->site->id], $entry->siteIds());
+        $this->assertSame('Old tablet', $entry->comment);
+        $this->assertSame(LearningAttempt::TAKEN, $attempt->fresh()->status);
+        $audit = AuditLog::query()->where('action', 'whitelist.learning_taken')->sole();
+        $this->assertTrue($audit->data['updated']);
+        $this->assertSame($entry->id, $audit->subject_id);
+        // Admitted by the entry now (no Session-Timeout of the window)
+        $this->assertArrayNotHasKey('reply:Session-Timeout', $this->macAuth(self::MAC)->assertOk()->json());
+
+        // An entry for all sites stays for all sites
+        $all = MacWhitelist::create(['mac' => 'AA:BB:CC:00:00:23', 'comment' => 'All', 'active' => false]);
+        $this->macAuth('AA:BB:CC:00:00:23')->assertOk();
+        $second = LearningAttempt::query()->where('mac', 'AA:BB:CC:00:00:23')->sole();
+        $this->admin()->post("/admin/whitelist-learning/attempts/{$second->id}/take-over", ['comment' => 'x'])->assertSessionHasNoErrors();
+        $this->assertSame([], $all->fresh()->load('siteLinks')->siteIds());
+        $this->assertTrue($all->fresh()->active);
+    }
+
+    public function test_only_learning_sessions_stay_online_while_a_window_is_open(): void
+    {
+        Queue::fake([DisconnectSession::class]);
+        $this->openWindow(10)->assertRedirect();
+        // Session of a whitelist entry that was removed (no entry, no grant, no attempt): ended even with a window open
+        $removed = SessionSummary::create(['site_id' => $this->site->id, 'serving_instance_id' => app(LocalInstance::class)->id(),
+            'mac' => 'AA:BB:CC:00:00:30', 'ip' => '10.5.50.40', 'started_at' => now()]);
+        $this->assertTrue($removed->accessEnded());
+        $entry = MacWhitelist::create(['mac' => 'AA:BB:CC:00:00:31', 'comment' => 'Gone', 'active' => true]);
+        $gone = SessionSummary::create(['mac_whitelist_id' => $entry->id, 'site_id' => $this->site->id,
+            'serving_instance_id' => app(LocalInstance::class)->id(), 'mac' => 'AA:BB:CC:00:00:31', 'ip' => '10.5.50.41', 'started_at' => now()]);
+        $entry->forceDelete();
+        $this->assertTrue($gone->fresh()->accessEnded());
+        // Learning session: alive while its attempt is pending and the window open
+        $this->macAuth(self::MAC)->assertOk();
+        $this->start(self::MAC, 'S1');
+        $learning = SessionSummary::query()->where('mac', self::MAC)->sole();
+        $this->assertNotNull($learning->learning_attempt_id);
+        $this->assertFalse($learning->accessEnded());
+        Artisan::call('portal:enforce-grants');
+        Queue::assertNotPushed(DisconnectSession::class, fn ($job) => $job->sessionSummaryId === $learning->id);
+        Queue::assertPushed(DisconnectSession::class, fn ($job) => $job->sessionSummaryId === $removed->id);
+    }
+
+    public function test_open_is_atomic_per_site(): void
+    {
+        $this->openWindow(5)->assertSessionHasNoErrors();
+        $this->openWindow(10)->assertSessionHasErrors('site_id');
+        $this->assertSame(1, LearningWindow::query()->open()->count());
     }
 
     public function test_only_internal_script_ids_can_be_run(): void

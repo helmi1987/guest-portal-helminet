@@ -862,7 +862,7 @@ return [
         'button_help' => 'The router forgets the device as an unauthenticated hotspot host and tries MAC authentication again.',
         'not_valid' => 'Only an active, not expired entry can be re-authenticated.',
         'setting' => 'Re-authentication by the portal',
-        'setting_help' => 'Off by default. On: the API access block of each router adds the own script guest-portal-reauth, which removes the hotspot hosts that are neither authorized nor bypassed. The read-only API user may run it but cannot change it; the API group keeps its read-only policies. The portal runs it after a MAC whitelist change and when a learning window opens. Run the API access block again on every router after changing this setting.',
+        'setting_help' => 'Off by default. On: the API access block of each router adds the own script guest-portal-reauth, which removes the hosts of the portal\'s hotspot server that are neither authorized nor bypassed (other hotspot servers are not touched). The read-only API user may run it but cannot change it; the API group keeps its read-only policies. The portal runs it after a MAC whitelist change and when a learning window opens. Run the API access block again on every router after changing this setting.',
         'saved' => 'Saved. Run the API access block again on every router of this site.',
     ],
     'learning' => [
@@ -886,7 +886,6 @@ return [
         'opened' => 'Learning window for :site open for :minutes minutes.',
         'closed' => 'Learning window closed. Devices not taken over lose access.',
         'not_pending' => 'This device was already taken over or discarded.',
-        'already_listed' => ':mac is already on the whitelist.',
         'taken' => ':mac taken over into the whitelist.',
         'discarded' => ':mac discarded.',
     ],

@@ -862,7 +862,7 @@ return [
         'button_help' => 'Le routeur oublie l\'appareil en tant qu\'hôte hotspot non authentifié et réessaie l\'authentification MAC.',
         'not_valid' => 'Seule une entrée active et non expirée peut être réauthentifiée.',
         'setting' => 'Nouvelle authentification par le portail',
-        'setting_help' => 'Désactivée par défaut. Activée : le bloc d\'accès API de chaque routeur ajoute le script propre guest-portal-reauth, qui supprime les hôtes hotspot ni autorisés ni exemptés (bypassed). L\'utilisateur API en lecture seule peut l\'exécuter mais pas le modifier ; le groupe API garde ses droits en lecture seule. Le portail l\'exécute après une modification de la liste blanche MAC et à l\'ouverture d\'une fenêtre d\'apprentissage. Après avoir modifié ce réglage, exécutez à nouveau le bloc d\'accès API sur chaque routeur.',
+        'setting_help' => 'Désactivée par défaut. Activée : le bloc d\'accès API de chaque routeur ajoute le script propre guest-portal-reauth, qui supprime les hôtes du hotspot du portail ni autorisés ni exemptés (bypassed) ; les autres serveurs hotspot ne sont pas touchés. L\'utilisateur API en lecture seule peut l\'exécuter mais pas le modifier ; le groupe API garde ses droits en lecture seule. Le portail l\'exécute après une modification de la liste blanche MAC et à l\'ouverture d\'une fenêtre d\'apprentissage. Après avoir modifié ce réglage, exécutez à nouveau le bloc d\'accès API sur chaque routeur.',
         'saved' => 'Enregistré. Exécutez à nouveau le bloc d\'accès API sur chaque routeur de ce site.',
     ],
     'learning' => [
@@ -886,7 +886,6 @@ return [
         'opened' => 'Fenêtre d\'apprentissage pour :site ouverte pour :minutes minutes.',
         'closed' => 'Fenêtre d\'apprentissage fermée. Les appareils non repris perdent l\'accès.',
         'not_pending' => 'Cet appareil a déjà été repris ou rejeté.',
-        'already_listed' => ':mac figure déjà dans la liste blanche.',
         'taken' => ':mac repris dans la liste blanche.',
         'discarded' => ':mac rejeté.',
     ],

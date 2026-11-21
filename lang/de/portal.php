@@ -862,7 +862,7 @@ return [
         'button_help' => 'Der Router vergisst das Gerät als nicht angemeldeten Hotspot-Host und versucht die MAC-Anmeldung erneut.',
         'not_valid' => 'Nur ein aktiver, nicht abgelaufener Eintrag kann neu angemeldet werden.',
         'setting' => 'Neuanmeldung durch das Portal',
-        'setting_help' => 'Standardmässig aus. Ein: Der API-Zugangsblock jedes Routers legt das eigene Skript guest-portal-reauth an, das die Hotspot-Hosts entfernt, die weder angemeldet noch freigestellt (bypassed) sind. Der Nur-Lese-API-Benutzer darf es ausführen, aber nicht ändern; die API-Gruppe behält ihre Nur-Lese-Rechte. Das Portal führt es nach einer Änderung der MAC-Whitelist und beim Öffnen eines Anlern-Fensters aus. Nach dem Ändern dieser Einstellung den API-Zugangsblock auf jedem Router erneut ausführen.',
+        'setting_help' => 'Standardmässig aus. Ein: Der API-Zugangsblock jedes Routers legt das eigene Skript guest-portal-reauth an, das die Hosts des Portal-Hotspots entfernt, die weder angemeldet noch freigestellt (bypassed) sind; andere Hotspot-Server bleiben unberührt. Der Nur-Lese-API-Benutzer darf es ausführen, aber nicht ändern; die API-Gruppe behält ihre Nur-Lese-Rechte. Das Portal führt es nach einer Änderung der MAC-Whitelist und beim Öffnen eines Anlern-Fensters aus. Nach dem Ändern dieser Einstellung den API-Zugangsblock auf jedem Router erneut ausführen.',
         'saved' => 'Gespeichert. Den API-Zugangsblock auf jedem Router dieses Standorts erneut ausführen.',
     ],
     'learning' => [
@@ -886,7 +886,6 @@ return [
         'opened' => 'Anlern-Fenster für :site für :minutes Minuten geöffnet.',
         'closed' => 'Anlern-Fenster geschlossen. Nicht übernommene Geräte verlieren den Zugang.',
         'not_pending' => 'Dieses Gerät wurde bereits übernommen oder verworfen.',
-        'already_listed' => ':mac steht bereits auf der Whitelist.',
         'taken' => ':mac in die Whitelist übernommen.',
         'discarded' => ':mac verworfen.',
     ],

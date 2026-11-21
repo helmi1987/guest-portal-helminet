@@ -65,12 +65,28 @@ class LearningWindow extends Model
         return $siteId === null ? null : self::query()->where('site_id', $siteId)->open()->latest('opened_at')->first();
     }
 
-    /** A device of the site may stay online: its window is open and its attempt was not discarded. */
+    /** A device of the site may get online: its window is open and its attempt (if any) was not discarded. */
     public static function allows(?string $siteId, string $mac): bool
     {
-        $window = self::openFor($siteId);
+        return self::pendingAttempt($siteId, $mac, true) !== false;
+    }
 
-        return $window !== null && ! $window->attempts()->where('mac', $mac)->where('status', LearningAttempt::DISCARDED)->exists();
+    /**
+     * The attempt of a MAC in the open window of the site: the attempt (pending), null when none yet (and $orNew),
+     * false when no window is open or the attempt was discarded or taken over.
+     */
+    public static function pendingAttempt(?string $siteId, string $mac, bool $orNew = false): LearningAttempt|false|null
+    {
+        $window = self::openFor($siteId);
+        if ($window === null) {
+            return false;
+        }
+        $attempt = $window->attempts()->where('mac', $mac)->first();
+        if ($attempt === null) {
+            return $orNew ? null : false;
+        }
+
+        return $attempt->status === LearningAttempt::PENDING ? $attempt->setRelation('window', $window) : false;
     }
 
     /** Record one MAC authentication of this window (first/last seen, count, router). */

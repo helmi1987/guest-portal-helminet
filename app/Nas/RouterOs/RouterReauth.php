@@ -36,9 +36,12 @@ class RouterReauth
     /** RouterOS command for the admin when the portal cannot run the script: one MAC, or all unauthorized hosts. */
     public static function command(?string $mac = null): string
     {
+        $server = MikrotikRos7Driver::NAME;
+
+        // Own hotspot server only (hosts of other hotspot servers are never touched)
         return $mac !== null && preg_match('/^([0-9A-F]{2}:){5}[0-9A-F]{2}$/D', $mac) === 1
-            ? "/ip hotspot host remove [find where mac-address={$mac}]"
-            : '/ip hotspot host remove [find where !authorized && !bypassed]';
+            ? "/ip hotspot host remove [find where server={$server} && mac-address={$mac}]"
+            : MikrotikRos7Driver::REAUTH_SOURCE;
     }
 
     /**

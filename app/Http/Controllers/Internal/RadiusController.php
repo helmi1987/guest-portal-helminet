@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\DisconnectSession;
 use App\Models\Device;
 use App\Models\Grant;
+use App\Models\LearningAttempt;
 use App\Models\LearningWindow;
 use App\Models\MacWhitelist;
 use App\Models\NasClient;
@@ -264,10 +265,11 @@ class RadiusController extends Controller
             return new RadiusAccounting(['session_summary_id' => $summary->id, 'nas_client_id' => $nas->id,
                 'acct_session_id' => $sessionId, 'username' => $username]);
         }
-        if ($entry === null && LearningWindow::allows($nas->site_id, $mac)) {
-            // Learning window (decision 2026-11-21): a session without grant and entry, ended when the window closes
-            // (portal:enforce-grants, SessionSummary::accessEnded()) or at its Session-Timeout
+        if ($entry === null && ($attempt = LearningWindow::pendingAttempt($nas->site_id, $mac)) instanceof LearningAttempt) {
+            // Learning window (decision 2026-11-21): a session marked by its attempt, ended when the window closes or the
+            // device is discarded (portal:enforce-grants, SessionSummary::accessEnded()) or at its Session-Timeout
             $summary = SessionSummary::create([
+                'learning_attempt_id' => $attempt->id,
                 'site_id' => $nas->site_id,
                 'serving_instance_id' => app(LocalInstance::class)->id(),
                 'mac' => $mac,

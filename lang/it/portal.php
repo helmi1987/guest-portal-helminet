@@ -862,7 +862,7 @@ return [
         'button_help' => 'Il router dimentica il dispositivo come host hotspot non autenticato e riprova l\'autenticazione MAC.',
         'not_valid' => 'Solo una voce attiva e non scaduta può essere riautenticata.',
         'setting' => 'Nuova autenticazione da parte del portale',
-        'setting_help' => 'Disattivata per impostazione predefinita. Attiva: il blocco di accesso API di ogni router aggiunge lo script proprio guest-portal-reauth, che rimuove gli host hotspot né autorizzati né esclusi (bypassed). L\'utente API di sola lettura può eseguirlo ma non modificarlo; il gruppo API mantiene i permessi di sola lettura. Il portale lo esegue dopo una modifica della whitelist MAC e all\'apertura di una finestra di apprendimento. Dopo aver cambiato questa impostazione, esegui di nuovo il blocco di accesso API su ogni router.',
+        'setting_help' => 'Disattivata per impostazione predefinita. Attiva: il blocco di accesso API di ogni router aggiunge lo script proprio guest-portal-reauth, che rimuove gli host dell\'hotspot del portale né autorizzati né esclusi (bypassed); gli altri server hotspot non vengono toccati. L\'utente API di sola lettura può eseguirlo ma non modificarlo; il gruppo API mantiene i permessi di sola lettura. Il portale lo esegue dopo una modifica della whitelist MAC e all\'apertura di una finestra di apprendimento. Dopo aver cambiato questa impostazione, esegui di nuovo il blocco di accesso API su ogni router.',
         'saved' => 'Salvato. Esegui di nuovo il blocco di accesso API su ogni router di questa sede.',
     ],
     'learning' => [
@@ -886,7 +886,6 @@ return [
         'opened' => 'Finestra di apprendimento per :site aperta per :minutes minuti.',
         'closed' => 'Finestra di apprendimento chiusa. I dispositivi non ripresi perdono l\'accesso.',
         'not_pending' => 'Questo dispositivo è già stato ripreso o scartato.',
-        'already_listed' => ':mac è già nella whitelist.',
         'taken' => ':mac ripreso nella whitelist.',
         'discarded' => ':mac scartato.',
     ],

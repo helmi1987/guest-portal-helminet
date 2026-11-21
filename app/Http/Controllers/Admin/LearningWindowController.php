@@ -40,17 +40,22 @@ class LearningWindowController extends Controller
             'site_id' => ['required', 'string', Rule::exists('sites', 'id')->whereNull('deleted_at')],
             'minutes' => ['required', 'integer', Rule::in(LearningWindow::DURATIONS)],
         ]);
-        $site = Site::query()->findOrFail($data['site_id']);
-        if (! self::eligible($site)) {
-            throw ValidationException::withMessages(['site_id' => __('portal.learning.not_eligible')]);
-        }
-        if (LearningWindow::openFor($site->id) !== null) {
-            throw ValidationException::withMessages(['site_id' => __('portal.learning.already_open')]);
-        }
         $minutes = (int) $data['minutes'];
-        $window = LearningWindow::create(['site_id' => $site->id, 'opened_by' => $request->user()->id,
-            'opened_at' => now(), 'expires_at' => now()->addMinutes($minutes)]);
-        Audit::log('whitelist.learning_opened', $window, ['site' => $site->slug, 'minutes' => $minutes]);
+        // Check and create atomically: the site row is locked, so two requests never open two windows of one site
+        $site = DB::transaction(function () use ($data, $minutes, $request) {
+            $site = Site::query()->whereKey($data['site_id'])->lockForUpdate()->firstOrFail();
+            if (! self::eligible($site)) {
+                throw ValidationException::withMessages(['site_id' => __('portal.learning.not_eligible')]);
+            }
+            if (LearningWindow::openFor($site->id) !== null) {
+                throw ValidationException::withMessages(['site_id' => __('portal.learning.already_open')]);
+            }
+            $window = LearningWindow::create(['site_id' => $site->id, 'opened_by' => $request->user()->id,
+                'opened_at' => now(), 'expires_at' => now()->addMinutes($minutes)]);
+            Audit::log('whitelist.learning_opened', $window, ['site' => $site->slug, 'minutes' => $minutes]);
+
+            return $site;
+        });
 
         return back()->with('status', __('portal.learning.opened', ['site' => $site->name, 'minutes' => $minutes]))
             ->with('reauth', WhitelistReauth::trigger([$site], $request->user(), 'learning'));
@@ -73,19 +78,29 @@ class LearningWindowController extends Controller
         if ($attempt->status !== LearningAttempt::PENDING) {
             return back()->withErrors(['learning' => __('portal.learning.not_pending')]);
         }
-        if (MacWhitelist::query()->where('mac', $attempt->mac)->exists()) {
-            return back()->withErrors(['learning' => __('portal.learning.already_listed', ['mac' => $attempt->mac])]);
-        }
         $entry = DB::transaction(function () use ($attempt, $data, $request) {
-            $entry = MacWhitelist::create(['mac' => $attempt->mac, 'comment' => $data['comment'], 'active' => true,
-                'created_by' => $request->user()->id]);
-            $entry->syncSites([$attempt->site_id]);
+            // A device with an entry that does not admit it here (inactive, expired, other sites) is updated: active,
+            // no expiry, the site added (an entry for all sites stays so); the comment is kept
+            $entry = MacWhitelist::query()->with('siteLinks')->where('mac', $attempt->mac)->lockForUpdate()->first();
+            $updated = $entry !== null;
+            if ($entry === null) {
+                $entry = MacWhitelist::create(['mac' => $attempt->mac, 'comment' => $data['comment'], 'active' => true,
+                    'created_by' => $request->user()->id]);
+                $entry->syncSites([$attempt->site_id]);
+            } else {
+                $entry->update(['active' => true, 'expires_at' => null]);
+                $sites = $entry->siteIds();
+                if ($sites !== [] && ! in_array($attempt->site_id, $sites, true)) {
+                    $entry->syncSites([...$sites, $attempt->site_id]);
+                }
+            }
+            $entry->unsetRelation('siteLinks');
             $attempt->update(['status' => LearningAttempt::TAKEN, 'mac_whitelist_id' => $entry->id]);
             // The device stays online: its open learning sessions now belong to the entry
-            SessionSummary::query()->whereNull('stopped_at')->whereNull('grant_id')->whereNull('mac_whitelist_id')
-                ->where('site_id', $attempt->site_id)->where('mac', $attempt->mac)->get()
+            SessionSummary::query()->whereNull('stopped_at')->where('learning_attempt_id', $attempt->id)->get()
                 ->each(fn (SessionSummary $s) => $s->update(['mac_whitelist_id' => $entry->id]));
-            Audit::log('whitelist.learning_taken', $entry, ['mac' => $entry->mac, 'sites' => [$attempt->site_id], 'attempts' => $attempt->count]);
+            Audit::log('whitelist.learning_taken', $entry, ['mac' => $entry->mac, 'sites' => $entry->siteIds(),
+                'attempts' => $attempt->count, 'updated' => $updated]);
 
             return $entry;
         });
@@ -105,15 +120,15 @@ class LearningWindowController extends Controller
     }
 
     /**
-     * Disconnect the open learning sessions (no grant, no entry) of a site served here that are no longer allowed,
+     * Disconnect the open learning sessions (marked by their attempt, not taken over) of a site served here that are no longer allowed,
      * optionally of one MAC; returns their number. Dispatched after commit.
      */
     private static function disconnectUnlearned(string $siteId, ?string $mac = null): int
     {
-        $sessions = SessionSummary::query()->whereNull('stopped_at')->whereNull('grant_id')->whereNull('mac_whitelist_id')
+        $sessions = SessionSummary::query()->whereNull('stopped_at')->whereNotNull('learning_attempt_id')->whereNull('mac_whitelist_id')
             ->where('site_id', $siteId)->where('serving_instance_id', app(LocalInstance::class)->id())
             ->when($mac !== null, fn ($q) => $q->where('mac', $mac))->get()
-            ->reject(fn (SessionSummary $s) => LearningWindow::allows($s->site_id, $s->mac));
+            ->filter(fn (SessionSummary $s) => $s->accessEnded());
         foreach ($sessions as $session) {
             DisconnectSession::dispatch($session->id)->afterCommit();
         }

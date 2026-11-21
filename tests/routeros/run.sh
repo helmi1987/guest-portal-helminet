@@ -334,6 +334,14 @@ check_reauth() { # <rsc dir>
         check "[$MODE] reauth $t: run-count $n0 -> $n1" test "$n1" = $((n0 + 1))
         check "[$MODE] reauth $t: state reports the script present" grep -qx "$N:api:reauth present" "$WORK/state/$MODE/state-$t.txt"
     done
+    # Own hotspot server only (foreign hotspot "hs-other" of the seed): the generated source filters by server, the
+    # filter is valid RouterOS, the runs above logged no script error. Hosts cannot be created on the CHR (no guests).
+    check "[$MODE] reauth: generated source limited to the own hotspot server" \
+        grep -qF 'source="/ip hotspot host remove [find where server=guest-portal && !authorized && !bypassed]"' "$R/api_access.rsc"
+    check "[$MODE] reauth: server filter accepted by RouterOS" \
+        test "$(ros ':put [:typeof [/ip hotspot host find where server=guest-portal && !authorized && !bypassed]]')" = array
+    check "[$MODE] reauth: no script error logged" test -z "$(ros "/log print where topics~\"error\" && message~\"$N-reauth|hotspot host\"")"
+    check "[$MODE] reauth: foreign hotspot server untouched" test "$(ros ':put [:len [/ip hotspot find where name=hs-other]]')" = 1
     id=$(ros ":put [/system script find where name=$N-reauth]")
     pin=sha256//$(openssl x509 -in "$WORK/pki/leaf2/router.crt" -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64)
     rest() { curl -s -k --pinnedpubkey "$pin" -u "portal-ro:$API_PASS" -H 'content-type: application/json' "$@"; }
@@ -344,7 +352,7 @@ check_reauth() { # <rsc dir>
     out=$(rest --data '{"script":"/system note set note=gp-write-test","as-string":""}' "https://127.0.0.1:$ROS_REST_PORT/rest/execute")
     check "[$MODE] reauth: /execute gets no write ($out)" grep -q 'not enough permissions' <<<"$out"
     check "[$MODE] reauth: script source unchanged" \
-        test "$(ros ":put [/system script get [find where name=$N-reauth] source]")" = '/ip hotspot host remove [find where !authorized && !bypassed]'
+        test "$(ros ":put [/system script get [find where name=$N-reauth] source]")" = '/ip hotspot host remove [find where server=guest-portal && !authorized && !bypassed]'
     check "[$MODE] reauth: nothing written by /execute" test "$(ros ':put [/system note get note]')" != gp-write-test
     f=$(RENDER_REAUTH=0 query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
     check "[$MODE] reauth off: the script left on the router is reported as differs" grep -q "^$N:api:reauth differs" "$f"
