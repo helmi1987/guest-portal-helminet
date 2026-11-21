@@ -11,8 +11,8 @@ use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Support\Facades\Http;
 
 /**
- * RouterOS REST API (service www-ssl, path /rest), print only: POST /rest/<menu>/print with
- * .proplist and .query. TLS: the server's public key must match the pin (CURLOPT_PINNEDPUBLICKEY,
+ * RouterOS REST API (service www-ssl, path /rest): POST /rest/<menu>/print with .proplist and .query, and
+ * POST /rest/system/script/run of one script id (RouterOsClient::runScript()). TLS: the server's public key must match the pin (CURLOPT_PINNEDPUBLICKEY,
  * curl aborts before sending the credentials); the certificate chain and host name are not checked
  * because the router is addressed by IP and the pin is the stronger check.
  */
@@ -36,8 +36,30 @@ final class RestClient implements RouterOsClient
         if ($where !== []) {
             $body['.query'] = count($where) > 1 ? [...$where, '#'.str_repeat('|', count($where) - 1)] : $where;
         }
+        $rows = $this->post('/rest/'.implode('/', $segments).'/print', $body);
+        // Single-item menus (e.g. /system resource) may answer with one object
+        if ($rows !== [] && ! array_is_list($rows)) {
+            $rows = [$rows];
+        }
+
+        return array_values(array_map(fn ($row) => is_array($row) ? array_map(fn ($v) => is_scalar($v) ? (is_bool($v) ? ($v ? 'true' : 'false') : (string) $v) : '', $row) : [], $rows));
+    }
+
+    /** POST /rest/system/script/run with the script id (re-authentication by the portal); the router answers []. */
+    public function runScript(string $id): void
+    {
+        $this->post('/rest/system/script/run', ['.id' => Menus::guardScriptId($id)]);
+    }
+
+    /**
+     * One POST with the size limit and the error mapping of the router's answers.
+     *
+     * @throws RouterOsException
+     */
+    private function post(string $path, array $body): array
+    {
         try {
-            $response = $this->request()->post('/rest/'.implode('/', $segments).'/print', $body);
+            $response = $this->request()->post($path, $body);
             $length = (int) $response->header('Content-Length');
             if ($length > $this->maxBytes || strlen($response->body()) > $this->maxBytes) {
                 throw new RouterOsException('protocol', 'answer too large');
@@ -59,20 +81,18 @@ final class RestClient implements RouterOsClient
         if ($status >= 400) {
             $message = (string) ($response->json('detail') ?: $response->json('message') ?: 'HTTP '.$status);
             // Unknown menu (package not installed): "no such command" / "no such command prefix"; other
-            // 400/404 answers (bad request, wrong path) are real errors with the router's detail
+            // 400/404 answers (bad request, wrong path) are real errors with the router's detail. RouterOS answers
+            // a missing policy with HTTP 500 "not enough permissions (9)".
             $missing = ($status === 400 || $status === 404) && preg_match('/no such (command|menu)/i', $message) === 1;
-            throw new RouterOsException($missing ? 'menu' : 'protocol', mb_substr($message, 0, 200));
+            $denied = preg_match('/not enough permissions/i', $message) === 1;
+            throw new RouterOsException($missing ? 'menu' : ($denied ? 'denied' : 'protocol'), mb_substr($message, 0, 200));
         }
         $rows = $response->json();
         if (! is_array($rows)) {
             throw new RouterOsException('protocol', 'unexpected answer (no JSON)');
         }
-        // Single-item menus (e.g. /system resource) may answer with one object
-        if ($rows !== [] && ! array_is_list($rows)) {
-            $rows = [$rows];
-        }
 
-        return array_values(array_map(fn ($row) => is_array($row) ? array_map(fn ($v) => is_scalar($v) ? (is_bool($v) ? ($v ? 'true' : 'false') : (string) $v) : '', $row) : [], $rows));
+        return $rows;
     }
 
     public function close(): void {}

@@ -15,13 +15,19 @@
  * <out-dir>/state-<type>.txt ("<key> <status> <diff>") or "error <kind> <detail>", and the adopt commands of
  * objects without comment ("unmanaged") to <out-dir>/adopt-<type>.rsc. With RQ_EDIT (JSON: mode, rules by
  * master configuration => {master, slaves}, new => list of {band, master, slaves}) also the provisioning
- * editor script from that state to <out-dir>/provisioning-<type>.rsc (or "error <json>").
+ * editor script from that state to <out-dir>/provisioning-<type>.rsc (or "error <json>"). With RQ_REAUTH also runs the
+ * re-authentication by the portal (own script through the read-only API access) and writes <out-dir>/reauth-<type>.txt
+ * ("ok" or "error <kind> <detail>").
+ *
+ * Re-authentication by the portal (decision 2026-11-21): on in the fixture unless RENDER_REAUTH=0; the access block of
+ * the other setting is written as api_access.reauth-off.rsc (on) or api_access.reauth-on.rsc (off).
  */
 
 use App\Auth\Social\LoginMethods;
 use App\Auth\Social\SocialSettings;
 use App\Models\NasClient;
 use App\Models\Site;
+use App\Nas\RouterOs\RouterReauth;
 use App\Nas\RouterOs\RouterStateQuery;
 use Illuminate\Contracts\Console\Kernel;
 use Illuminate\Support\Facades\Artisan;
@@ -75,6 +81,7 @@ foreach ($wifiModes as $i => $mode) {
         'radius_address' => $portalIp,
         'portal_address' => $portalIp,
         'portal_url' => $portalUrl,
+        Site::ROUTER_REAUTH => getenv('RENDER_REAUTH') !== '0',
         'setup' => [
             'vlan_id' => 30, 'bridge' => 'bridge', 'interface' => 'vlan-guest', 'subnet' => '10.30.0.0/24',
             'gateway' => '10.30.0.1', 'pool' => '10.30.0.10-10.30.0.250', 'ssid' => 'Guest-WiFi',
@@ -109,6 +116,10 @@ foreach ($wifiModes as $i => $mode) {
         $nas = NasClient::find($nas->id);
         $nas->fill(['api_host' => getenv('RQ_HOST') ?: '127.0.0.1', 'api_port' => (int) getenv('RQ_PORT'), 'api_password' => getenv('RQ_PASS')])->save();
         $nas = NasClient::with('site.nasClients')->find($nas->id);
+        if (getenv('RQ_REAUTH')) {
+            $reauth = app(RouterReauth::class)->run($nas);
+            file_put_contents($out.'/reauth-'.getenv('RQ_TYPE').'.txt', ($reauth === null ? 'ok' : "error {$reauth['kind']} {$reauth['detail']}")."\n");
+        }
         $error = app(RouterStateQuery::class)->run($nas);
         $lines = [];
         if ($error !== null) {
@@ -171,6 +182,10 @@ foreach ($wifiModes as $i => $mode) {
     $files['router.rsc'] = $driver->configScript($site, $nas);
     $files['login_fetch.rsc'] = $driver->loginPageFetch($site, $nas);
     $files['api_access.rsc'] = $driver->apiAccessCommands($site, $nas);
+    // Access block of the other re-authentication setting (unsaved copy of the site)
+    $other = clone $site;
+    $other->settings = [Site::ROUTER_REAUTH => ! $site->routerReauth()] + $site->settings;
+    $files['api_access.reauth-'.($site->routerReauth() ? 'off' : 'on').'.rsc'] = $driver->apiAccessCommands($other, $nas);
     foreach ($driver->hotspotPages($site) as $page => $html) {
         file_put_contents($dir.'/'.$page.'.html', $html);
     }

@@ -188,6 +188,38 @@ Image: Alpine 3.24, PHP 8.4, Laravel 13, Livewire 3 (code stays compatible with 
   a valid entry is still recorded (linked to the newest entry of the MAC, also deleted) and disconnected.
   Deactivate, delete, site removal or MAC change disconnect open sessions of the entry (after commit);
   expiry is enforced by `portal:enforce-grants`. User-Name and MAC format sent by RouterOS: **(to verify)**.
+- **Re-authentication and learning window** (decision 2026-11-21, v0.33.0, owner): RouterOS asks RADIUS for MAC
+  authentication only when it first sees a host; a device already held as an unauthenticated hotspot host stays
+  so after it is whitelisted until `/ip hotspot host remove [find where mac-address=<MAC>]`.
+  - Minimal rights: the router API user keeps `read,api,rest-api` (no `write`). Optional per site setting
+    `router_reauth` (site settings, replicated, default off): the API access block adds the own script
+    `guest-portal-reauth` (comment key `guest-portal:api:reauth`, `policy=read,write`, `dont-require-permissions=yes`,
+    source `/ip hotspot host remove [find where !authorized && !bypassed]`: all unauthorized hosts, harmless, they are
+    detected again); switched off, the block removes only that own script (exact name and key); the uninstall
+    removes it too. Verified on the CHR (RouterOS 7.24.5): a user with `read,api,rest-api` may run a script with
+    `dont-require-permissions=yes` (REST `POST /rest/system/script/run` with `.id`, API `/system/script/run`), but not
+    one without it, and cannot add, change or remove scripts or schedulers; `/execute` runs with the user's own
+    policies (no write). The script needs `read,write` (with `read` only "not enough permissions"). A MAC cannot be
+    passed to the script (a global variable set through the API is not visible to it), so it removes all
+    unauthorized hosts. Known: the API user may also run any script of others with `dont-require-permissions=yes`
+    (RouterOS rule, independent of this feature). The portal runs the script only after finding it by name, key and
+    `dont-require-permissions=yes` (`RouterOsClient::runScript()` takes an internal id only). Router state: switched
+    on, the script is compared (missing/differs); switched off, an own script left on the router is `differs`.
+  - Triggers: saving, updating or activating a valid entry, and the button "Re-authenticate" (admin + manager): per
+    router of the entry's sites served here, a job runs the script when the setting is on and API access is configured
+    (audit `router.reauth` with the result), otherwise the page shows the RouterOS command for that MAC.
+  - Learning window per site (admin + manager, local to the instance, not replicated: `learning_windows`,
+    `learning_attempts`; sites served here, not UniFi): opened for 5/10/15/30/60 minutes, remaining time shown, can be
+    closed early; one open window per site. While open, a MAC authentication of the site's routers (User-Name =
+    Calling-Station-Id, known NAS) without whitelist entry or roaming grant is accepted with `Session-Timeout` =
+    remaining window seconds and recorded (MAC, router, first/last seen, count). Admin "take over" creates a whitelist
+    entry for that site (comment required; the device's open session is linked to it), "discard" disconnects it and
+    rejects it for the rest of the window. Opening runs the re-authentication of all unauthorized hosts (or shows
+    `/ip hotspot host remove [find where !authorized && !bypassed]`). After close or expiry the devices not taken over
+    lose access: Disconnect-Request at close (existing `DisconnectSession`), `portal:enforce-grants` closes expired
+    windows and disconnects their sessions (`SessionSummary::accessEnded()`), and the `Session-Timeout` is the upper
+    bound. Audit: `whitelist.learning_opened|closed|expired|taken|discarded`. Windows and attempts are purged with the
+    retention period.
 
 ### 5.1 NAS drivers (vendor neutrality)
 
@@ -861,7 +893,7 @@ Features:
 | Sites | Name, identifier, NAS driver, home instance, routers (NAS IP, NAS-Identifier, RADIUS secret per router, CoA port), enabled login methods; directory for the account login (v0.24.0, §7.2 E: server, TLS, service account, filter, group, duration, check button); for the UniFi driver (v0.27.0, experimental, §5.1) the controller (URL, API key or local account, UniFi site, TLS pin, check button) instead of routers, and a controller checklist instead of the setup assistant's RouterOS blocks; for the generic RADIUS captive-portal driver (v0.28.0, experimental, §5.1) the mapping section (preset, redirect, handoff, RADIUS, login page, "Simulate redirect"), routers without the RouterOS API, and a device checklist instead of the RouterOS blocks. |
 | Codes | Create single/bulk (1-100), print vouchers (A4 sheet, Wi-Fi join QR + code, §8), CSV export (admin only), edit, revoke, delete ended codes (list shows current codes by default). |
 | Guests & sessions | Implemented M6 (admin + manager), one page: guests newest first (each login creates a guest row) with name, phone (masked for managers), login method (grant type; without grant: approval request or SMS challenge), site and accepted terms version + time of the latest acceptance, created; its grant (code/status/remaining, extend and revoke via the grant routes) and devices (MAC, online = open session summary of grant + MAC, IP, start/end, traffic from local accounting `bytes_in`/`bytes_out`). An open session without accounting update for `PORTAL_RADIUS_STALE_AFTER` (default 3 x interim interval = 900 s) is shown as "stale" (Stop probably lost; display only, data unchanged). Disconnect: Disconnect-Request job for an open session served by this instance (sessions of other instances: M7); the grant stays valid, audited `grant.disconnected`. Filters: site, method, running grants only, name (LIKE wildcards literal) or exact code; invalid filter values are ignored; 25 per page. Extend/shorten takes whole hours; a revoked grant cannot be extended (422). No new fields. |
-| MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). |
+| MAC whitelist | Implemented v0.8.0 (admin + manager, §5): list with filters (MAC/comment search, site, status active/inactive/expired), online state, create/edit/delete, activate/deactivate; guests list: per device "allow this device permanently" (link carries the device id only; the form is prefilled server-side with MAC, guest name as comment, site of the latest session or acceptance) or a "Whitelist" badge. Whitelist sessions are shown on the whitelist page, not in the guest list (no guest). Audited `whitelist.created/updated/activated/deactivated/deleted` (no comment text). Re-authentication ("Re-authenticate" button, after save/activation) and learning window card on the same page (v0.33.0, §5). |
 | Approvals | Pending requests (approve/deny in UI as well). |
 | Channels | Notification channels and SMS providers (v0.26.0: provider list with badges «Aktiv» / «Reserve n» / «Aus», buttons «Aktiv setzen» and «Nach oben/unten», outage banner, help line per driver; §7.2 B), test button (SMS: test SMS to a number; notification channels: test message, implemented M6; errors shown as HTTP status only, audited). |
 | Login methods | Decision 2026-11-03 (v0.22.0, admin only, Settings): switch per guest login method with prerequisite hints; social login providers (Google, Apple, Facebook, GitHub, Microsoft) with encrypted secrets, redirect URIs per guest origin, setup guide and check button (see the bullet above); switch and default access duration of the account login (v0.24.0, directory per site, §7.2 E). |
@@ -1186,6 +1218,8 @@ Replicated tables (marked R) use ULID keys plus `origin_instance_id`, `version`,
 | `channels` R | id, kind (notification/sms), driver, name, config (`federated` json; SMS: reserved keys `_sms_role`, `_sms_order`, §7.2 B), enabled |
 | `settings` R / `local_settings` | id (settings: derived from key), key, value (json); OIDC client secret `federated` |
 | `login_attempts` | id, mac, ip, site_id, method, success, created_at |
+| `learning_windows` | id, site_id, opened_by, opened_at, expires_at, closed_at; local (decision 2026-11-21) |
+| `learning_attempts` | id, learning_window_id, site_id, mac, nas_client_id, first_seen_at, last_seen_at, count, status (pending/taken/discarded), mac_whitelist_id; local |
 | `audit_logs` R | id, user_id, actor (label), action, subject_type, subject_id, data (json), ip, created_at |
 | `federation_events` / `peer_cursors` | change log, local and foreign (origin, seq, table, record_id, version, payload, proto, sig, created_at; unique origin+seq) / last_seq + pause state per origin |
 | `federation_peers` / `federation_join_tokens` | local: heartbeat state per direct peer (last_seen_at, clock_skew_ms, protocol, origins, acks, pause) / join tokens (sha256, expires_at, used_at) |

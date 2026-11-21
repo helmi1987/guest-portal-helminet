@@ -118,7 +118,9 @@ class SetupWizardTest extends TestCase
         $this->assertStringContainsString('data-wizard-link', $this->admin()->get("/admin/sites/{$this->site->id}/edit")->getContent());
         $page = $this->admin()->get($this->url())->getContent();
         $this->assertStringContainsString('/setup#step-uninstall', $page);
-        $this->assertStringNotContainsString('/system script remove', $page);
+        // (the access block removes only the own script of the re-authentication by the portal while it is off)
+        $this->assertStringNotContainsString('/system script remove [find where name="guest-portal-cert"', $page);
+        $this->assertStringNotContainsString('/user group remove', $page);
     }
 
     public function test_step_order_and_router_script_step_contents(): void

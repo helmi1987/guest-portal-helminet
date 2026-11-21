@@ -8,6 +8,7 @@ use App\Models\AuditLog;
 use App\Models\Device;
 use App\Models\Grant;
 use App\Models\Guest;
+use App\Models\LearningWindow;
 use App\Models\LoginAttempt;
 use App\Models\OtpChallenge;
 use App\Models\RadiusToken;
@@ -38,6 +39,8 @@ class PurgeData extends Command
         // One-time credentials are needed only for minutes.
         RadiusToken::query()->where('created_at', '<', now()->subDay())->delete();
         LoginAttempt::query()->where('created_at', '<', $cutoff)->delete();
+        // Learning windows of the MAC whitelist (local), with their recorded attempts (cascade)
+        LearningWindow::query()->whereNotNull('closed_at')->where('closed_at', '<', $cutoff)->delete();
         ApprovalRequest::withTrashed()->where('created_at', '<', $cutoff)->forceDelete();
         TermsAcceptance::withTrashed()->where('accepted_at', '<', $cutoff)->where('version', '<', $horizon)->forceDelete();
         OtpChallenge::withTrashed()->where('created_at', '<', $cutoff)->forceDelete();

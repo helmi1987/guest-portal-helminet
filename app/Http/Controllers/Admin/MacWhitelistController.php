@@ -4,12 +4,15 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\Device;
+use App\Models\LearningAttempt;
+use App\Models\LearningWindow;
 use App\Models\MacWhitelist;
 use App\Models\SessionSummary;
 use App\Models\Site;
 use App\Support\Audit;
 use App\Support\LocalTime;
 use App\Support\Mac;
+use App\Support\WhitelistReauth;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -20,7 +23,9 @@ use Illuminate\View\View;
 /**
  * MAC whitelist (admin + manager, CONCEPT.md §5, §9): devices admitted by RouterOS MAC
  * authentication without the portal. Deactivating, deleting or restricting an entry disconnects its
- * open sessions on this instance; expiry is enforced by portal:enforce-grants.
+ * open sessions on this instance; expiry is enforced by portal:enforce-grants. Saving or activating a valid entry,
+ * and the button "Re-authenticate", trigger the re-authentication by the portal on the routers of its sites
+ * (decision 2026-11-21, v0.33.0; else the RouterOS command is shown). The learning window: LearningWindowController.
  */
 class MacWhitelistController extends Controller
 {
@@ -49,8 +54,16 @@ class MacWhitelistController extends Controller
             ->orderBy('comment')->orderBy('mac')
             ->paginate(50)->withQueryString();
 
+        $siteModels = Site::query()->orderBy('name')->get();
+
         return view('admin.whitelist.index', [
             'entries' => $entries,
+            // Learning window (decision 2026-11-21): local sites with MAC authentication, open windows, pending attempts
+            'learningSites' => $siteModels->filter(fn (Site $s) => LearningWindowController::eligible($s))->pluck('name', 'id'),
+            'windows' => LearningWindow::query()->open()->with(['site', 'opener'])->orderBy('expires_at')->get(),
+            'attempts' => LearningAttempt::query()->where('status', LearningAttempt::PENDING)->with(['site', 'nasClient', 'window'])
+                ->orderByDesc('last_seen_at')->limit(200)->get(),
+            'durations' => LearningWindow::DURATIONS,
             'filters' => ['q' => $q, 'site' => $site, 'status' => $status],
             'statuses' => self::STATUSES,
             'sites' => Site::query()->orderBy('name')->pluck('name', 'id'),
@@ -93,7 +106,8 @@ class MacWhitelistController extends Controller
             return $entry;
         });
 
-        return redirect()->route('admin.whitelist.index', ['q' => $entry->mac])->with('status', __('portal.saved'));
+        return redirect()->route('admin.whitelist.index', ['q' => $entry->mac])->with('status', __('portal.saved'))
+            ->with('reauth', $this->triggerReauth($entry, $request));
     }
 
     public function edit(MacWhitelist $whitelist): View
@@ -117,10 +131,10 @@ class MacWhitelistController extends Controller
             $whitelist->disconnectInvalidSessions();
         });
 
-        return back()->with('status', __('portal.saved'));
+        return back()->with('status', __('portal.saved'))->with('reauth', $this->triggerReauth($whitelist, $request));
     }
 
-    public function toggle(MacWhitelist $whitelist): RedirectResponse
+    public function toggle(Request $request, MacWhitelist $whitelist): RedirectResponse
     {
         DB::transaction(function () use ($whitelist) {
             $whitelist->update(['active' => ! $whitelist->active]);
@@ -128,7 +142,32 @@ class MacWhitelistController extends Controller
             $whitelist->disconnectInvalidSessions();
         });
 
-        return back()->with('status', __('portal.saved'));
+        return back()->with('status', __('portal.saved'))->with('reauth', $this->triggerReauth($whitelist, $request));
+    }
+
+    /** Button "Re-authenticate": the router tries MAC authentication of this device again. */
+    public function reauth(Request $request, MacWhitelist $whitelist): RedirectResponse
+    {
+        $result = $this->triggerReauth($whitelist, $request);
+        if ($result === null) {
+            return back()->withErrors(['reauth' => __('portal.reauth.not_valid')]);
+        }
+
+        return back()->with('reauth', $result);
+    }
+
+    /**
+     * Re-authentication by the portal after a change (after commit: RADIUS must see the entry), only for a valid
+     * entry; null otherwise.
+     */
+    private function triggerReauth(MacWhitelist $entry, Request $request): ?array
+    {
+        $entry->refresh()->load('siteLinks');
+        if (! $entry->isValid()) {
+            return null;
+        }
+
+        return WhitelistReauth::trigger(WhitelistReauth::sitesOf($entry->siteIds()), $request->user(), 'whitelist', $entry->mac);
     }
 
     public function destroy(MacWhitelist $whitelist): RedirectResponse

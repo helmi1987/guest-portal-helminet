@@ -1,6 +1,8 @@
 <x-layouts.admin :title="$entry->exists ? $entry->mac : __('portal.whitelist.create')">
     <h1 class="mb-4 text-2xl font-semibold">{{ $entry->exists ? __('portal.whitelist.title').' '.$entry->mac : __('portal.whitelist.create') }}</h1>
 
+    @include('admin.whitelist.partials.reauth')
+
     <form method="POST" action="{{ $entry->exists ? route('admin.whitelist.update', $entry) : route('admin.whitelist.store') }}" class="card mb-6 grid gap-4 md:grid-cols-2">
         @csrf
         @if ($entry->exists) @method('PUT') @endif
@@ -26,6 +28,14 @@
             <a href="{{ route('admin.whitelist.index') }}" class="btn-light">{{ __('portal.back') }}</a>
         </div>
     </form>
+
+    @if ($entry->exists && $entry->isValid())
+        <form method="POST" action="{{ route('admin.whitelist.reauth', $entry) }}" class="card mb-6 flex flex-wrap items-center gap-3">
+            @csrf
+            <button class="btn-light">{{ __('portal.reauth.button') }}</button>
+            <span class="text-xs text-slate-600">{{ __('portal.reauth.button_help') }}</span>
+        </form>
+    @endif
 
     @if ($entry->exists)
         <section class="card mb-6">

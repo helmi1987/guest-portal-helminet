@@ -212,6 +212,7 @@ trait MikrotikRos7RouterState
             $k('fw', 'addr-rfc1918-192') => ['address' => '192.168.0.0/16'],
             $k('api', 'group') => ['policy' => self::API_POLICY],
             $k('api', 'user') => ['group' => self::API_GROUP],
+            $k('api', 'reauth') => ['policy' => self::REAUTH_POLICY, 'dont-require-permissions' => 'yes'],
         ];
         foreach (WalledGarden::hosts() as $host) {
             // Every value the router script sets (a manual change on the router is "differs")
@@ -288,6 +289,14 @@ trait MikrotikRos7RouterState
                 $out['walled'][$key.$suffix] = ['path' => $path, 'name' => null] + ($suffix !== '' ? ['key' => $key] : [])
                     + ['status' => 'differs', 'diff' => ['dst-host' => ['–', (string) ($row['dst-host'] ?? '')]]];
             }
+        }
+        // Re-authentication by the portal switched off (decision 2026-11-21): its own script left on the router is a
+        // deviation (the access block removes it)
+        $reauthKey = self::key('api', 'reauth');
+        if (! $site->routerReauth() && collect((array) ($menus['/system script']['rows'] ?? []))
+            ->contains(fn ($r) => is_array($r) && ($r['comment'] ?? null) === $reauthKey)) {
+            $out['api'][$reauthKey] = ['path' => '/system script', 'name' => self::REAUTH_SCRIPT,
+                'status' => 'differs', 'diff' => ['name' => ['–', self::REAUTH_SCRIPT]]];
         }
         // The own IP walled-garden entry also shows up in /ip hotspot walled-garden as a dynamic copy with its
         // comment (read-only there, decision 2026-11-03): hint while the router script still has to replace it
@@ -1129,6 +1138,37 @@ trait MikrotikRos7RouterState
     }
 
     /**
+     * Re-authentication by the portal (decision 2026-11-21, v0.33.0), part of the access block: switched on, the own
+     * script REAUTH_SCRIPT (exact name and key, policy read,write, dont-require-permissions=yes) is added or updated;
+     * switched off, only that own script is removed. A script of others with this name is never changed (the add
+     * fails). The API group keeps its read-only policies: running such a script needs no further policy.
+     *
+     * @return list<string>
+     */
+    private static function reauthCommands(Site $site): array
+    {
+        $name = self::REAUTH_SCRIPT;
+        $key = self::key('api', 'reauth');
+        $find = "find where name={$name} && comment=\"{$key}\"";
+        if (! $site->routerReauth()) {
+            return ['# Re-authentication by the portal is off: remove its own script, if any',
+                "/system script remove [{$find}]"];
+        }
+        $props = 'policy='.self::REAUTH_POLICY.' dont-require-permissions=yes source="'.self::REAUTH_SOURCE.'"';
+
+        return [
+            '# Re-authentication by the portal (on): own script that removes the hotspot hosts which are neither authorized',
+            '# nor bypassed, so the router asks RADIUS again (MAC authentication). The read-only API user may run it',
+            '# (dont-require-permissions=yes), but cannot change it.',
+            ":if ([:len [/system script {$find}]] = 0) do={",
+            "    /system script add name={$name} {$props} comment=\"{$key}\"",
+            '} else={',
+            "    /system script set [{$find}] {$props}",
+            '}',
+        ];
+    }
+
+    /**
      * Read-only API access for the state query of one router: group "guest-portal-ro" (policies read,
      * api, rest-api; no write, no sensitive: the router hides secrets) and the user of the router's
      * access settings, both add-or-update by name + comment key. /ip service is not an own object: only
@@ -1158,6 +1198,7 @@ trait MikrotikRos7RouterState
             self::upsert('/user group', "name={$group}", $kGroup, "name={$group}", 'policy='.self::API_POLICY),
             '# Replace <API_PASSWORD> with the password stored for this router in the portal (re-running sets it again).',
             self::upsert('/user', "name={$user}", $kUser, "name={$user}", "group={$group} password=\"<API_PASSWORD>\""),
+            ...self::reauthCommands($site),
             '}',
             '# Optional: allow this user only from the portal instance',
             "# /user set [find where name={$user} && comment=\"{$kUser}\"] address={$radius}/32",

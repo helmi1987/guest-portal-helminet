@@ -81,6 +81,13 @@ dependencies. The run needs a router without configuration (fresh image or `load
   html-directory, each with its redirect target and the RouterOS variables intact; they survive re-creating the
   hotspot; a foreign hotspot directory is untouched. The fetch block is one `{ ... }` block (v0.30.0): its output
   must show `ok <page>.html (<size> bytes)` for all four pages and no `FAILED fetch` or `MISSING` line.
+- Re-authentication by the portal (decision 2026-11-21, fixture: on; `api_access.reauth-off.rsc` = the block switched
+  off): the access block adds the own script `guest-portal-reauth` (dont-require-permissions, policy read,write); the
+  portal client runs it with the read-only user through REST and api-ssl (render.php `RQ_REAUTH`, run-count +1) and the
+  state reports it present; the read-only user cannot change or remove it and `/execute` gets no write; switched off,
+  a script left over is `differs`, the off block removes it (re-run: no error, no deviation), a foreign script with
+  the own name is kept by the off block and never run by the portal; on again for the uninstall. Not covered: real
+  unauthorized hotspot hosts (no guests on the CHR), so the removal itself runs on an empty host list.
 - Router state query (read-only API): the access block runs (and re-runs); with `www-ssl` and `api-ssl`
   set to the certificate `guest-portal` for the test (restored before the uninstall), the REST and the
   API-SSL client read the state through the forwarded ports (`ROS_REST_PORT` 2443, `ROS_APISSL_PORT`

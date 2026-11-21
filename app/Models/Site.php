@@ -31,6 +31,12 @@ class Site extends Model
 
     public const WIFI_SHARED = 'setup.wifi_password_shared';
 
+    /**
+     * Site setting: re-authentication by the portal (decision 2026-11-21, v0.33.0, default off). The router's API
+     * access block then adds the own script "guest-portal-reauth" that the read-only API user may run.
+     */
+    public const ROUTER_REAUTH = 'router_reauth';
+
     /** Wi-Fi modes with selectable masters (setup assistant, column wifi_masters_local), in script order. */
     public const WIFI_MODES = ['capsman1', 'capsman2', 'local'];
 
@@ -131,6 +137,12 @@ class Site extends Model
     public function setting(string $key, mixed $default = null): mixed
     {
         return data_get($this->settings, $key) ?? $default;
+    }
+
+    /** Re-authentication by the portal switched on (ROUTER_REAUTH). */
+    public function routerReauth(): bool
+    {
+        return (bool) $this->setting(self::ROUTER_REAUTH, false);
     }
 
     /**

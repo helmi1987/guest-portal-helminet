@@ -3,16 +3,19 @@
 namespace App\Console\Commands;
 
 use App\Jobs\DisconnectSession;
+use App\Models\LearningWindow;
 use App\Models\RadiusAccounting;
 use App\Models\SessionSummary;
 use App\Nas\ControllerSessions;
+use App\Support\Audit;
 use App\Support\LocalInstance;
 use Illuminate\Console\Command;
 
 /**
  * Disconnects open sessions whose grant ended (expired, shortened, revoked) or whose device was
  * rebound, and sessions of MAC whitelist entries no longer valid (expired, inactive, deleted, site
- * removed); closes sessions the router stopped reporting (e.g. lost Accounting-Stop). Sessions of
+ * removed) and of learning windows that closed or expired (devices not taken over, decision 2026-11-21); closes
+ * expired learning windows (audit entry) and sessions the router stopped reporting (e.g. lost Accounting-Stop). Sessions of
  * controller sites (UniFi) are ended through the controller (DisconnectSession) instead.
  */
 class EnforceGrants extends Command
@@ -23,6 +26,12 @@ class EnforceGrants extends Command
 
     public function handle(LocalInstance $instance): int
     {
+        // Learning windows that expired: closed at their expiry (their sessions end below, accessEnded())
+        foreach (LearningWindow::query()->whereNull('closed_at')->where('expires_at', '<=', now())->with('site')->get() as $window) {
+            $window->update(['closed_at' => $window->expires_at]);
+            Audit::log('whitelist.learning_expired', $window, ['site' => $window->site?->slug]);
+        }
+
         $open = SessionSummary::query()->whereNull('stopped_at')
             ->where('serving_instance_id', $instance->id())
             ->with(['grant' => fn ($q) => $q->withTrashed(), 'macWhitelist.siteLinks', 'accounting', 'site'])

@@ -11,6 +11,7 @@ use App\Http\Controllers\Admin\FederationController;
 use App\Http\Controllers\Admin\GrantController;
 use App\Http\Controllers\Admin\GuestController;
 use App\Http\Controllers\Admin\GuestTextsController;
+use App\Http\Controllers\Admin\LearningWindowController;
 use App\Http\Controllers\Admin\LogoutController;
 use App\Http\Controllers\Admin\MacWhitelistController;
 use App\Http\Controllers\Admin\OidcController;
@@ -157,6 +158,13 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                     ->name('sessions.disconnect-remote')->middleware('throttle:30,1,session-disconnect-remote');
                 Route::resource('whitelist', MacWhitelistController::class)->except(['show']);
                 Route::post('/whitelist/{whitelist}/toggle', [MacWhitelistController::class, 'toggle'])->name('whitelist.toggle');
+                // Re-authentication by the portal and learning window (decision 2026-11-21, v0.33.0)
+                Route::post('/whitelist/{whitelist}/reauth', [MacWhitelistController::class, 'reauth'])->name('whitelist.reauth')
+                    ->middleware('throttle:20,1,whitelist-reauth');
+                Route::post('/whitelist-learning', [LearningWindowController::class, 'open'])->name('learning.open');
+                Route::post('/whitelist-learning/{window}/close', [LearningWindowController::class, 'close'])->name('learning.close');
+                Route::post('/whitelist-learning/attempts/{attempt}/take-over', [LearningWindowController::class, 'takeOver'])->name('learning.take-over');
+                Route::post('/whitelist-learning/attempts/{attempt}/discard', [LearningWindowController::class, 'discard'])->name('learning.discard');
                 Route::get('/site-codes', [SiteCodeController::class, 'index'])->name('site-codes.index');
                 Route::prefix('/sites/{site}/site-code')->name('site-codes.')->group(function () {
                     Route::get('/', [SiteCodeController::class, 'show'])->name('show');
@@ -231,6 +239,7 @@ Route::middleware(['zone:admin', 'locale'])->prefix('admin')->group(function () 
                 Route::get('/sites/{site}/setup', [SetupController::class, 'show'])->name('sites.setup');
                 Route::post('/sites/{site}/setup', [SetupController::class, 'updateNetwork'])->name('sites.setup.network');
                 Route::post('/sites/{site}/setup/container', [SetupController::class, 'updateContainer'])->name('sites.setup.container');
+                Route::post('/sites/{site}/setup/reauth', [SetupController::class, 'updateReauth'])->name('sites.setup.reauth');
                 // Guided wizard: additional view of the setup assistant, one step per block (decision 2026-11-02)
                 Route::get('/sites/{site}/wizard', [WizardController::class, 'show'])->name('sites.wizard');
                 // Stored passwords for "Insert passwords" of the displayed commands (JSON, no-store)

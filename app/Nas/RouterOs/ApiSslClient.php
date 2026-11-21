@@ -3,9 +3,9 @@
 namespace App\Nas\RouterOs;
 
 /**
- * RouterOS API over TLS (service api-ssl), minimal and print only: login (name + password, RouterOS
- * >= 6.43), "/<menu>/print" with =.proplist= and ?queries, answers !re / !done / !trap / !fatal
- * (and !empty of RouterOS >= 7.18). The server's public key must match the pin before the credentials
+ * RouterOS API over TLS (service api-ssl), minimal: login (name + password, RouterOS >= 6.43),
+ * "/<menu>/print" with =.proplist= and ?queries, "/system/script/run" of one script id; answers !re / !done /
+ * !trap / !fatal (and !empty of RouterOS >= 7.18). The server's public key must match the pin before the credentials
  * are sent. One connection per query, closed afterwards.
  */
 final class ApiSslClient implements RouterOsClient
@@ -37,6 +37,26 @@ final class ApiSslClient implements RouterOsClient
         if (count($where) > 1) {
             $words[] = '?#'.str_repeat('|', count($where) - 1);
         }
+
+        return $this->talk($words, $proplist);
+    }
+
+    /** "/system/script/run" with the script id (re-authentication by the portal); answers only !done (or !trap). */
+    public function runScript(string $id): void
+    {
+        $this->talk(['/system/script/run', '=.id='.Menus::guardScriptId($id)], []);
+    }
+
+    /**
+     * Send one sentence and read the answer up to !done: the !re rows (only the $proplist properties), a !trap
+     * as RouterOsException.
+     *
+     * @return list<array<string, string>>
+     *
+     * @throws RouterOsException
+     */
+    private function talk(array $words, array $proplist): array
+    {
         $connection = $this->connect();
         $connection->write(ApiSentence::encode($words));
 

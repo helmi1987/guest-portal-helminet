@@ -55,4 +55,18 @@ final class Menus
 
         return explode(' ', substr($menu, 1));
     }
+
+    /**
+     * Validate the id of a script to run (re-authentication by the portal): a RouterOS internal id only.
+     *
+     * @throws RouterOsException
+     */
+    public static function guardScriptId(string $id): string
+    {
+        if (! preg_match('/^\*[0-9A-F]{1,8}$/D', $id)) {
+            throw new RouterOsException('config', 'script id not allowed');
+        }
+
+        return $id;
+    }
 }

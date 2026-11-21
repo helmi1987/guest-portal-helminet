@@ -420,6 +420,20 @@ class SetupController extends Controller
         return response()->json(['script' => $script])->header('Cache-Control', 'no-store, private');
     }
 
+    /**
+     * Re-authentication by the portal (decision 2026-11-21, v0.33.0): site setting, default off. Changes the API
+     * access block of the site's routers (own script added or removed); run it again on every router.
+     */
+    public function updateReauth(Request $request, Site $site): RedirectResponse
+    {
+        abort_unless($site->driver() instanceof RouterStateDriver, 404);
+        $enabled = $request->boolean('router_reauth');
+        $site->forceFill(['settings' => array_merge($site->settings ?? [], [Site::ROUTER_REAUTH => $enabled])])->save();
+        Audit::log('site.setup_reauth', $site, ['enabled' => $enabled]);
+
+        return $this->back($request, $site, 'step-state')->with('status', __('portal.reauth.saved'));
+    }
+
     public function updateContainer(Request $request, Site $site): RedirectResponse
     {
         $data = $this->validateWithin($request, $site->driver()->setupFields()['container'], 'veth_address', ['veth_gateway']);

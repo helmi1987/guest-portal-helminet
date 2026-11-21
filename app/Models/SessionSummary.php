@@ -54,13 +54,18 @@ class SessionSummary extends Model
     }
 
     /**
-     * Access of this session is over: MAC whitelist entry no longer valid for MAC and site, or grant
-     * deleted, ended (expired, revoked) or bound to another device.
+     * Access of this session is over: MAC whitelist entry no longer valid for MAC and site, learning window closed or
+     * device discarded (session without grant and entry), or grant deleted, ended (expired, revoked) or bound to
+     * another device.
      */
     public function accessEnded(): bool
     {
         if ($this->mac_whitelist_id !== null) {
             return ! ($this->macWhitelist?->isValidFor($this->mac, $this->site_id) ?? false);
+        }
+        // Learning window session (decision 2026-11-21, v0.33.0): no grant and no entry, allowed while the window is open
+        if ($this->grant_id === null) {
+            return ! LearningWindow::allows($this->site_id, $this->mac);
         }
         $grant = $this->relationLoaded('grant') ? $this->grant : $this->grant()->withTrashed()->first();
 

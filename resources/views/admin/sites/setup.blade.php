@@ -35,6 +35,15 @@
             @endif
         </div>
         <p class="mb-3 text-sm text-slate-600">{{ __('portal.router_api.state_help', ['minutes' => $maxAge]) }}</p>
+        {{-- Re-authentication by the portal (decision 2026-11-21, v0.33.0): site setting, changes the API access block --}}
+        <form method="POST" action="{{ route('admin.sites.setup.reauth', $site) }}" class="mb-3 rounded border border-slate-200 p-3" data-router-reauth>
+            @csrf
+            <label class="flex items-center gap-2 text-sm font-medium">
+                <input type="checkbox" name="router_reauth" value="1" @checked($site->routerReauth())>
+                {{ __('portal.reauth.setting') }}</label>
+            <p class="my-1 text-xs text-slate-600">{{ __('portal.reauth.setting_help') }}</p>
+            <button class="btn-light text-sm">{{ __('portal.save') }}</button>
+        </form>
         @if ($cliDisabled)
             <p class="mb-3 rounded border border-amber-300 bg-amber-50 p-2 text-sm font-medium text-amber-900" role="status" data-cli-disabled-notice>{{ __('portal.router_api.cli_disabled', ['minutes' => $maxAge]) }}</p>
         @endif

@@ -171,6 +171,13 @@ Lost authenticator without recovery codes: `artisan portal:admin --reset-2fa adm
 - MAC whitelist: admin UI → MAC whitelist (or "allow this device permanently" in the guest list).
   Needs `login-by=https,mac` on the hotspot profile (set by the generated router script). MAC
   addresses can be spoofed: whitelist only trusted devices.
+  A device the router already holds as an unauthenticated hotspot host is asked again only after
+  `/ip hotspot host remove [find where mac-address=<MAC>]` on the router (shown after saving and with the
+  button "Re-authenticate"). Optional per site (setup assistant, router state section): "Re-authentication by
+  the portal" adds the own script `guest-portal-reauth` to the API access block; the read-only API user may run
+  it (no write policy) and the portal does after saving an entry. Learning window (same page): opened per site
+  for 5 to 60 minutes, every device the site's routers send for MAC authentication gets online until it ends and
+  is listed to take over into the whitelist or discard; devices not taken over lose access at the end.
 - OIDC login (admin UI only), e.g. Authentik: create a provider of type "OAuth2/OpenID Provider"
   (confidential client) with redirect URI `https://<admin host>:8443/admin/oidc/callback` (shown with a
   copy button in admin UI → Settings → Single sign-on; derived from the admin URL setting), keep the

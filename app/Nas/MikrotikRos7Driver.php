@@ -30,8 +30,24 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
     /** User group of the read-only router API access (state query of the setup assistant). */
     public const API_GROUP = 'guest-portal-ro';
 
-    /** Policies of that group (RouterOS 7): print via the API (api-ssl) or REST (www-ssl), nothing else. */
+    /**
+     * Policies of that group (RouterOS 7): print via the API (api-ssl) or REST (www-ssl), no write; it may also run
+     * scripts with dont-require-permissions=yes (the portal runs only its own REAUTH_SCRIPT).
+     */
     public const API_POLICY = 'read,api,rest-api';
+
+    /**
+     * Own script of the re-authentication by the portal (decision 2026-11-21, v0.33.0): removes the hotspot hosts that
+     * are neither authorized nor bypassed, so the router tries MAC authentication again. dont-require-permissions=yes
+     * lets the read-only API user run it (verified on the CHR, RouterOS 7.24.5: a user with read,api,rest-api may run
+     * such a script through REST or the API, but not change, add or remove scripts, and /execute gets no write).
+     * The script itself needs read,write (with read only "not enough permissions").
+     */
+    public const REAUTH_SCRIPT = 'guest-portal-reauth';
+
+    public const REAUTH_POLICY = 'read,write';
+
+    public const REAUTH_SOURCE = '/ip hotspot host remove [find where !authorized && !bypassed]';
 
     /** html-directory of the hotspot profile: RouterOS default, or on devices with a flash folder. */
     public const HTML_DIRECTORIES = ['hotspot', 'flash/hotspot'];
@@ -95,7 +111,9 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
                 + array_map(fn ($list) => $o('/ip firewall address-list', $list), self::FW_ADDRESSES)
                 + array_map(fn () => $o('/ip firewall filter'), self::FW_RULES),
             // Read-only API access of the state query (per router: the user name is the router's api_user)
-            'api' => ['group' => $o('/user group', self::API_GROUP), 'user' => $o('/user')],
+            'api' => ['group' => $o('/user group', self::API_GROUP), 'user' => $o('/user')]
+                // Re-authentication by the portal (decision 2026-11-21): own script only while switched on
+                + ($site->routerReauth() ? ['reauth' => $o('/system script', self::REAUTH_SCRIPT)] : []),
         ];
         $out = [];
         foreach ($blocks as $block => $objects) {
@@ -596,6 +614,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
         $dnsOwned = self::ownedStatic(...self::keys('dns', ['hotspot-name', 'portal-a', 'portal-cname']));
         $ws = fn (string $block, string $object) => self::ownedStatic(self::key($block, $object));
         $apiGroup = self::API_GROUP;
+        $reauthScript = self::REAUTH_SCRIPT;
+        $reauthKey = $k('api', 'reauth');
 
         // Container network (step "RouterOS container")
         $containerNetwork = implode("\n", [
@@ -839,6 +859,8 @@ class MikrotikRos7Driver implements NasDriver, ProvisioningEditor, ReadsRedirect
                 # Read-only API access of the portal: its users (group {$apiGroup}), then the group
                 /user remove [find where group={$apiGroup} && {$o('api', 'user')}]
                 /user group remove [find where name={$apiGroup} && {$o('api', 'group')}]
+                # Script of the re-authentication by the portal (exact name and key only)
+                /system script remove [find where name={$reauthScript} && comment="{$reauthKey}"]
                 # Older assistant versions used other comments; check and remove manually if present:
                 # /ip firewall filter print where comment~"^(guest|portal): |^stateful\\$|^nothing initiates"
                 # /ip firewall address-list print where list=PORTAL || list=PORTAL_RADIUS || list=RFC1918

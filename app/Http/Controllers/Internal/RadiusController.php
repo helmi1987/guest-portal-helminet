@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Jobs\DisconnectSession;
 use App\Models\Device;
 use App\Models\Grant;
+use App\Models\LearningWindow;
 use App\Models\MacWhitelist;
 use App\Models\NasClient;
 use App\Models\RadiusAccounting;
@@ -100,7 +101,8 @@ class RadiusController extends Controller
      * Calling-Station-Id the router reports, and either a valid MAC whitelist entry allows the NAS's
      * site (no Session-Timeout unless the entry expires) or the MAC is a roaming device: bound to a
      * running grant that allows this site, logged in at another site (Session-Timeout = remaining
-     * time). The password is not checked (mac-auth-mode=mac-as-username sends none).
+     * time), or a learning window of the site is open (Session-Timeout = remaining window time). The
+     * password is not checked (mac-auth-mode=mac-as-username sends none).
      */
     private function authorizeWhitelist(Request $request, ?NasClient $nas, string $userMac, ?string $mac): JsonResponse
     {
@@ -121,6 +123,17 @@ class RadiusController extends Controller
             }
 
             return response()->json(array_merge($reply, $nas->site->driver()->replyAttributes($roaming)));
+        }
+
+        // Learning window of the site (decision 2026-11-21, v0.33.0): any MAC is accepted for the remaining window time
+        // and recorded; a device the admin discarded is not accepted again during this window
+        $window = $reason === null && $entry === null ? LearningWindow::openFor($nas->site_id) : null;
+        if ($window !== null && LearningWindow::allows($nas->site_id, $mac)) {
+            $window->record($mac, $nas->id);
+            Log::info('RADIUS learning window: device accepted', ['site' => $nas->site_id, 'nas' => $nas->nas_ip, 'mac' => $mac]);
+
+            return response()->json(['reply:Session-Timeout' => max(1, $window->remainingSeconds()),
+                'reply:Acct-Interim-Interval' => (int) config('portal.radius.interim_interval')]);
         }
 
         if ($entry === null) {
@@ -241,6 +254,20 @@ class RadiusController extends Controller
             // Roaming device: a session of its grant (enforced and disconnected like any grant session).
             $summary = SessionSummary::create([
                 'grant_id' => $grant->id,
+                'site_id' => $nas->site_id,
+                'serving_instance_id' => app(LocalInstance::class)->id(),
+                'mac' => $mac,
+                'ip' => $this->attr($request, 'Framed-IP-Address'),
+                'started_at' => now(),
+            ]);
+
+            return new RadiusAccounting(['session_summary_id' => $summary->id, 'nas_client_id' => $nas->id,
+                'acct_session_id' => $sessionId, 'username' => $username]);
+        }
+        if ($entry === null && LearningWindow::allows($nas->site_id, $mac)) {
+            // Learning window (decision 2026-11-21): a session without grant and entry, ended when the window closes
+            // (portal:enforce-grants, SessionSummary::accessEnded()) or at its Session-Timeout
+            $summary = SessionSummary::create([
                 'site_id' => $nas->site_id,
                 'serving_instance_id' => app(LocalInstance::class)->id(),
                 'mac' => $mac,

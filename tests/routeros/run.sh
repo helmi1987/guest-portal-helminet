@@ -314,6 +314,58 @@ check_unmanaged() { # <rsc dir>
     ros '/file remove [find where name="harness.rsc"]' >/dev/null
 }
 
+# Re-authentication by the portal (decision 2026-11-21): the access block (fixture: on) added the own script; the
+# read-only API user runs it through REST and api-ssl (portal client, RQ_REAUTH) but cannot change or remove it, and
+# /execute gets no write. Switched off, the access block removes it (re-run: no error); the state query reports a
+# script left over while off as differs, the absent one not at all. Switched on again for the rest of the run.
+# Needs www-ssl and api-ssl with the certificate guest-portal (set by the caller).
+check_reauth() { # <rsc dir>
+    local R=$1 f t port id n0 n1 out
+    check "[$MODE] reauth: own script with dont-require-permissions and policy read,write" \
+        test "$(ros ":put [:len [/system script find where name=$N-reauth && comment=\"$N:api:reauth\" && dont-require-permissions=yes && policy=read,write]]")" = 1
+    for t in rest api-ssl; do
+        port=$ROS_REST_PORT; [ "$t" = api-ssl ] && port=$ROS_APISSL_PORT
+        n0=$(ros ":put [/system script get [find where name=$N-reauth] run-count]")
+        mkdir -p "$WORK/state/$MODE"
+        (cd "$REPO" && RQ_REAUTH=1 RQ_TYPE=$t RQ_HOST=127.0.0.1 RQ_PORT=$port RQ_CERT=$WORK/pki/leaf2/router.crt RQ_PASS=$API_PASS \
+            php tests/routeros/render.php "$WORK/state/$MODE" "$ROUTER_IP" "$PORTAL_IP" "$PORTAL_PORT" "$MODE") >/dev/null
+        n1=$(ros ":put [/system script get [find where name=$N-reauth] run-count]")
+        check "[$MODE] reauth $t: portal client ran the script ($(cat "$WORK/state/$MODE/reauth-$t.txt"))" grep -qx ok "$WORK/state/$MODE/reauth-$t.txt"
+        check "[$MODE] reauth $t: run-count $n0 -> $n1" test "$n1" = $((n0 + 1))
+        check "[$MODE] reauth $t: state reports the script present" grep -qx "$N:api:reauth present" "$WORK/state/$MODE/state-$t.txt"
+    done
+    id=$(ros ":put [/system script find where name=$N-reauth]")
+    pin=sha256//$(openssl x509 -in "$WORK/pki/leaf2/router.crt" -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | base64)
+    rest() { curl -s -k --pinnedpubkey "$pin" -u "portal-ro:$API_PASS" -H 'content-type: application/json' "$@"; }
+    out=$(rest -X PATCH --data '{"source":":log info changed"}' "https://127.0.0.1:$ROS_REST_PORT/rest/system/script/$id")
+    check "[$MODE] reauth: the read-only user cannot change the script ($out)" grep -q 'not enough permissions' <<<"$out"
+    out=$(rest --data "{\".id\":\"$id\"}" "https://127.0.0.1:$ROS_REST_PORT/rest/system/script/remove")
+    check "[$MODE] reauth: the read-only user cannot remove the script ($out)" grep -q 'not enough permissions' <<<"$out"
+    out=$(rest --data '{"script":"/system note set note=gp-write-test","as-string":""}' "https://127.0.0.1:$ROS_REST_PORT/rest/execute")
+    check "[$MODE] reauth: /execute gets no write ($out)" grep -q 'not enough permissions' <<<"$out"
+    check "[$MODE] reauth: script source unchanged" \
+        test "$(ros ":put [/system script get [find where name=$N-reauth] source]")" = '/ip hotspot host remove [find where !authorized && !bypassed]'
+    check "[$MODE] reauth: nothing written by /execute" test "$(ros ':put [/system note get note]')" != gp-write-test
+    f=$(RENDER_REAUTH=0 query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+    check "[$MODE] reauth off: the script left on the router is reported as differs" grep -q "^$N:api:reauth differs" "$f"
+    run_block "$R/api_access.reauth-off.rsc" "[$MODE] api_access (re-authentication off)"
+    check "[$MODE] reauth off: own script removed" test "$(ros ":put [:len [/system script find where name=$N-reauth]]")" = 0
+    run_block "$R/api_access.reauth-off.rsc" "[$MODE] api_access (re-authentication off, re-run)"
+    f=$(RENDER_REAUTH=0 query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")
+    check "[$MODE] reauth off: no script, no deviation" bash -c "! grep -q '^$N:api:reauth' '$f'"
+    # A script of others with the own name: never removed by the off block, never run by the portal
+    ros "/system script add name=$N-reauth source=\":log info foreign\" comment=foreign" >/dev/null
+    run_block "$R/api_access.reauth-off.rsc" "[$MODE] api_access (re-authentication off, foreign script)"
+    check "[$MODE] reauth off: foreign script with the own name kept" test "$(ros ":put [:len [/system script find where name=$N-reauth && comment=foreign]]")" = 1
+    (cd "$REPO" && RQ_REAUTH=1 RQ_TYPE=rest RQ_HOST=127.0.0.1 RQ_PORT=$ROS_REST_PORT RQ_CERT=$WORK/pki/leaf2/router.crt RQ_PASS=$API_PASS \
+        php tests/routeros/render.php "$WORK/state/$MODE" "$ROUTER_IP" "$PORTAL_IP" "$PORTAL_PORT" "$MODE") >/dev/null
+    check "[$MODE] reauth: foreign script not run ($(cat "$WORK/state/$MODE/reauth-rest.txt"))" grep -q '^error config' "$WORK/state/$MODE/reauth-rest.txt"
+    check "[$MODE] reauth: foreign script run-count 0" test "$(ros ":put [/system script get [find where name=$N-reauth] run-count]")" = 0
+    ros "/system script remove [find where name=$N-reauth && comment=foreign]" >/dev/null
+    run_block "$R/api_access.rsc" "[$MODE] api_access (re-authentication on again)"
+    check "[$MODE] reauth on again: own script back" test "$(ros ":put [:len [/system script find where name=$N-reauth && comment=\"$N:api:reauth\"]]")" = 1
+}
+
 # ---------------------------------------------------------------------------------------------
 # Fixture "multi" (decision 2026-11-02): all three Wi-Fi modes together, guest SSID per CAP for the wifi
 # package (radios absent on the CHR: skip path; the add/update path is run with the radio lookup replaced
@@ -660,6 +712,7 @@ for MODE in "${MODES[@]}"; do
         check "[$MODE] $t: foreign RFC1918 10.0.0.0/8 entry (seed) reported as foreign, not added" \
             grep -qx 'guest-portal:fw:addr-rfc1918-10 foreign' "$f"
     done
+    check_reauth "$R"
     # Social login entry changed by hand (dst-port): reported as differs with both values, set back: present
     ros "/ip hotspot walled-garden ip set [find where comment=\"$N:walled:social-github-com\"] dst-port=8443" >/dev/null
     f=$(query rest "$ROS_REST_PORT" "$WORK/pki/leaf2/router.crt" "$API_PASS")

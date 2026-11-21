@@ -186,8 +186,10 @@ class WifiPasswordTest extends TestCase
             // (and the key of the single virtual AP before 0.16, only in the find conditions of mode local)
             // (and the DNS entry of the hotspot name before 0.19.1, only removed)
             // (the social login entries are removed by their key prefix, social login is off here: no exact key)
+            // (the script of the re-authentication by the portal, off here: only removed by the uninstall)
             $this->assertSame([], WalledGarden::hosts());
-            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest', 'guest-portal:dns:hotspot-name'])), $mode);
+            $this->assertEqualsCanonicalizing($keys, array_values(array_diff($used, ['guest-portal', 'guest-portal:wifi:wifi-guest',
+                'guest-portal:dns:hotspot-name', 'guest-portal:api:reauth'])), $mode);
             // Outside the find conditions no add/set writes a legacy comment
             $outside = $all;
             do {
